@@ -1,0 +1,16 @@
+{
+  "channels": {
+    "wt:tasks:new":     "CEO or wtctl publishes new task assignments",
+    "wt:tasks:ack":     "Agent acknowledges receipt",
+    "wt:tasks:result":  "Agent publishes completed result",
+    "wt:events:log":    "Any agent publishes a log/status event"
+  },
+  "envelope": {
+    "id":         "string — UUID",
+    "ts":         "integer — Unix epoch",
+    "from":       "string — agent name (claude, chatgpt, gemini, etc.)",
+    "type":       "string — task|ack|result|log",
+    "initiative": "string — parent initiative name",
+    "payload":    "object — task-specific content"
+  }
+}
