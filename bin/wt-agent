@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+if ! make -C "$ROOT" -q build/wt-agent; then
+  echo "wt-agent binary is missing or stale; building..." >&2
+  make -C "$ROOT" build/wt-agent >&2
+fi
+
+exec "$ROOT/build/wt-agent" "$@"

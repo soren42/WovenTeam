@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+# wtctl — WovenTeam task dispatcher (Phase 0 Bash stub)
+TASK_ID=$(uuidgen)
+TS=$(date +%s)
+AGENT="${1:-claude}"
+PAYLOAD="${2:-echo hello}"
+
+JSON=$(jq -cn \
+  --arg id "$TASK_ID" \
+  --argjson ts "$TS" \
+  --arg from "ceo" \
+  --arg type "task" \
+  --arg initiative "phase0-spike" \
+  --arg agent "$AGENT" \
+  --arg cmd "$PAYLOAD" \
+  '{id:$id, ts:$ts, from:$from, type:$type, initiative:$initiative, payload:{assigned_to:$agent, command:$cmd}}')
+
+DB_PATH="${WOVENTEAM_DB:-/woventeam/woventeam.db}"
+
+# Log to SQLite before publishing so agents never win the durable-state race.
+sqlite3 "$DB_PATH" \
+  "INSERT INTO tasks VALUES('$TASK_ID','phase0-spike','$AGENT','pending',$TS);"
+
+echo "Publishing task $TASK_ID to wt:tasks:new..."
+redis-cli publish wt:tasks:new "$JSON"
+
+echo "Task logged. ID: $TASK_ID"
