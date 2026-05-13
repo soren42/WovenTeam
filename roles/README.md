@@ -140,6 +140,6 @@ Each ROLE.md includes a `version` field in its header. When modifying a role def
 
 1. Determine the appropriate category subdirectory.
 1. Create `ROLE_<role_id>.md` following the template structure used by existing roles.
-1. Create `<role_id>.yaml` with orchestrator configuration (model prefs, cost, tools, permissions, meetings, gates).
+1. Create `<role_id>.yaml` with orchestrator configuration (model prefs, cost, tools, permissions, meetings, gates) — copy `roles/role_config_template.yaml` as your starting point.
 1. Register the role_id in `conf/routing.yaml` so the orchestrator can assign it.
 1. Update this README if the new role introduces a new category.

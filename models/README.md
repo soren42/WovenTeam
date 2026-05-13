@@ -21,7 +21,9 @@ models/
 │   └── claude_sonnet.yaml         # Anthropic Claude Sonnet (balanced cost/capability)
 ├── openai/
 │   ├── gpt_4o.yaml               # OpenAI GPT-4o (multimodal, broad knowledge)
-│   └── gpt_o3.yaml               # OpenAI o3 (deep reasoning, chain-of-thought)
+│   ├── gpt_o3.yaml               # OpenAI o3 (deep reasoning, chain-of-thought)
+│   ├── gpt_5_3_codex.yaml        # OpenAI GPT-5.3-codex (code-specialized)
+│   └── gpt_5_5.yaml              # OpenAI GPT-5.5 (next-gen flagship)
 ├── google/
 │   ├── gemini_pro.yaml            # Google Gemini Pro (large context, quantitative)
 │   └── gemini_flash.yaml          # Google Gemini Flash (fast, cost-effective)
