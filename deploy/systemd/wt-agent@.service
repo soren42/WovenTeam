@@ -1,0 +1,31 @@
+[Unit]
+Description=WovenTeam wt-agent (%i)
+Documentation=file:///woventeam/repos/WovenTeam/docs/cli/wt-agent.md
+After=network-online.target redis-server.service
+Wants=network-online.target
+Requires=redis-server.service
+
+[Service]
+Type=exec
+User=woven
+Group=woven
+WorkingDirectory=/woventeam/repos/WovenTeam
+ExecStart=/woventeam/repos/WovenTeam/bin/wt-agent %i
+Restart=on-failure
+RestartSec=5s
+KillSignal=SIGTERM
+TimeoutStopSec=10s
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=wt-agent-%i
+
+# Light hardening — woven still needs write access to /woventeam for SQLite
+# and log files, but everything else is locked down.
+NoNewPrivileges=yes
+ProtectSystem=full
+ProtectHome=read-only
+ReadWritePaths=/woventeam
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target
