@@ -1,0 +1,118 @@
+# ─────────────────────────────────────────────
+# WovenTeam Model Profile: Qwen Max
+# ─────────────────────────────────────────────
+profile_version: "1.1"
+last_updated: "2026-05-13"
+
+# ─── Identity ───
+model_id: qwen/qwen-max
+vendor: qwen
+model_name: Qwen Max
+version: qwen-max
+cli_tool: qwen
+cli_auth: qwen login
+api_model_string: qwen-max
+
+# ─── Operational Status ───
+status: active
+status_reason: ""
+last_verified: "2026-05-13T00:00:00Z"
+
+# ─── Cost & Capacity ───
+cost:
+  input_per_1k_tokens: 0.002
+  output_per_1k_tokens: 0.006
+  max_context_tokens: 131072
+  max_output_tokens: 16384
+  rate_limit_rpm: 60
+  billing_model: per_token
+
+budget:
+  daily_ceiling_usd: 3.00
+  monthly_ceiling_usd: 50.00
+  current_month_usage_usd: 0.00
+  token_allotment_monthly: 0
+  tokens_used_this_month: 0
+
+# ─── Capabilities ───
+capabilities:
+  multimodal_input: true
+  multimodal_output: false
+  code_execution: true
+  web_search: false
+  file_handling: true
+  long_context: true                   # 128K
+  structured_output: true
+
+# ─── Role Suitability Matrix (0–10) ───
+suitability:
+  # Leadership & Coordination
+  program_manager: 4                   # Adequate reasoning but lacks strategic depth of Claude/Gemini
+  project_manager: 5                   # Can handle routine coordination; struggles with complex planning
+
+  # Architecture & Design
+  software_architect: 5                # Basic design capability; insufficient for novel architectures
+  systems_architect: 4                 # Limited infrastructure depth
+  mockup_artist: 4                     # Basic text wireframes
+  graphic_artist: 2                    # No image generation
+
+  # Implementation
+  frontend_dev: 5                      # Adequate for simple UI tasks
+  backend_dev: 6                       # Decent code generation; cost-effective for routine work
+  database_engineer: 5                 # Basic schema design
+
+  # Quality
+  code_reviewer: 5                     # Surface-level; catches obvious issues
+  tester: 6                            # Good for bulk test generation at low cost
+  performance_engineer: 4              # Limited analytical depth
+
+  # Operations
+  systems_administrator: 5             # Basic Linux operations
+  network_administrator: 4             # Limited networking knowledge
+  database_administrator: 5            # Basic operations
+
+  # Delivery
+  integration_specialist: 5            # Basic pipeline work
+  deployment_engineer: 5               # Simple deployment scripting
+  technical_writer: 8                  # Strong: clear, structured documentation output
+
+
+# ─── Concurrency & Parallelization ───
+concurrency:
+  max_concurrent_subagents: 4
+  parallelization_rating: 5  # 0-10: ability to manage multiple sub-agents effectively
+  serialization_required: partial
+  concurrency_notes: |
+  Qwen handles limited parallelization. Adequate for managing a small
+  documentation team (2-3 writers) but not recommended for large-scale
+  coordination.
+
+  Serialization advisory: Serialize task assignments. Qwen performs
+  better with sequential, well-scoped tasks than with parallel,
+  context-heavy coordination.
+
+# ─── Notes ───
+notes: |
+  Qwen's primary value in WovenTeam is cost-effective documentation production.
+  Assigned as Documentation workgroup lead for Phase A, producing the End-User
+  Manual and Developer Guide.
+
+  Observed during Pass 3: Qwen produced well-structured table-of-contents
+  outlines for both manuals with appropriate depth and audience awareness.
+  Writing is clear and organized, though occasionally needs editing for
+  technical precision.
+
+  Secondary use: bulk task execution where cost matters more than output
+  quality — test generation, boilerplate code, routine operations scripts.
+
+  The CEO should verify Qwen CLI availability on xenon (noted as open item
+  in Gemini's Phase 0 integration review).
+
+# ─── Changelog ───
+changelog:
+  - version: "1.1"
+    date: "2026-05-13"
+    changes: "Added concurrency limits, parallelization rating, and serialization advisory."
+  - version: "1.0"
+    date: "2026-05-13"
+    changes: "Initial profile creation. Scores based on Pass 3 documentation output quality."

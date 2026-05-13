@@ -1,0 +1,120 @@
+# ─────────────────────────────────────────────
+# WovenTeam Model Profile: Gemini Flash
+# ─────────────────────────────────────────────
+profile_version: "1.1"
+last_updated: "2026-05-13"
+
+# ─── Identity ───
+model_id: google/gemini-flash
+vendor: google
+model_name: Gemini Flash
+version: gemini-2.5-flash
+cli_tool: gemini
+cli_auth: gemini auth
+api_model_string: gemini-2.5-flash
+
+# ─── Operational Status ───
+status: active
+status_reason: ""
+last_verified: "2026-05-13T00:00:00Z"
+
+# ─── Cost & Capacity ───
+cost:
+  input_per_1k_tokens: 0.000075
+  output_per_1k_tokens: 0.0003
+  max_context_tokens: 1000000
+  max_output_tokens: 65536
+  rate_limit_rpm: 200
+  billing_model: per_token
+
+budget:
+  daily_ceiling_usd: 5.00
+  monthly_ceiling_usd: 50.00
+  current_month_usage_usd: 0.00
+  token_allotment_monthly: 0
+  tokens_used_this_month: 0
+
+# ─── Capabilities ───
+capabilities:
+  multimodal_input: true
+  multimodal_output: false
+  code_execution: true
+  web_search: true
+  file_handling: true
+  long_context: true                   # 1M tokens
+  structured_output: true
+
+# ─── Role Suitability Matrix (0–10) ───
+suitability:
+  # Leadership & Coordination
+  program_manager: 4                   # Too shallow for strategic portfolio decisions
+  project_manager: 5                   # Acceptable for routine task dispatch, not complex planning
+
+  # Architecture & Design
+  software_architect: 4                # Insufficient depth for non-trivial design
+  systems_architect: 5                 # Can handle simple topology tasks
+  mockup_artist: 4                     # Basic text wireframes only
+  graphic_artist: 2                    # Minimal visual capability
+
+  # Implementation
+  frontend_dev: 5                      # Acceptable for boilerplate; struggles with complex UI logic
+  backend_dev: 6                       # Serviceable for well-scoped, routine coding tasks
+  database_engineer: 5                 # Simple schemas and queries; lacks optimization depth
+
+  # Quality
+  code_reviewer: 4                     # Catches syntax/obvious issues; misses subtle bugs
+  tester: 6                            # Good for bulk test generation at very low cost
+  performance_engineer: 4              # Insufficient analytical depth
+
+  # Operations
+  systems_administrator: 6             # Good for routine ops tasks: package installs, config checks
+  network_administrator: 5             # Basic operations
+  database_administrator: 5            # Basic backup/monitoring tasks
+
+  # Delivery
+  integration_specialist: 5            # Simple pipeline work
+  deployment_engineer: 6               # Good for scripted, repeatable deployments
+  technical_writer: 5                  # Acceptable for simple docs; lacks polish for user-facing manuals
+
+
+# ─── Concurrency & Parallelization ───
+concurrency:
+  max_concurrent_subagents: 10
+  parallelization_rating: 9  # 0-10: ability to manage multiple sub-agents effectively
+  serialization_required: minimal
+  concurrency_notes: |
+  Gemini Flash has the highest raw concurrency ceiling due to its speed,
+  low cost, and large context window. However, quality degrades on complex
+  coordination tasks. Best used for high-volume, low-complexity parallel
+  work: running 10 test agents, bulk deployments, mass config checks.
+
+  Serialization advisory: Minimal serialization needed for simple tasks.
+  For anything requiring judgment or nuanced coordination, drop the
+  concurrency ceiling to 5-6 and increase task specificity.
+
+# ─── Notes ───
+notes: |
+  Gemini Flash is the budget model — use it for high-volume, low-complexity
+  tasks where the cost of a smarter model isn't justified. Ideal for:
+  - Bulk test case generation
+  - Routine sysadmin tasks (package updates, log checks)
+  - Simple deployment scripts
+  - Boilerplate code generation
+
+  At ~50x cheaper than Claude Opus and ~10x cheaper than Sonnet, Flash is the
+  right choice when the task is well-defined and doesn't require creative
+  problem-solving or deep reasoning.
+
+  The 1M context window is still available, making Flash useful for
+  log ingestion and large file processing where the analysis is straightforward.
+
+  Not tested in WovenTeam context yet. Scores are conservative estimates.
+
+# ─── Changelog ───
+changelog:
+  - version: "1.1"
+    date: "2026-05-13"
+    changes: "Added concurrency limits, parallelization rating, and serialization advisory."
+  - version: "1.0"
+    date: "2026-05-13"
+    changes: "Initial profile creation. Scores conservatively estimated; pending empirical validation."

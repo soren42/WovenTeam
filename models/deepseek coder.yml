@@ -1,0 +1,136 @@
+# ─────────────────────────────────────────────
+# WovenTeam Model Profile: DeepSeek Coder
+# ─────────────────────────────────────────────
+profile_version: "1.1"
+last_updated: "2026-05-13"
+
+# ─── Identity ───
+model_id: deepseek/deepseek-coder
+vendor: deepseek
+model_name: DeepSeek Coder
+version: deepseek-coder-v3
+cli_tool: deepseek
+cli_auth: deepseek login
+api_model_string: deepseek-coder
+
+# ─── Operational Status ───
+status: blocked
+status_reason: |
+  BLOCKED per MPD reveal (2026-05-10). All three advisory models (Claude,
+  ChatGPT, Gemini) independently converged on removing DeepSeek from the
+  trusted model fleet due to trust boundary, provenance, and execution
+  authority concerns.
+
+  Key findings:
+  - "Trust is not a feeling — it is a verifiable technical constraint."
+  - "The attack surface isn't the model's intent; it's the plumbing between systems."
+  - Consensus: remove DeepSeek, formalize trust boundaries, enforce provenance.
+
+  DeepSeek's Coordination API contributions (schema-v0.1.json) have been
+  retained but are subject to independent verification before use.
+
+  CEO directive required to change this status.
+last_verified: "2026-05-10T00:00:00Z"
+
+# ─── Cost & Capacity ───
+cost:
+  input_per_1k_tokens: 0.00014
+  output_per_1k_tokens: 0.00028
+  max_context_tokens: 128000
+  max_output_tokens: 8192
+  rate_limit_rpm: 60
+  billing_model: per_token
+
+budget:
+  daily_ceiling_usd: 0.00             # Blocked — no budget allocated
+  monthly_ceiling_usd: 0.00
+  current_month_usage_usd: 0.00
+  token_allotment_monthly: 0
+  tokens_used_this_month: 0
+
+# ─── Capabilities ───
+capabilities:
+  multimodal_input: false
+  multimodal_output: false
+  code_execution: false
+  web_search: false
+  file_handling: true
+  long_context: true
+  structured_output: true
+
+# ─── Role Suitability Matrix (0–10) ───
+# NOTE: Scores reflect theoretical capability. Model is BLOCKED and will
+# not be assigned to any role regardless of suitability score. Scores are
+# retained for reference in case the trust policy is revised.
+suitability:
+  # Leadership & Coordination
+  program_manager: 3
+  project_manager: 4
+
+  # Architecture & Design
+  software_architect: 5
+  systems_architect: 4
+  mockup_artist: 2
+  graphic_artist: 1
+
+  # Implementation
+  frontend_dev: 5
+  backend_dev: 7                       # Was considered strong for cost-effective coding
+  database_engineer: 6                 # Decent schema work
+
+  # Quality
+  code_reviewer: 5
+  tester: 7                            # Was primary recommendation for high-volume testing
+  performance_engineer: 6              # Adequate quantitative analysis
+
+  # Operations
+  systems_administrator: 4
+  network_administrator: 3
+  database_administrator: 4
+
+  # Delivery
+  integration_specialist: 4
+  deployment_engineer: 3
+  technical_writer: 4
+
+
+# ─── Concurrency & Parallelization ───
+concurrency:
+  max_concurrent_subagents: 0
+  parallelization_rating: 0  # 0-10: ability to manage multiple sub-agents effectively
+  serialization_required: full
+  concurrency_notes: |
+  ██ BLOCKED — No sub-agent management permitted. ██
+  Theoretical concurrency ceiling was ~4 based on context window and
+  response speed, but this is moot under the current trust policy.
+
+# ─── Notes ───
+notes: |
+  ██ BLOCKED — DO NOT ASSIGN ██
+
+  DeepSeek was removed from the trusted model fleet following the MPD reveal
+  analysis (2026-05-10). The removal was unanimous across all three advisory
+  models (Claude, ChatGPT, Gemini).
+
+  DeepSeek's Coordination API work (docs/api/schema-v0.1.json) remains in
+  the repository but should be treated as an unverified contribution requiring
+  independent review before any code depends on it.
+
+  The extremely low token cost was attractive for high-volume tasks (testing,
+  boilerplate code), but the trust concerns outweigh the cost savings.
+  Gemini Flash provides a comparable cost profile without the trust issues.
+
+  This profile is retained for:
+  1. Audit trail — documenting why the model was blocked
+  2. Reference — in case the trust policy is revisited
+  3. Completeness — the orchestrator should recognize the model_id and
+     enforce the block, not fail with "unknown model"
+
+# ─── Changelog ───
+changelog:
+  - version: "1.1"
+    date: "2026-05-13"
+    changes: "Added concurrency limits, parallelization rating, and serialization advisory."
+  - version: "1.0"
+    date: "2026-05-13"
+    changes: "Initial profile creation. Status: blocked per MPD reveal. Budget zeroed. Suitability scores retained as theoretical reference only."
