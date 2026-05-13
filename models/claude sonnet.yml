@@ -1,0 +1,114 @@
+# ─────────────────────────────────────────────
+# WovenTeam Model Profile: Claude Sonnet
+# ─────────────────────────────────────────────
+profile_version: "1.1"
+last_updated: "2026-05-13"
+
+# ─── Identity ───
+model_id: anthropic/claude-sonnet
+vendor: anthropic
+model_name: Claude Sonnet
+version: claude-sonnet-4-6
+cli_tool: claude
+cli_auth: claude auth login
+api_model_string: claude-sonnet-4-6
+
+# ─── Operational Status ───
+status: active
+status_reason: ""
+last_verified: "2026-05-13T00:00:00Z"
+
+# ─── Cost & Capacity ───
+cost:
+  input_per_1k_tokens: 0.003
+  output_per_1k_tokens: 0.015
+  max_context_tokens: 200000
+  max_output_tokens: 16000
+  rate_limit_rpm: 100
+  billing_model: per_token
+
+budget:
+  daily_ceiling_usd: 15.00
+  monthly_ceiling_usd: 200.00
+  current_month_usage_usd: 0.00
+  token_allotment_monthly: 0
+  tokens_used_this_month: 0
+
+# ─── Capabilities ───
+capabilities:
+  multimodal_input: true
+  multimodal_output: false
+  code_execution: true
+  web_search: true
+  file_handling: true
+  long_context: true
+  structured_output: true
+
+# ─── Role Suitability Matrix (0–10) ───
+suitability:
+  # Leadership & Coordination
+  program_manager: 7                   # Good reasoning, less depth than Opus for complex portfolio decisions
+  project_manager: 8                   # Sweet spot: structured output at lower cost
+
+  # Architecture & Design
+  software_architect: 8                # Strong design; Opus preferred for novel/complex architectures
+  systems_architect: 7                 # Adequate infrastructure reasoning
+  mockup_artist: 5                     # Same text-only limitation as Opus
+  graphic_artist: 3                    # Text-only
+
+  # Implementation
+  frontend_dev: 7                      # Good code generation, cost-effective for UI work
+  backend_dev: 9                       # Excellent code quality at 5x lower cost than Opus
+  database_engineer: 7                 # Solid schema work, good SQL
+
+  # Quality
+  code_reviewer: 8                     # Strong reviews; Opus catches more subtle issues
+  tester: 7                            # Good test generation, cost-effective for volume
+  performance_engineer: 7              # Adequate analysis, less depth than Opus
+
+  # Operations
+  systems_administrator: 7             # Good Linux/shell knowledge
+  network_administrator: 6             # Adequate
+  database_administrator: 7            # Solid operational knowledge
+
+  # Delivery
+  integration_specialist: 7            # Good CI/CD, build system knowledge
+  deployment_engineer: 7               # Adequate deployment scripting
+  technical_writer: 8                  # Clear writing; Opus preferred for complex docs
+
+
+# ─── Concurrency & Parallelization ───
+concurrency:
+  max_concurrent_subagents: 6
+  parallelization_rating: 7  # 0-10: ability to manage multiple sub-agents effectively
+  serialization_required: minimal
+  concurrency_notes: |
+  Sonnet is the best balance of coordination quality and concurrency capacity.
+  At ~5x lower cost than Opus, it can manage more sub-agents before hitting
+  budget ceilings. Recommended default for Project Manager roles.
+
+  Serialization advisory: Handles rapid status report ingestion well.
+  Can process 6 concurrent sub-agent status streams without significant
+  context degradation.
+
+# ─── Notes ───
+notes: |
+  Claude Sonnet is the workhorse model for WovenTeam. At ~5x lower cost than
+  Opus with 80-90% of the capability for most tasks, Sonnet should be the
+  default for implementation, testing, and routine operations work.
+
+  Use Opus when the task requires deep multi-step reasoning, catches subtle
+  architectural issues, or produces long-form documents where coherence over
+  thousands of tokens matters. Use Sonnet for everything else.
+
+  The YAML's preferred_model for most implementation roles should point here
+  unless task complexity warrants Opus escalation.
+
+# ─── Changelog ───
+changelog:
+  - version: "1.1"
+    date: "2026-05-13"
+    changes: "Added concurrency limits, parallelization rating, and serialization advisory."
+  - version: "1.0"
+    date: "2026-05-13"
+    changes: "Initial profile creation. Scores calibrated relative to Opus."

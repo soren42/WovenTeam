@@ -1,0 +1,119 @@
+# ─────────────────────────────────────────────
+# WovenTeam Model Profile: Gemini Pro
+# ─────────────────────────────────────────────
+profile_version: "1.1"
+last_updated: "2026-05-13"
+
+# ─── Identity ───
+model_id: google/gemini-pro
+vendor: google
+model_name: Gemini Pro
+version: gemini-2.5-pro
+cli_tool: gemini
+cli_auth: gemini auth
+api_model_string: gemini-2.5-pro
+
+# ─── Operational Status ───
+status: active
+status_reason: ""
+last_verified: "2026-05-13T00:00:00Z"
+
+# ─── Cost & Capacity ───
+cost:
+  input_per_1k_tokens: 0.00125
+  output_per_1k_tokens: 0.005
+  max_context_tokens: 1000000          # 1M token context window
+  max_output_tokens: 65536
+  rate_limit_rpm: 60
+  billing_model: per_token
+
+budget:
+  daily_ceiling_usd: 8.00
+  monthly_ceiling_usd: 120.00
+  current_month_usage_usd: 0.00
+  token_allotment_monthly: 0
+  tokens_used_this_month: 0
+
+# ─── Capabilities ───
+capabilities:
+  multimodal_input: true               # images, video, audio, documents
+  multimodal_output: false             # text only (Imagen separate)
+  code_execution: true
+  web_search: true
+  file_handling: true
+  long_context: true                   # 1M tokens — largest in fleet
+  structured_output: true
+
+# ─── Role Suitability Matrix (0–10) ───
+suitability:
+  # Leadership & Coordination
+  program_manager: 7                   # Good governance/process synthesis; strong on doctrine
+  project_manager: 7                   # Structured, disciplined output
+
+  # Architecture & Design
+  software_architect: 7                # Solid design; slightly less rigorous than Claude on edge cases
+  systems_architect: 9                 # Strong: infrastructure topology, capacity planning, network awareness
+  mockup_artist: 5                     # Text wireframes only; no image generation
+  graphic_artist: 3                    # Limited visual output
+
+  # Implementation
+  frontend_dev: 6                      # Adequate; not primary strength
+  backend_dev: 7                       # Good code generation, strong on analytical code
+  database_engineer: 8                 # Excellent quantitative reasoning for schema optimization
+
+  # Quality
+  code_reviewer: 7                     # Thorough; particularly good at integration-level review
+  tester: 6                            # Adequate test design
+  performance_engineer: 9              # Excellent: quantitative analysis, large log ingestion via 1M context
+
+  # Operations
+  systems_administrator: 8             # Strong Linux expertise, shell scripting, monitoring
+  network_administrator: 8             # Strong network protocol knowledge, firewall reasoning
+  database_administrator: 7            # Good operational knowledge
+
+  # Delivery
+  integration_specialist: 8            # Strong at cross-component verification, systems integration
+  deployment_engineer: 7               # Good DevOps knowledge, scripting
+  technical_writer: 6                  # Adequate; prose tends toward formal/dense
+
+
+# ─── Concurrency & Parallelization ───
+concurrency:
+  max_concurrent_subagents: 8
+  parallelization_rating: 8  # 0-10: ability to manage multiple sub-agents effectively
+  serialization_required: minimal
+  concurrency_notes: |
+  Gemini Pro's 1M context window gives it the highest effective concurrency
+  ceiling in the fleet. It can ingest status reports from 8 sub-agents
+  simultaneously without context pressure. Strong choice for PM roles on
+  large initiatives with many parallel workstreams.
+
+  Serialization advisory: Minimal serialization needed. The context window
+  is large enough to hold full conversation history with all sub-agents.
+  Cost remains low due to favorable token pricing.
+
+# ─── Notes ───
+notes: |
+  Gemini Pro's standout capability is the 1M token context window — invaluable
+  for roles that need to ingest large artifacts (log files for performance
+  engineering, full codebases for architecture review, complete doc sets for
+  integration verification).
+
+  Observed during Pass 3: Gemini was particularly good at synthesizing
+  governance/process structure and translating architecture into operational
+  doctrine. Produced the most detailed integration review report.
+
+  Assigned as Strategy, Review & Integration workgroup lead for Phase A.
+  Also strong on operations roles (sysadmin, network admin) where deep
+  systems knowledge matters.
+
+  Cost-effective: roughly 4x cheaper than Claude Sonnet per token.
+
+# ─── Changelog ───
+changelog:
+  - version: "1.1"
+    date: "2026-05-13"
+    changes: "Added concurrency limits, parallelization rating, and serialization advisory."
+  - version: "1.0"
+    date: "2026-05-13"
+    changes: "Initial profile creation. Scores based on Pass 3 review quality and workgroup output."

@@ -1,0 +1,117 @@
+# ─────────────────────────────────────────────
+# WovenTeam Model Profile: GPT-4o
+# ─────────────────────────────────────────────
+profile_version: "1.1"
+last_updated: "2026-05-13"
+
+# ─── Identity ───
+model_id: openai/gpt-4o
+vendor: openai
+model_name: GPT-4o
+version: gpt-4o
+cli_tool: openai
+cli_auth: openai auth login
+api_model_string: gpt-4o
+
+# ─── Operational Status ───
+status: active
+status_reason: ""
+last_verified: "2026-05-13T00:00:00Z"
+
+# ─── Cost & Capacity ───
+cost:
+  input_per_1k_tokens: 0.005
+  output_per_1k_tokens: 0.015
+  max_context_tokens: 128000
+  max_output_tokens: 16384
+  rate_limit_rpm: 60
+  billing_model: per_token
+
+budget:
+  daily_ceiling_usd: 10.00
+  monthly_ceiling_usd: 150.00
+  current_month_usage_usd: 0.00
+  token_allotment_monthly: 0
+  tokens_used_this_month: 0
+
+# ─── Capabilities ───
+capabilities:
+  multimodal_input: true               # images, audio
+  multimodal_output: true              # DALL·E image generation, audio
+  code_execution: true                 # code interpreter
+  web_search: true
+  file_handling: true
+  long_context: true                   # 128K
+  structured_output: true
+
+# ─── Role Suitability Matrix (0–10) ───
+suitability:
+  # Leadership & Coordination
+  program_manager: 6                   # Adequate strategic reasoning; tends toward breadth over depth
+  project_manager: 7                   # Good task decomposition, structured output
+
+  # Architecture & Design
+  software_architect: 7                # Broad knowledge; less rigorous than Claude on edge cases
+  systems_architect: 6                 # Adequate; less precise on infrastructure specifics
+  mockup_artist: 9                     # Strong: DALL·E integration, good visual reasoning
+  graphic_artist: 8                    # DALL·E image generation, SVG creation
+
+  # Implementation
+  frontend_dev: 8                      # Strong React/Vue/JS knowledge, iterative UI work
+  backend_dev: 7                       # Good code generation; less consistent on C and low-level
+  database_engineer: 6                 # Adequate SQL; better at ORM-style than raw DDL
+
+  # Quality
+  code_reviewer: 6                     # Catches obvious issues; less thorough on subtle bugs
+  tester: 7                            # Good test generation, broad framework knowledge
+  performance_engineer: 5              # Adequate; tends toward general advice over precise profiling
+
+  # Operations
+  systems_administrator: 5             # Basic Linux knowledge; less precise than Claude/Gemini
+  network_administrator: 5             # Basic networking; not a strength
+  database_administrator: 5            # Basic ops knowledge
+
+  # Delivery
+  integration_specialist: 8            # Strong CI/CD knowledge, broad API integration experience
+  deployment_engineer: 6               # Adequate Docker/deployment scripting
+  technical_writer: 7                  # Good writing; occasionally verbose or generic
+
+
+# ─── Concurrency & Parallelization ───
+concurrency:
+  max_concurrent_subagents: 6
+  parallelization_rating: 7  # 0-10: ability to manage multiple sub-agents effectively
+  serialization_required: minimal
+  concurrency_notes: |
+  GPT-4o handles parallelization well with good context management across
+  multiple concurrent tasks. The 128K context window is sufficient for
+  managing 6 sub-agents but requires careful context budgeting.
+
+  Serialization advisory: Tends toward verbosity in coordinator roles,
+  which can consume context budget faster. Constrain output format tightly
+  when managing sub-agents.
+
+# ─── Notes ───
+notes: |
+  GPT-4o's key differentiator in WovenTeam is multimodal output — specifically
+  DALL·E image generation for the Mock-up Artist and Graphic Artist roles. No
+  other model in the fleet can produce visual assets directly.
+
+  Also strong at front-end development and integration work, with broad
+  knowledge of web frameworks and API patterns.
+
+  Observed during Pass 2: ChatGPT was strongest at adversarial reasoning,
+  failure-mode analysis, and cross-domain systems synthesis. Assigned as
+  CLI & Backend workgroup lead (C runtime, TUI, Pi4 worker daemons).
+
+  Weakness: tends toward verbosity and over-engineering. Benefits from
+  tight task scoping and explicit constraints in the system prompt.
+
+# ─── Changelog ───
+changelog:
+  - version: "1.1"
+    date: "2026-05-13"
+    changes: "Added concurrency limits, parallelization rating, and serialization advisory."
+  - version: "1.0"
+    date: "2026-05-13"
+    changes: "Initial profile creation. Scores based on Pass 1-4 observations and ChatGPT workgroup output quality."

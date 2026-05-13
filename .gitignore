@@ -5,3 +5,7 @@ build/
 *.dylib
 *.log
 *.db
+
+# macOS metadata sidecars
+._*
+.DS_Store

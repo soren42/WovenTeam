@@ -1,0 +1,93 @@
+# ─────────────────────────────────────────────
+# WovenTeam Role Configuration Template
+# ─────────────────────────────────────────────
+#
+# This template defines the orchestrator-facing configuration for a role.
+# It lives alongside the ROLE.md (behavioral contract) in the same directory.
+#
+# Three-layer architecture:
+#   ROLE.md          → What the role does (system prompt, injected into model)
+#   <role_id>.yaml   → How the orchestrator configures it (this file)
+#   models/*.yaml    → What each model is capable of (suitability scores, cost, status)
+#
+# The orchestrator reads this YAML to decide WHICH model to assign.
+# The orchestrator reads the ROLE.md to tell the model HOW to behave.
+# The orchestrator reads the model YAML to assess model FITNESS for the role.
+#
+# ─────────────────────────────────────────────
+
+role_id: "{{role_id}}"                 # Must match ROLE.md filename: ROLE_{{role_id}}.md
+config_version: "1.0"
+last_updated: "2026-05-13"
+
+# ─── Role Metadata ───
+category: "leadership|architecture|implementation|quality|operations|delivery"
+role_md_path: "roles/{{category}}/ROLE_{{role_id}}.md"
+
+# ─── Model Routing ───
+#
+# preferred_model:
+#   The default model to assign this role. This correlates with (but does not
+#   duplicate) the suitability scores in the model YAML profiles. The
+#   preferred_model is a soft default — the orchestrator may override it based
+#   on budget, availability, capacity, or CEO directive.
+#
+# fallback_model:
+#   Used when preferred_model is unavailable or over budget.
+#
+# minimum_suitability:
+#   The orchestrator will not assign a model whose suitability score for this
+#   role (from the model YAML) is below this threshold. Default: 4.
+#
+# model_override:
+#   If set to a specific model_id, forces that model regardless of suitability.
+#   Used for CEO-mandated assignments. Set to "any" to allow full flexibility.
+#   Set to null to use normal routing logic.
+#
+routing:
+  preferred_model: "anthropic/claude-sonnet"
+  fallback_model: "anthropic/claude-opus"
+  minimum_suitability: 4
+  model_override: null                 # null | "any" | specific model_id
+
+# ─── Cost Limits ───
+cost:
+  max_tokens_per_task: 8000
+  cost_limit_per_task_usd: 1.00
+  cost_limit_per_sprint_usd: 10.00
+
+# ─── Tool Permissions ───
+tools:
+  - file_read_write
+  - git_commit
+  - shell_execute_sandbox
+
+# ─── System Permissions ───
+permissions:
+  network: "none|read|full"
+  servers: "none|provision_sandbox|full"
+  code: "none|read|create_branches|merge"
+  homelab: "none|read|specific_scope"
+
+# ─── Meeting Rules ───
+meeting_rules:
+  attends:
+    - daily_standup
+    - sprint_planning
+  reports_to: "project_manager"
+
+# ─── Stage Gates ───
+stage_gates:
+  - id: "draft_complete"
+    auto_proceed: true
+  - id: "review_passed"
+    auto_proceed: false
+    requires_approval:
+      - code_reviewer
+      - project_manager
+
+# ─── Changelog ───
+changelog:
+  - version: "1.0"
+    date: "2026-05-13"
+    changes: "Initial template creation with three-layer architecture support."

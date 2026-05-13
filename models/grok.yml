@@ -1,0 +1,120 @@
+# ─────────────────────────────────────────────
+# WovenTeam Model Profile: Grok
+# ─────────────────────────────────────────────
+profile_version: "1.1"
+last_updated: "2026-05-13"
+
+# ─── Identity ───
+model_id: xai/grok
+vendor: xai
+model_name: Grok
+version: grok-3
+cli_tool: grok
+cli_auth: grok login
+api_model_string: grok-3
+
+# ─── Operational Status ───
+status: active
+status_reason: ""
+last_verified: "2026-05-13T00:00:00Z"
+
+# ─── Cost & Capacity ───
+cost:
+  input_per_1k_tokens: 0.003
+  output_per_1k_tokens: 0.015
+  max_context_tokens: 131072
+  max_output_tokens: 16384
+  rate_limit_rpm: 60
+  billing_model: per_token
+
+budget:
+  daily_ceiling_usd: 5.00
+  monthly_ceiling_usd: 75.00
+  current_month_usage_usd: 0.00
+  token_allotment_monthly: 0
+  tokens_used_this_month: 0
+
+# ─── Capabilities ───
+capabilities:
+  multimodal_input: true
+  multimodal_output: true              # image generation via Aurora
+  code_execution: false
+  web_search: true                     # real-time X/web data access
+  file_handling: true
+  long_context: true                   # 128K
+  structured_output: true
+
+# ─── Role Suitability Matrix (0–10) ───
+suitability:
+  # Leadership & Coordination
+  program_manager: 7                   # Good strategic reasoning, real-time data for market awareness
+  project_manager: 6                   # Adequate; real-time access less useful for internal coordination
+
+  # Architecture & Design
+  software_architect: 6                # Adequate design reasoning; less thorough than Claude/o3
+  systems_architect: 5                 # Basic infrastructure knowledge
+  mockup_artist: 7                     # Image generation capability via Aurora; good visual reasoning
+  graphic_artist: 7                    # Aurora image generation; adequate for asset production
+
+  # Implementation
+  frontend_dev: 6                      # Adequate JS/React; not primary strength
+  backend_dev: 6                       # Adequate code generation
+  database_engineer: 5                 # Basic schema work
+
+  # Quality
+  code_reviewer: 5                     # Surface-level reviews; lacks depth for critical code
+  tester: 5                            # Basic test generation
+  performance_engineer: 5              # Limited analytical depth
+
+  # Operations
+  systems_administrator: 4             # Limited ops expertise
+  network_administrator: 4             # Limited networking depth
+  database_administrator: 4            # Limited DBA knowledge
+
+  # Delivery
+  integration_specialist: 5            # Basic pipeline knowledge
+  deployment_engineer: 4               # Not a strength
+  technical_writer: 6                  # Decent writing; tends toward informal tone
+
+
+# ─── Concurrency & Parallelization ───
+concurrency:
+  max_concurrent_subagents: 5
+  parallelization_rating: 6  # 0-10: ability to manage multiple sub-agents effectively
+  serialization_required: partial
+  concurrency_notes: |
+  Grok handles moderate parallelization adequately. The 128K context
+  window and reasonable response speed support 5 concurrent sub-agents.
+  Not recommended as a coordinator for large teams — better as a specialist
+  sub-agent contributing creative/strategic work.
+
+  Serialization advisory: Moderate. Queue sub-agent reports in batches
+  of 2-3 rather than all at once.
+
+# ─── Notes ───
+notes: |
+  Grok's primary value in WovenTeam is real-time information access via X
+  integration and web search. This makes it useful for:
+  - Research tasks and competitive analysis
+  - Real-time data gathering for decision support
+  - Creative and strategic roles where current context matters
+  - Visual asset production via Aurora image generation
+
+  The strategy document (Pass 2, Section 4.6) originally assigned Grok to
+  PM, strategist, and creative roles. These scores reflect that assessment
+  with adjustments based on observed output quality.
+
+  Grok's informal/witty communication style may need to be constrained
+  by the ROLE.md system prompt for professional roles. The behavioral
+  contract should override the model's natural tendencies.
+
+  Not yet extensively tested in WovenTeam. Scores pending validation.
+
+# ─── Changelog ───
+changelog:
+  - version: "1.1"
+    date: "2026-05-13"
+    changes: "Added concurrency limits, parallelization rating, and serialization advisory."
+  - version: "1.0"
+    date: "2026-05-13"
+    changes: "Initial profile creation. Scores estimated from known capabilities and Pass 2 assessment."

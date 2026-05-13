@@ -1,0 +1,118 @@
+# ─────────────────────────────────────────────
+# WovenTeam Model Profile: GPT-o3
+# ─────────────────────────────────────────────
+profile_version: "1.1"
+last_updated: "2026-05-13"
+
+# ─── Identity ───
+model_id: openai/gpt-o3
+vendor: openai
+model_name: GPT-o3
+version: o3
+cli_tool: openai
+cli_auth: openai auth login
+api_model_string: o3
+
+# ─── Operational Status ───
+status: active
+status_reason: ""
+last_verified: "2026-05-13T00:00:00Z"
+
+# ─── Cost & Capacity ───
+cost:
+  input_per_1k_tokens: 0.010
+  output_per_1k_tokens: 0.040
+  max_context_tokens: 200000
+  max_output_tokens: 100000
+  rate_limit_rpm: 30
+  billing_model: per_token
+
+budget:
+  daily_ceiling_usd: 8.00
+  monthly_ceiling_usd: 100.00
+  current_month_usage_usd: 0.00
+  token_allotment_monthly: 0
+  tokens_used_this_month: 0
+
+# ─── Capabilities ───
+capabilities:
+  multimodal_input: true
+  multimodal_output: false             # no image generation
+  code_execution: true
+  web_search: true
+  file_handling: true
+  long_context: true                   # 200K
+  structured_output: true
+
+# ─── Role Suitability Matrix (0–10) ───
+suitability:
+  # Leadership & Coordination
+  program_manager: 7                   # Good reasoning; higher latency may frustrate rapid coordination
+  project_manager: 6                   # Overhead of chain-of-thought is excessive for task dispatch
+
+  # Architecture & Design
+  software_architect: 9                # Excellent deep reasoning for complex system design
+  systems_architect: 8                 # Strong analytical approach to infrastructure tradeoffs
+  mockup_artist: 4                     # No image output; text wireframes only
+  graphic_artist: 2                    # No visual output capability
+
+  # Implementation
+  frontend_dev: 6                      # Good code but slow; better suited to complex algorithmic work
+  backend_dev: 8                       # Strong on complex logic, algorithms, ANSI C
+  database_engineer: 8                 # Excellent query optimization reasoning
+
+  # Quality
+  code_reviewer: 8                     # Deep analysis; may over-think simple reviews
+  tester: 6                            # Good edge-case reasoning; slow for bulk test generation
+  performance_engineer: 9              # Excellent quantitative analysis, bottleneck reasoning
+
+  # Operations
+  systems_administrator: 5             # Over-qualified for routine tasks; save for complex debugging
+  network_administrator: 6             # Adequate; analytical approach useful for troubleshooting
+  database_administrator: 6            # Adequate ops reasoning
+
+  # Delivery
+  integration_specialist: 6            # Capable but slow; Sonnet or 4o better for pipeline work
+  deployment_engineer: 5               # Overhead not justified for deployment scripts
+  technical_writer: 7                  # Good quality; latency and cost make it inefficient for docs
+
+
+# ─── Concurrency & Parallelization ───
+concurrency:
+  max_concurrent_subagents: 3
+  parallelization_rating: 4  # 0-10: ability to manage multiple sub-agents effectively
+  serialization_required: full
+  concurrency_notes: |
+  o3's chain-of-thought approach produces excellent results on individual
+  tasks but creates significant overhead when managing multiple concurrent
+  agents. The deep reasoning pipeline serializes naturally — it thinks
+  hard about each input before moving to the next.
+
+  Serialization advisory: STRONGLY serialize task dispatching when o3 is
+  the coordinator. Do not fire multiple sub-agent status reports at o3
+  simultaneously — queue them and process sequentially. Best used as a
+  specialist sub-agent, not as a coordinator.
+
+# ─── Notes ───
+notes: |
+  o3 is the deep reasoning model in the OpenAI lineup. Its chain-of-thought
+  approach makes it exceptionally strong at complex analytical tasks — architecture
+  design, performance analysis, and algorithmic optimization — but the higher
+  latency and cost make it inefficient for routine work.
+
+  Best deployed as a specialist: call it in for the hard problems, not for
+  everyday task dispatch. Think of it as the consulting expert, not the
+  staff engineer.
+
+  Not yet tested extensively in WovenTeam context. Initial scores are
+  estimated from known capabilities and should be refined after Phase A
+  task execution.
+
+# ─── Changelog ───
+changelog:
+  - version: "1.1"
+    date: "2026-05-13"
+    changes: "Added concurrency limits, parallelization rating, and serialization advisory."
+  - version: "1.0"
+    date: "2026-05-13"
+    changes: "Initial profile creation. Scores estimated from known capabilities; not yet empirically validated in WovenTeam."

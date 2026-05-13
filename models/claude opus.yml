@@ -1,0 +1,118 @@
+# ─────────────────────────────────────────────
+# WovenTeam Model Profile: Claude Opus
+# ─────────────────────────────────────────────
+profile_version: "1.1"
+last_updated: "2026-05-13"
+
+# ─── Identity ───
+model_id: anthropic/claude-opus
+vendor: anthropic
+model_name: Claude Opus
+version: claude-opus-4-6
+cli_tool: claude
+cli_auth: claude auth login
+api_model_string: claude-opus-4-6
+
+# ─── Operational Status ───
+status: active
+status_reason: ""
+last_verified: "2026-05-13T00:00:00Z"
+
+# ─── Cost & Capacity ───
+cost:
+  input_per_1k_tokens: 0.015
+  output_per_1k_tokens: 0.075
+  max_context_tokens: 200000
+  max_output_tokens: 32000
+  rate_limit_rpm: 50
+  billing_model: per_token
+
+budget:
+  daily_ceiling_usd: 10.00
+  monthly_ceiling_usd: 150.00
+  current_month_usage_usd: 0.00       # orchestrator-managed at runtime
+  token_allotment_monthly: 0           # unlimited within budget ceiling
+  tokens_used_this_month: 0            # orchestrator-managed at runtime
+
+# ─── Capabilities ───
+capabilities:
+  multimodal_input: true               # images, PDFs
+  multimodal_output: false             # text only
+  code_execution: true                 # via Claude Code / tool use
+  web_search: true
+  file_handling: true
+  long_context: true                   # 200K tokens
+  structured_output: true              # reliable JSON, XML
+
+# ─── Role Suitability Matrix (0–10) ───
+suitability:
+  # Leadership & Coordination
+  program_manager: 9                   # Excellent strategic reasoning, long-context synthesis
+  project_manager: 8                   # Strong structured output, instruction following
+
+  # Architecture & Design
+  software_architect: 10               # Best-in-class system design reasoning
+  systems_architect: 9                 # Deep infrastructure knowledge, careful tradeoff analysis
+  mockup_artist: 5                     # Can produce text-based wireframes; no image generation
+  graphic_artist: 3                    # Text-only output limits visual asset production
+
+  # Implementation
+  frontend_dev: 7                      # Good HTML/CSS/JS; no visual preview capability
+  backend_dev: 9                       # Excellent code generation, ANSI C, PHP, API design
+  database_engineer: 8                 # Strong schema design, SQL optimization
+
+  # Quality
+  code_reviewer: 10                    # Best-in-class: thorough, nuanced, actionable feedback
+  tester: 7                            # Good test design; can be over-cautious on edge cases
+  performance_engineer: 8              # Strong analytical reasoning, profiling interpretation
+
+  # Operations
+  systems_administrator: 7             # Good Linux knowledge; benefits from real-time access
+  network_administrator: 6             # Adequate networking knowledge; not primary strength
+  database_administrator: 7            # Solid operational DB knowledge
+
+  # Delivery
+  integration_specialist: 7            # Good CI/CD knowledge; execution-focused
+  deployment_engineer: 6               # Adequate; prefers design over operations
+  technical_writer: 10                 # Best-in-class: clear, structured, audience-aware
+
+
+# ─── Concurrency & Parallelization ───
+concurrency:
+  max_concurrent_subagents: 4
+  parallelization_rating: 6  # 0-10: ability to manage multiple sub-agents effectively
+  serialization_required: partial
+  concurrency_notes: |
+  Opus excels at deep, sequential reasoning but its high token cost and
+  latency make heavy parallelization expensive. Best used as a coordinator
+  managing 3-4 complex sub-agents rather than 10+ simple ones. When assigned
+  to a PM role managing many agents, consider whether Sonnet's higher
+  concurrency ceiling at lower cost is more appropriate.
+
+  Serialization advisory: Opus handles interleaved context well but costs
+  scale linearly with context size. Keep sub-agent status reports concise
+  to avoid bloating the coordinator's context window.
+
+# ─── Notes ───
+notes: |
+  Claude Opus is the primary reasoning engine for WovenTeam. Observed strengths
+  during Passes 1-4: systems architecture framing, operational security analysis,
+  long-form structured output, and nuanced code review.
+
+  Cost is the main constraint — reserve for roles where reasoning depth justifies
+  the token spend. For routine tasks (simple test generation, boilerplate code),
+  Sonnet or cheaper models are more cost-effective.
+
+  The model excels at maintaining internal consistency across long documents and
+  catching subtle architectural violations during review.
+
+  Assigned as Dashboard & Strategy workgroup lead for Phase A.
+
+# ─── Changelog ───
+changelog:
+  - version: "1.1"
+    date: "2026-05-13"
+    changes: "Added concurrency limits, parallelization rating, and serialization advisory."
+  - version: "1.0"
+    date: "2026-05-13"
+    changes: "Initial profile creation. Suitability scores based on Pass 1-4 observations."
