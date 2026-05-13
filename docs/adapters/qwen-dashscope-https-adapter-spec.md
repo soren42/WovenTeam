@@ -3,8 +3,17 @@
 **Issue:** #8 — Qwen Adapter Implementation
 **Workgroup:** CLI/Backend (ChatGPT) • Documentation (Qwen) • Review (Gemini)
 **Author:** Qwen Max (Documentation Workgroup)
-**Status:** Draft v0.2 — review corrections applied (Claude), ready for Gemini review
+**Status:** Draft v0.3 — Gemini-approved; ready for implementation PR
 
+> **v0.3 revision notes (Claude, 2026-05-13):** incorporates Gemini's
+> Approved-with-Revisions verdict on v0.2. Adds the bubblewrap-jail
+> reference to §4A per the updated Issue #8 acceptance criteria;
+> resolves the four §8 open questions per Gemini's directives
+> (streaming → Phase 2, `bc` → acceptable, token cache → orchestration/
+> compliance layer not wrapper, endpoints → env var with safe
+> default); adds a new §9 consolidating Phase 2 deferrals so the
+> handoff point is unambiguous.
+>
 > **v0.2 revision notes (Claude, 2026-05-13):** corrected `~/woventeam/...`
 > paths to `/woventeam/...`; removed a §7.3 example that named the blocked
 > DeepSeek model; reconciled the §2.3 output envelope with the existing
@@ -12,7 +21,7 @@
 > §7.2 `qwen_max.yaml` rewrite to additive fields only (existing schema
 > in `models/README.md` is authoritative); replaced "T3Chat Emulation"
 > with a clearer phrasing; removed the contradictory `pip3 install
-> dashscope` line. The §6 Architecture Note records how this shell
+> dashscope` line. The §4A Architecture Note records how this shell
 > adapter slots beneath the C dispatcher being tracked in Issue #8.
 
 ---
@@ -262,9 +271,26 @@ complementary, not conflicting:
   `execve()`s a shell wrapper script — this document specifies one
   such script for Qwen.
 
-Issue #8's acceptance criteria will be updated to record this two-tier
-arrangement: C dispatcher + per-vendor adapter that may itself be a CLI
-or a shell wrapper.
+Issue #8's acceptance criteria record this two-tier arrangement: C
+dispatcher + per-vendor adapter that may itself be a CLI or a shell
+wrapper.
+
+**Sandboxing constraint (per Gemini's Issue #8 review):** every Tier 2
+invocation — including this shell wrapper — MUST run inside the
+`bubblewrap` (or `firejail`) jail constructed by the C dispatcher. The
+jail provides:
+
+- No network access except the specific DashScope API endpoint
+  configured via `DASHSCOPE_BASE_URL` (egress whitelisted per-vendor at
+  jail construction time)
+- Read-only access to the system filesystem
+- Read-write access only to the task workspace declared in
+  `payload.output_paths`
+
+The adapter does not know it is jailed; it just `exec`s `curl`/`jq`/
+`bc` and writes to the file paths it has been given. The dispatcher is
+the trust boundary, not the adapter. See Issue #8 acceptance criteria
+#1 for the canonical specification.
 
 ---
 
@@ -399,24 +425,74 @@ and must not appear in any routing example.
 
 ---
 
-## 8. Open Questions for Review (Gemini)
+## 8. Resolutions (from Gemini's v0.2 review, 2026-05-13)
 
-1. Should the adapter support DashScope's `incremental_output` streaming mode, or defer to Phase 2?
-2. Is `bc` acceptable as a dependency for cost calculation, or should we use integer math with scaling?
-3. Should we implement a local token cache to avoid re-counting identical prompts?
-4. How should we handle DashScope's region-specific endpoints (e.g., `dashscope-intl.aliyuncs.com`)?
+The four open questions raised in the v0.1 draft were resolved by
+Gemini's review of v0.2:
+
+1. **Streaming (`incremental_output`):** **Deferred to Phase 2.**
+   Phase 1 focuses on the vertical slice of single-shot task
+   completion. Streaming requires additional state machinery in the
+   wrapper and on the consuming side; not worth the complexity until
+   the basic loop is proven.
+
+2. **`bc` as a dependency for cost math:** **Accepted.** The adapter
+   already requires `curl` and `jq`; `bc` is a similarly POSIX-stable
+   addition and provides the precision needed for cost telemetry.
+   Integer math with scaling was considered and rejected as
+   unnecessarily error-prone for the small numbers involved.
+
+3. **Local prompt token cache:** **Deferred, and explicitly NOT a
+   wrapper concern.** Per-prompt token caching belongs at the
+   Orchestration / Compliance layer (above the wrapper), not in any
+   single vendor adapter. The wrapper reports tokens consumed per
+   call; the orchestrator decides whether to cache. See
+   [[project-runtime-vs-inference-separation]] for why caching at
+   the adapter is the wrong layer.
+
+4. **Region-specific endpoints (`dashscope-intl.aliyuncs.com` etc.):**
+   **Use the `DASHSCOPE_BASE_URL` environment variable** (already
+   defined in §2.1) with the production endpoint as the safe default.
+   Operators in regions requiring an alternate endpoint set the env
+   var per-agent-instance; no code change.
 
 ---
 
-## 9. Next Steps
+## 9. Phase 2 Deferrals (consolidated)
 
-1. **ChatGPT (CLI/Backend)**: Implement `bin/adapters/qwen_dashscope_wrapper.sh` per this spec.
-2. **Gemini (Review)**: Validate adapter against schema-v0.1.json and test error paths.
-3. **Qwen (Docs)**: Update `docs/dev-guide/03-extending-vendor-support.md` with this adapter as example.
-4. **CEO (Jason)**: Approve DashScope API key provisioning workflow for dedicated per-agent credentials.
+Items intentionally NOT in scope for Phase 1, but explicitly
+acknowledged so Phase 2 has a clean pickup list:
+
+| Item                              | Layer where it should land                  | Trigger to revisit                         |
+|-----------------------------------|---------------------------------------------|--------------------------------------------|
+| DashScope `incremental_output` streaming | Adapter (this wrapper) + consumer in wt-agent | When long-running roles need progress feedback |
+| Local prompt token cache          | Orchestration / Compliance layer            | When prompt repetition justifies the lookup cost |
+| Tool-use / function-calling beyond basic JSON | Adapter + dispatcher                | When a role needs DashScope function-calling specifically |
+| DashScope Python SDK              | Adapter (replace `curl`+`jq` path)          | Only if Phase 2 features above force the issue |
+
+The Phase 2 trigger for each is documented separately from the
+implementation — each row above is a follow-up that can be filed as
+its own issue when the trigger condition is met.
+
+---
+
+## 10. Next Steps
+
+1. **ChatGPT (CLI/Backend)**: Implement the C dispatcher per Issue #8
+   acceptance criteria, then implement `bin/adapters/qwen_dashscope_wrapper.sh`
+   per this spec under the bubblewrap jail it constructs.
+2. **Gemini (Review)**: Final Green Light review of the implementation
+   PRs against the adapter contract and Issue #8 acceptance criteria
+   (sandboxing, envelope, path pinning).
+3. **Qwen (Docs)**: Author `docs/dev-guide/03-extending-vendor-support.md`
+   with this adapter as the worked example for future vendor wrappers.
+4. **CEO (Jason)**: Approve DashScope API key provisioning workflow for
+   dedicated per-agent credentials (`/woventeam/vault/qwen/api_key` or
+   `DASHSCOPE_API_KEY` env).
 
 ---
 
 *WovenTeam • Solarian • xenon.akoria.net*
-*Document Version: 0.2 • Last Updated: 2026-05-13*
-*Authorship: Qwen Max (v0.1 draft) • Claude Opus (v0.2 review corrections)*
+*Document Version: 0.3 • Last Updated: 2026-05-13*
+*Authorship: Qwen Max (v0.1 draft) • Claude Opus (v0.2 review corrections + v0.3 Gemini-resolution incorporation)*
+*Review status: Gemini-approved 🟡 → Green Light pending implementation PRs*
