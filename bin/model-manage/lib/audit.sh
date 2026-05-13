@@ -18,34 +18,29 @@ generate_audit_report() {
     ownership_block="No coordination-api ownership change for this action."
   fi
 
+  # Bash 5.2 enables `patsub_replacement` by default, which makes `&` in the
+  # replacement string of ${var//pat/repl} mean "the matched pattern" —
+  # corrupting any payload that contains a literal `&` (e.g. "Versioning &
+  # review"). Disable it so the replacement is literal.
+  local _prev_patsub
+  _prev_patsub="$(shopt -p patsub_replacement 2>/dev/null || true)"
+  shopt -u patsub_replacement 2>/dev/null || true
+
   local rendered
-  rendered="$(awk \
-    -v ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-    -v action="$action" \
-    -v model="$model" \
-    -v vendor="$vendor" \
-    -v workgroup="$workgroup" \
-    -v dry="$WT_DRY_RUN" \
-    -v registry="$WT_MODELS_JSON" \
-    -v logfile="$WT_LOG_FILE" \
-    -v entry="$registry_entry" \
-    -v ownership="$ownership_block" \
-    -v failures="${WT_VERIFY_FAILURES:-0}" \
-    '
-    {
-      gsub(/\{\{TIMESTAMP\}\}/, ts)
-      gsub(/\{\{ACTION\}\}/, action)
-      gsub(/\{\{MODEL\}\}/, model)
-      gsub(/\{\{VENDOR\}\}/, vendor)
-      gsub(/\{\{WORKGROUP\}\}/, workgroup)
-      gsub(/\{\{DRY_RUN\}\}/, dry)
-      gsub(/\{\{REGISTRY\}\}/, registry)
-      gsub(/\{\{LOG\}\}/, logfile)
-      gsub(/\{\{REGISTRY_ENTRY\}\}/, entry)
-      gsub(/\{\{OWNERSHIP_BLOCK\}\}/, ownership)
-      gsub(/\{\{VERIFY_FAILURES\}\}/, failures)
-      print
-    }' "$template")"
+  rendered="$(<"$template")"
+  rendered="${rendered//\{\{TIMESTAMP\}\}/$(date -u +%Y-%m-%dT%H:%M:%SZ)}"
+  rendered="${rendered//\{\{ACTION\}\}/$action}"
+  rendered="${rendered//\{\{MODEL\}\}/$model}"
+  rendered="${rendered//\{\{VENDOR\}\}/$vendor}"
+  rendered="${rendered//\{\{WORKGROUP\}\}/$workgroup}"
+  rendered="${rendered//\{\{DRY_RUN\}\}/$WT_DRY_RUN}"
+  rendered="${rendered//\{\{REGISTRY\}\}/$WT_MODELS_JSON}"
+  rendered="${rendered//\{\{LOG\}\}/$WT_LOG_FILE}"
+  rendered="${rendered//\{\{REGISTRY_ENTRY\}\}/$registry_entry}"
+  rendered="${rendered//\{\{OWNERSHIP_BLOCK\}\}/$ownership_block}"
+  rendered="${rendered//\{\{VERIFY_FAILURES\}\}/${WT_VERIFY_FAILURES:-0}}"
 
   printf '%s\n' "$rendered" | write_file_from_stdin "$report"
+
+  eval "$_prev_patsub" 2>/dev/null || true
 }

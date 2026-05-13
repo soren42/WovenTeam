@@ -78,8 +78,12 @@ YES
 INPUT
 
 # Inventory should have matched mixed-case "TestModel" because grep -i is used.
-grep -q 'casetest.txt' "$TMPDIR/live-remove.out" || {
+# Matches live in the per-run inventory file, not stdout.
+live_inv="$(ls "$TMPDIR/logs"/inventory-*.txt 2>/dev/null | tail -1)"
+grep -q 'casetest.txt' "$live_inv" || {
   echo "FAIL: case-insensitive inventory did not match TestModel" >&2
+  echo "inventory file: $live_inv" >&2
+  [[ -f "$live_inv" ]] && cat "$live_inv" >&2
   cat "$TMPDIR/live-remove.out" >&2
   exit 1
 }
@@ -106,5 +110,54 @@ ls "$TMPDIR/audit"/model-manage-remove-testmodel-*.md >/dev/null
 report="$(ls "$TMPDIR/audit"/model-manage-remove-testmodel-*.md | head -1)"
 grep -q 'Ownership transfer' "$report"
 grep -q 'fakevendor' "$report"
+# Substituted blocks must not leak their template placeholders.
+if grep -q '{{' "$report"; then
+  echo "FAIL: audit report still contains unresolved {{...}} placeholders" >&2
+  grep -n '{{' "$report" >&2
+  exit 1
+fi
+grep -q 'Versioning & review: Gemini' "$report"
 
-echo "model-manage integration test passed (dry-run + live sandbox)"
+# Feedback-loop guard: inventory must not recurse into logs / backups / audit
+# dirs that live inside the scan root, otherwise grep reads its own growing
+# output and the run explodes.
+LOOP_DIR="$TMPDIR/loop"
+mkdir -p "$LOOP_DIR/logs" "$LOOP_DIR/backups" "$LOOP_DIR/docs/audit" "$LOOP_DIR/legit"
+printf 'deepseek-bait\n' > "$LOOP_DIR/logs/old.log"
+printf 'deepseek-bait\n' > "$LOOP_DIR/backups/old.bak"
+printf 'deepseek-bait\n' > "$LOOP_DIR/docs/audit/old-report.md"
+printf 'deepseek legit reference\n' > "$LOOP_DIR/legit/notes.txt"
+
+env \
+  WT_MODELS_JSON="$TMPDIR/config/models.json" \
+  WT_LOG_ROOT="$TMPDIR/loop-logs" \
+  WT_AUDIT_ROOT="$TMPDIR/loop-audit" \
+  WT_BACKUP_ROOT="$TMPDIR/loop-backups" \
+  WT_DB_PATH="$TMPDIR/missing.db" \
+  WT_SCAN_ROOT="$LOOP_DIR" \
+  WT_ENV_FILES="$TMPDIR/none" \
+  "$ROOT/bin/model-manage/wt-model-manage.sh" --dry-run audit deepseek \
+  > "$TMPDIR/loop-audit.out" 2>&1
+
+# Inventory file must contain the legit hit and NOT the bait hits.
+inv_file="$(ls "$TMPDIR/loop-logs"/inventory-*.txt | head -1)"
+grep -q "$LOOP_DIR/legit/notes.txt" "$inv_file"
+if grep -q "$LOOP_DIR/logs/old.log" "$inv_file"; then
+  echo "FAIL: inventory included $LOOP_DIR/logs/old.log (should have been excluded)" >&2; exit 1
+fi
+if grep -q "$LOOP_DIR/backups/old.bak" "$inv_file"; then
+  echo "FAIL: inventory included $LOOP_DIR/backups/old.bak (should have been excluded)" >&2; exit 1
+fi
+if grep -q "$LOOP_DIR/docs/audit/old-report.md" "$inv_file"; then
+  echo "FAIL: inventory included audit dir (should have been excluded)" >&2; exit 1
+fi
+
+# Main log file must remain bounded (< 1 MB) — proves no feedback loop.
+loop_log="$(ls "$TMPDIR/loop-logs"/model-manage-*.log | head -1)"
+loop_log_size="$(stat -c%s "$loop_log")"
+if [[ "$loop_log_size" -gt 1048576 ]]; then
+  echo "FAIL: main log grew unexpectedly large ($loop_log_size bytes)" >&2
+  exit 1
+fi
+
+echo "model-manage integration test passed (dry-run + live sandbox + feedback-loop guard)"
