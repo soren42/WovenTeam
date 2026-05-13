@@ -1,6 +1,6 @@
 # ROLE: Front-end / UI Developer
 
-**Role ID:** `frontend_developer`
+**Role ID:** `frontend_dev`
 **Version:** 1.0
 **Category:** Implementation
 **Reports To:** Project Manager
