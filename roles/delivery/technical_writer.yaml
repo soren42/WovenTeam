@@ -1,0 +1,76 @@
+# ─────────────────────────────────────────────
+# WovenTeam Role Configuration: Technical Writer
+# ─────────────────────────────────────────────
+# Operational layer for `roles/delivery/ROLE_technical_writer.md`.
+# Generated from `roles/role_config_template.yaml`.
+# See `models/README.md` and `roles/README.md` for the three-layer paradigm.
+
+role_id: "technical_writer"
+config_version: "1.0"
+last_updated: "2026-05-13"
+
+# ─── Role Metadata ───
+category: "delivery"
+role_md_path: "roles/delivery/ROLE_technical_writer.md"
+
+# ─── Model Routing ───
+#
+# Routing rationale (2026-05-13):
+#   Suitability scores favor Claude Opus (10) and Qwen Max (8) for this
+#   role. However, the live deployment on xenon has an installed `claude`
+#   agentic CLI but no `qwen` CLI or DashScope client wired into wt-agent.
+#   Until a vendor adapter exists for Qwen (tracked separately), route
+#   technical_writer tasks to Claude Opus so they actually execute end
+#   to end. Fallback stays on Qwen for forward-compatibility once an
+#   adapter ships.
+#
+routing:
+  preferred_model: "anthropic/claude-opus"
+  fallback_model: "qwen/qwen-max"
+  minimum_suitability: 6
+  model_override: null
+
+# ─── Cost Limits ───
+cost:
+  max_tokens_per_task: 16000           # docs tasks can be long
+  cost_limit_per_task_usd: 2.50
+  cost_limit_per_sprint_usd: 25.00
+
+# ─── Tool Permissions ───
+tools:
+  - file_read_write
+  - git_commit
+  - shell_execute_sandbox
+
+# ─── System Permissions ───
+permissions:
+  network: "read"                      # may fetch reference docs
+  servers: "none"
+  code: "create_branches"              # docs land via PR; no direct main commits
+  homelab: "read"
+
+# ─── Meeting Rules ───
+meeting_rules:
+  attends:
+    - daily_standup
+    - sprint_planning
+  reports_to: "project_manager"
+
+# ─── Stage Gates ───
+stage_gates:
+  - id: "draft_complete"
+    auto_proceed: true
+  - id: "review_passed"
+    auto_proceed: false
+    requires_approval:
+      - code_reviewer
+      - project_manager
+
+# ─── Changelog ───
+changelog:
+  - version: "1.0"
+    date: "2026-05-13"
+    changes: |
+      Initial routing config for the technical_writer role.
+      preferred_model set to anthropic/claude-opus pending a Qwen
+      adapter (see GitHub issue for vendor-CLI orchestration).
