@@ -10,7 +10,7 @@
 - Publishes task results to `wt:tasks:result`.
 - Publishes lifecycle events to `wt:events:log`.
 - Updates the SQLite `tasks.status` field at `WOVENTEAM_DB`, defaulting to `/woventeam/woventeam.db`.
-- Posts task completion to Slack when `/woventeam/config/slack_webhook.txt` exists.
+- Posts task completion to Slack when `/woventeam/config/slack_webhook.txt` exists. The file may hold a single bare URL or one-per-line `KEY=VALUE` pairs (e.g. `integration=https://hooks.slack.com/...`); `WOVENTEAM_SLACK_WEBHOOK_KEY` selects which key to use (default `integration`), with fallback to the first URL found.
 
 `payload.command` is executed by the shell with stderr folded into stdout. A zero exit code marks the task `complete`; a nonzero exit code marks it `error`. Captured output is limited to 1 MiB; the agent continues draining the child process after that limit and marks the result payload as `truncated`.
 
@@ -70,6 +70,7 @@ WOVENTEAM_ACK_CHANNEL=wt:tasks:ack
 WOVENTEAM_RESULT_CHANNEL=wt:tasks:result
 WOVENTEAM_EVENT_CHANNEL=wt:events:log
 WOVENTEAM_SLACK_WEBHOOK_FILE=/woventeam/config/slack_webhook.txt
+WOVENTEAM_SLACK_WEBHOOK_KEY=integration
 ```
 
 Slack posting uses `curl` and is best-effort. Use `--no-slack` for local tests or CI runs where no webhook should be called.
