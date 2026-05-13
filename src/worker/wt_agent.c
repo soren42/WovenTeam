@@ -21,6 +21,7 @@
 #define WT_DEFAULT_RESULT_CHANNEL "wt:tasks:result"
 #define WT_DEFAULT_EVENT_CHANNEL "wt:events:log"
 #define WT_DEFAULT_SLACK_WEBHOOK_FILE "/woventeam/config/slack_webhook.txt"
+#define WT_DEFAULT_SLACK_WEBHOOK_KEY "integration"
 #define WT_OUTPUT_CHUNK 4096
 #define WT_OUTPUT_LIMIT (1024 * 1024)
 #define WT_TASK_IGNORED 2
@@ -35,6 +36,7 @@ typedef struct {
     const char *result_channel;
     const char *event_channel;
     const char *slack_webhook_file;
+    const char *slack_webhook_key;
     const char *task_json_path;
     bool once;
     bool no_redis;
@@ -72,9 +74,10 @@ static void usage(FILE *stream, const char *argv0) {
             "  WOVENTEAM_DB=%s\n"
             "  WOVENTEAM_REDIS_HOST=%s\n"
             "  WOVENTEAM_REDIS_PORT=%d\n"
-            "  WOVENTEAM_SLACK_WEBHOOK_FILE=%s\n",
+            "  WOVENTEAM_SLACK_WEBHOOK_FILE=%s\n"
+            "  WOVENTEAM_SLACK_WEBHOOK_KEY=%s\n",
             argv0, WT_DEFAULT_DB, WT_DEFAULT_REDIS_HOST, WT_DEFAULT_REDIS_PORT,
-            WT_DEFAULT_SLACK_WEBHOOK_FILE);
+            WT_DEFAULT_SLACK_WEBHOOK_FILE, WT_DEFAULT_SLACK_WEBHOOK_KEY);
 }
 
 static int parse_args(int argc, char **argv, wt_config *cfg) {
@@ -90,6 +93,7 @@ static int parse_args(int argc, char **argv, wt_config *cfg) {
     cfg->result_channel = env_default("WOVENTEAM_RESULT_CHANNEL", WT_DEFAULT_RESULT_CHANNEL);
     cfg->event_channel = env_default("WOVENTEAM_EVENT_CHANNEL", WT_DEFAULT_EVENT_CHANNEL);
     cfg->slack_webhook_file = env_default("WOVENTEAM_SLACK_WEBHOOK_FILE", WT_DEFAULT_SLACK_WEBHOOK_FILE);
+    cfg->slack_webhook_key = env_default("WOVENTEAM_SLACK_WEBHOOK_KEY", WT_DEFAULT_SLACK_WEBHOOK_KEY);
     cfg->task_json_path = NULL;
     cfg->once = false;
     cfg->no_redis = false;
@@ -149,27 +153,62 @@ static char *read_file(const char *path) {
     return buf;
 }
 
-static char *read_first_line(const char *path) {
+static char *trim_inplace(char *s, size_t *out_len) {
+    while (*s == ' ' || *s == '\t') s++;
+    size_t n = strlen(s);
+    while (n > 0 && (s[n - 1] == '\n' || s[n - 1] == '\r' ||
+                     s[n - 1] == ' '  || s[n - 1] == '\t')) {
+        s[--n] = '\0';
+    }
+    if (out_len) *out_len = n;
+    return s;
+}
+
+/* Read the Slack webhook URL for `key` from a config file that may hold
+ * either a single bare URL or one-per-line KEY=VALUE pairs (e.g.
+ * `integration=https://hooks.slack.com/...`). If no entry matches `key`,
+ * falls back to the first line whose URL begins with
+ * `https://hooks.slack.com/`. Returns a malloc'd string the caller must
+ * free, or NULL when no usable URL was found. */
+static char *read_slack_webhook(const char *path, const char *key) {
     FILE *fp = fopen(path, "r");
     if (!fp) {
         return NULL;
     }
+    const char *URL_PREFIX = "https://hooks.slack.com/";
     char *line = NULL;
     size_t cap = 0;
-    ssize_t n = getline(&line, &cap, fp);
+    char *match = NULL;
+    char *fallback = NULL;
+    ssize_t n;
+    while ((n = getline(&line, &cap, fp)) > 0) {
+        size_t len = 0;
+        char *trimmed = trim_inplace(line, &len);
+        if (len == 0 || trimmed[0] == '#') continue;
+        char *eq = strchr(trimmed, '=');
+        if (eq) {
+            *eq = '\0';
+            char *k = trim_inplace(trimmed, NULL);
+            char *v = trim_inplace(eq + 1, NULL);
+            if (key && strcmp(k, key) == 0) {
+                match = strdup(v);
+                break;
+            }
+            if (!fallback && strncmp(v, URL_PREFIX, strlen(URL_PREFIX)) == 0) {
+                fallback = strdup(v);
+            }
+        } else if (!fallback &&
+                   strncmp(trimmed, URL_PREFIX, strlen(URL_PREFIX)) == 0) {
+            fallback = strdup(trimmed);
+        }
+    }
+    free(line);
     fclose(fp);
-    if (n <= 0) {
-        free(line);
-        return NULL;
+    if (match) {
+        free(fallback);
+        return match;
     }
-    while (n > 0 && (line[n - 1] == '\n' || line[n - 1] == '\r')) {
-        line[--n] = '\0';
-    }
-    if (n == 0) {
-        free(line);
-        return NULL;
-    }
-    return line;
+    return fallback;
 }
 
 static int sqlite_set_status(const wt_config *cfg, const char *task_id, const char *status) {
@@ -260,7 +299,8 @@ static int post_slack(const wt_config *cfg, const char *message) {
     if (cfg->no_slack) {
         return 0;
     }
-    char *webhook = read_first_line(cfg->slack_webhook_file);
+    char *webhook = read_slack_webhook(cfg->slack_webhook_file,
+                                       cfg->slack_webhook_key);
     if (!webhook) {
         return 0;
     }
