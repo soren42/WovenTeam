@@ -17,7 +17,7 @@ COMMON_OBJS := \
 	$(BUILD_DIR)/wt_room_store.o \
 	$(BUILD_DIR)/wt_time.o
 
-.PHONY: all clean run-roomd run-demo test-smoke test
+.PHONY: all clean run-roomd run-demo test-smoke test install-roomd-service
 
 all: $(BUILD_DIR)/wt-roomd $(BUILD_DIR)/wt-say $(BUILD_DIR)/wt-tail $(BUILD_DIR)/wt-agent
 
@@ -54,6 +54,11 @@ test-smoke: all
 	./tests/smoke-phase0-room.sh
 
 test: test-smoke
+
+install-roomd-service: all
+	sudo install -m 0644 deploy/systemd/wt-roomd.service /etc/systemd/system/
+	sudo systemctl daemon-reload
+	sudo systemctl enable --now wt-roomd.service
 
 clean:
 	rm -rf $(BUILD_DIR)
