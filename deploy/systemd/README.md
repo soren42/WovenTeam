@@ -1,7 +1,7 @@
 # systemd deployment for WovenTeam Phase 0
 
 This directory holds systemd units for the native Phase 0 room daemon and for
-one `wt-agent` process per peer model (claude, chatgpt, gemini, qwen) on
+one `wt-agent` process per supported room model (claude, chatgpt, gemini) on
 `xenon`.
 
 ## Room daemon
@@ -39,60 +39,52 @@ sudo systemctl daemon-reload
 sudo systemctl enable --now \
   wt-agent@claude.service \
   wt-agent@chatgpt.service \
-  wt-agent@gemini.service \
-  wt-agent@qwen.service
+  wt-agent@gemini.service
 ```
 
-Each instance subscribes to Redis `wt:tasks:new` and filters by
-`payload.assigned_to` matching its `%i` instance name.
-
-## Required Redis config
-
-When an agent is killed abruptly (SIGKILL, host crash, network drop), its
-TCP socket to Redis is not closed cleanly. Without keepalive, the stale
-connection lingers indefinitely as a phantom pub/sub subscriber and
-`redis-cli PUBSUB NUMSUB wt:tasks:new` will overcount.
-
-Set Redis-side keepalive to 60s so the kernel starts probing dead
-connections after 60s of idle time:
+The Makefile helper installs the current template, disables the obsolete Qwen
+instance, clears failed agent states, and starts the supported instances:
 
 ```sh
-# Live (applies to new connections):
-sudo redis-cli CONFIG SET tcp-keepalive 60
-sudo redis-cli CONFIG REWRITE   # persists into /etc/redis/redis.conf
-
-# Force existing connections to reconnect with keepalive enabled:
-sudo systemctl restart 'wt-agent@*.service'
+make install-agent-services
 ```
 
-Verify:
+## Agent boot failure checklist
+
+If agents fail on boot with repeated usage output and `status=2`, check the
+installed template:
 
 ```sh
-redis-cli CONFIG GET tcp-keepalive   # → tcp-keepalive 60
-redis-cli PUBSUB NUMSUB wt:tasks:new # → 4 (one per active agent)
+systemctl status 'wt-agent@*.service'
+journalctl -u wt-agent@claude.service -n 50 --no-pager
+systemctl cat wt-agent@claude.service
 ```
 
-**Timing note.** Redis's `tcp-keepalive` only sets `TCP_KEEPIDLE` (the
-idle threshold). The probe interval (`TCP_KEEPINTVL`, default 75s) and
-probe count (`TCP_KEEPCNT`, default 9) come from kernel sysctl. With
-defaults that means a dead connection is reaped roughly 60s + 75×9 =
-~12 minutes after it goes silent. That is good enough to prevent
-indefinite zombie subscribers but slow for interactive debugging. For
-faster reaping on a dev/CI host:
+The native Phase 0 room agent must be launched as:
 
 ```sh
-sudo sysctl -w net.ipv4.tcp_keepalive_intvl=10
-sudo sysctl -w net.ipv4.tcp_keepalive_probes=3
-# Total reap = ~60s idle + 10s × 3 probes = ~90s
+/woventeam/repos/WovenTeam/bin/wt-agent --agent claude --loop --config /woventeam/repos/WovenTeam/config/woventeam-phase0.conf
 ```
 
-To force-clear stale subscribers immediately:
+The older `bin/wt-agent %i` form exits with usage status because the native
+agent requires `--agent`. The older Redis dependency is also not part of this
+room-mode agent. Apply the repo template with:
 
 ```sh
-# Identify by remote port not matching any live agent's redis socket.
-redis-cli CLIENT LIST TYPE pubsub
-sudo redis-cli CLIENT KILL ID <stale-id>
+make install-agent-services
 ```
+
+Expected boot state:
+
+```sh
+systemctl is-enabled wt-agent@claude.service wt-agent@chatgpt.service wt-agent@gemini.service
+systemctl is-active wt-agent@claude.service wt-agent@chatgpt.service wt-agent@gemini.service
+systemctl is-enabled wt-agent@qwen.service  # disabled until Qwen room support exists
+```
+
+When multiple agents respond at the same time, `wt_room_store.c` assigns and
+appends each message while holding the room-log lock. `make test-smoke`
+includes a concurrent-agent check to prevent duplicate `messageId` regression.
 
 ## Operational notes
 
@@ -100,8 +92,7 @@ sudo redis-cli CLIENT KILL ID <stale-id>
   `journalctl -u wt-agent@claude -f`
 - The unit is lightly hardened (`NoNewPrivileges`, `ProtectSystem=full`,
   `ProtectHome=read-only`, `PrivateTmp=yes`) with `ReadWritePaths=/woventeam`
-  so the worker can write to SQLite at `/woventeam/woventeam.db` and to
-  `/woventeam/logs`.
+  so the agent can write room logs, state files, and build outputs.
 - `Restart=on-failure, RestartSec=5s` — crashes or SIGKILLs come back
   within ~5s.
 - The launcher `bin/wt-agent` runs `make -q build/wt-agent` and rebuilds

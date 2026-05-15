@@ -1,16 +1,15 @@
 [Unit]
 Description=WovenTeam wt-agent (%i)
 Documentation=file:///woventeam/repos/WovenTeam/docs/cli/wt-agent.md
-After=network-online.target redis-server.service
-Wants=network-online.target
-Requires=redis-server.service
+After=network-online.target wt-roomd.service
+Wants=network-online.target wt-roomd.service
 
 [Service]
 Type=exec
 User=woven
 Group=woven
 WorkingDirectory=/woventeam/repos/WovenTeam
-ExecStart=/woventeam/repos/WovenTeam/bin/wt-agent %i
+ExecStart=/woventeam/repos/WovenTeam/bin/wt-agent --agent %i --loop --config /woventeam/repos/WovenTeam/config/woventeam-phase0.conf
 Restart=on-failure
 RestartSec=5s
 KillSignal=SIGTERM
@@ -19,8 +18,8 @@ StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=wt-agent-%i
 
-# Light hardening — woven still needs write access to /woventeam for SQLite
-# and log files, but everything else is locked down.
+# Light hardening. The native room agent writes only under /woventeam: build
+# artifacts when the launcher rebuilds, the JSONL room log, and state files.
 NoNewPrivileges=yes
 ProtectSystem=full
 ProtectHome=read-only

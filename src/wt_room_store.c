@@ -96,11 +96,59 @@ int wtRoomAppendMessage(const char *roomLogPath, const WtMessage *message, bool 
 }
 
 int wtRoomAppendNewMessage(const char *roomLogPath, WtMessage *message, bool fsyncEachMessage) {
-    message->messageId = wtRoomReadLastMessageId(roomLogPath) + 1;
+    if (wtRoomEnsureParentDirs(roomLogPath) != 0) {
+        return -1;
+    }
+    int fd = open(roomLogPath, O_CREAT | O_RDWR, 0644);
+    if (fd < 0) {
+        return -1;
+    }
+    if (flock(fd, LOCK_EX) != 0) {
+        close(fd);
+        return -1;
+    }
+
+    long lastId = 0;
+    FILE *reader = fdopen(dup(fd), "r");
+    if (!reader) {
+        flock(fd, LOCK_UN);
+        close(fd);
+        return -1;
+    }
+    char line[WT_MESSAGE_JSON_SIZE];
+    while (fgets(line, sizeof(line), reader)) {
+        WtMessage existingMessage;
+        if (wtMessageFromJsonLine(line, &existingMessage) == 0 && existingMessage.messageId > lastId) {
+            lastId = existingMessage.messageId;
+        }
+    }
+    fclose(reader);
+
+    message->messageId = lastId + 1;
     if (message->createdAtUnixMs == 0) {
         message->createdAtUnixMs = wtNowUnixMilliseconds();
     }
-    return wtRoomAppendMessage(roomLogPath, message, fsyncEachMessage);
+
+    char json[WT_MESSAGE_JSON_SIZE];
+    if (wtMessageToJson(message, json, sizeof(json)) != 0) {
+        flock(fd, LOCK_UN);
+        close(fd);
+        return -1;
+    }
+    if (lseek(fd, 0, SEEK_END) < 0) {
+        flock(fd, LOCK_UN);
+        close(fd);
+        return -1;
+    }
+    size_t length = strlen(json);
+    int ok = write(fd, json, length) == (ssize_t)length &&
+             write(fd, "\n", 1) == 1;
+    if (ok && fsyncEachMessage) {
+        ok = fsync(fd) == 0;
+    }
+    flock(fd, LOCK_UN);
+    close(fd);
+    return ok ? 0 : -1;
 }
 
 int wtRoomReadRecent(const char *roomLogPath, int limit, WtMessage *messages, int maxMessages) {

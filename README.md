@@ -57,4 +57,5 @@ make run-demo
 make test-smoke
 make DEBUG=1
 make install-roomd-service
+make install-agent-services
 ```
