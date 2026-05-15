@@ -1,0 +1,144 @@
+:root {
+  color-scheme: light;
+  --bg: #f7f7f4;
+  --ink: #202225;
+  --muted: #646b73;
+  --line: #d8dad6;
+  --panel: #ffffff;
+  --accent: #1d6f64;
+  --warn: #a44334;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  background: var(--bg);
+  color: var(--ink);
+}
+
+.shell {
+  min-height: 100vh;
+  display: grid;
+  grid-template-rows: auto 1fr auto auto;
+  gap: 12px;
+  padding: 16px;
+  max-width: 960px;
+  margin: 0 auto;
+}
+
+.topbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 12px;
+}
+
+h1 {
+  margin: 0;
+  font-size: 24px;
+}
+
+p {
+  margin: 4px 0 0;
+  color: var(--muted);
+}
+
+.status {
+  min-width: 112px;
+  text-align: center;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-size: 13px;
+}
+
+.connected {
+  color: var(--accent);
+}
+
+.disconnected {
+  color: var(--warn);
+}
+
+.transcript {
+  overflow: auto;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 12px;
+}
+
+.message {
+  border-bottom: 1px solid var(--line);
+  padding: 10px 0;
+}
+
+.message:last-child {
+  border-bottom: 0;
+}
+
+.meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.body {
+  white-space: pre-wrap;
+  margin-top: 6px;
+  line-height: 1.45;
+}
+
+.composer {
+  display: grid;
+  grid-template-columns: 140px 1fr 96px;
+  gap: 8px;
+}
+
+select,
+textarea,
+button {
+  font: inherit;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel);
+  color: var(--ink);
+}
+
+textarea {
+  resize: vertical;
+  padding: 10px;
+}
+
+button,
+select {
+  min-height: 42px;
+  padding: 0 12px;
+}
+
+button {
+  cursor: pointer;
+  background: var(--accent);
+  color: white;
+  border-color: var(--accent);
+}
+
+.quickbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+@media (max-width: 700px) {
+  .composer {
+    grid-template-columns: 1fr;
+  }
+}

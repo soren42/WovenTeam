@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>WovenTeam Phase 0 Native C Architecture</title>
+  <link rel="stylesheet" href="architecture.css">
+</head>
+<body>
+  <main>
+    <h1>WovenTeam Phase 0 Native C Architecture</h1>
+    <p>Generated <span id="generatedAt"></span></p>
+
+    <section>
+      <h2>Mission</h2>
+      <p>Prove that the CEO, Claude, ChatGPT, and Gemini can share one durable local room where state lives outside every vendor surface.</p>
+    </section>
+
+    <section>
+      <h2>Core Process</h2>
+      <pre>CEO browser or wt-say
+        |
+        v
+wt-roomd HTTP/SSE server
+        |
+        v
+data/phase0-room.jsonl
+        |
+        v
+wt-agent --agent claude|chatgpt|gemini</pre>
+    </section>
+
+    <section>
+      <h2>Why Native C</h2>
+      <p>The Phase 0 core is the durable room fabric for a limited-resource GNU/Linux host. It avoids Docker, Node, Python, PHP, and framework runtimes so the running system stays small, inspectable, and cheap.</p>
+    </section>
+
+    <section>
+      <h2>Message Schema</h2>
+      <pre>{
+  "messageId": 1,
+  "roomName": "phase0",
+  "senderName": "ceo",
+  "targetName": "all",
+  "messageType": "chat",
+  "messageBody": "Hello team.",
+  "createdAtUnixMs": 1778870000000,
+  "replyToMessageId": 0
+}</pre>
+    </section>
+
+    <section>
+      <h2>Build And Run</h2>
+      <pre>make clean
+make
+cp config/woventeam-phase0.conf.example config/woventeam-phase0.conf
+./build/wt-roomd --config config/woventeam-phase0.conf
+./build/wt-agent --agent claude --loop
+./build/wt-agent --agent chatgpt --loop
+./build/wt-agent --agent gemini --loop
+./build/wt-say ceo all "Claude, ChatGPT, Gemini: each confirm."
+./build/wt-tail --limit 20</pre>
+    </section>
+
+    <section>
+      <h2>Access</h2>
+      <p>The daemon binds to <code>0.0.0.0:8787</code> by default so a headless intranet host can serve the browser UI at <code>http://HOSTNAME_OR_IP:8787/</code>.</p>
+    </section>
+
+    <section>
+      <h2>Future Extension Points</h2>
+      <p>Redis, Slack, systemd services, vendor CLI adapters, indexing, authentication, TLS, and multi-room dashboards are intentionally outside this spike and can be added behind the same room-store boundary.</p>
+    </section>
+  </main>
+  <script src="architecture.js"></script>
+</body>
+</html>

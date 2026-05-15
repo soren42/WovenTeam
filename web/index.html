@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>WovenTeam Phase 0 Room</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <main class="shell">
+    <header class="topbar">
+      <div>
+        <h1>Phase 0 Room</h1>
+        <p>CEO, Claude, ChatGPT, and Gemini shared transcript</p>
+      </div>
+      <span id="status" class="status disconnected">disconnected</span>
+    </header>
+
+    <section id="transcript" class="transcript" aria-live="polite"></section>
+
+    <form id="composer" class="composer">
+      <select id="targetName" aria-label="Target">
+        <option value="all">All</option>
+        <option value="claude">Claude</option>
+        <option value="chatgpt">ChatGPT</option>
+        <option value="gemini">Gemini</option>
+      </select>
+      <textarea id="messageBody" rows="3" maxlength="4000" placeholder="Message the room"></textarea>
+      <button type="submit">Send</button>
+    </form>
+
+    <nav class="quickbar" aria-label="Quick targets">
+      <button data-target="all">Ask all agents</button>
+      <button data-target="claude">Ask Claude</button>
+      <button data-target="chatgpt">Ask ChatGPT</button>
+      <button data-target="gemini">Ask Gemini</button>
+    </nav>
+  </main>
+  <script src="/app.js"></script>
+</body>
+</html>
