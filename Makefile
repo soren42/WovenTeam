@@ -17,7 +17,7 @@ COMMON_OBJS := \
 	$(BUILD_DIR)/wt_room_store.o \
 	$(BUILD_DIR)/wt_time.o
 
-.PHONY: all clean run-roomd run-demo test-smoke test install-roomd-service
+.PHONY: all clean run-roomd run-demo test-smoke test install-roomd-service install-agent-services
 
 all: $(BUILD_DIR)/wt-roomd $(BUILD_DIR)/wt-say $(BUILD_DIR)/wt-tail $(BUILD_DIR)/wt-agent
 
@@ -59,6 +59,14 @@ install-roomd-service: all
 	sudo install -m 0644 deploy/systemd/wt-roomd.service /etc/systemd/system/
 	sudo systemctl daemon-reload
 	sudo systemctl enable --now wt-roomd.service
+
+install-agent-services: all
+	sudo install -m 0644 deploy/systemd/wt-agent@.service /etc/systemd/system/
+	sudo systemctl daemon-reload
+	sudo systemctl disable --now wt-agent@qwen.service || true
+	sudo systemctl reset-failed 'wt-agent@*.service' || true
+	sudo systemctl enable --now wt-agent@claude.service wt-agent@chatgpt.service wt-agent@gemini.service
+	sudo systemctl restart wt-agent@claude.service wt-agent@chatgpt.service wt-agent@gemini.service
 
 clean:
 	rm -rf $(BUILD_DIR)

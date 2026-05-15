@@ -24,6 +24,23 @@ systemctl status wt-roomd.service
 journalctl -u wt-roomd.service -f
 ```
 
+Agent services:
+
+```sh
+make install-agent-services
+systemctl is-active wt-agent@claude.service
+systemctl is-active wt-agent@chatgpt.service
+systemctl is-active wt-agent@gemini.service
+systemctl is-enabled wt-agent@qwen.service
+```
+
+The native room agent supports Claude, ChatGPT, and Gemini. Keep
+`wt-agent@qwen.service` disabled until a Qwen room adapter is implemented.
+Concurrent agent appends are serialized with a room-log file lock so each
+response receives a unique `messageId`.
+The install helper restarts the supported services after installing the unit so
+live agents pick up rebuilt binaries immediately.
+
 The HTTP server binds to `0.0.0.0` by default for headless intranet access.
 Keep this service behind the local firewall and do not expose it directly to
 the public Internet until authentication, TLS, and operator controls exist.
