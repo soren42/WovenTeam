@@ -1,0 +1,42 @@
+body {
+  margin: 0;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  color: #202225;
+  background: #f7f7f4;
+}
+
+main {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 28px 18px 48px;
+}
+
+section {
+  border-top: 1px solid #d8dad6;
+  padding: 18px 0;
+}
+
+h1 {
+  font-size: 32px;
+  margin: 0 0 8px;
+}
+
+h2 {
+  font-size: 20px;
+}
+
+pre,
+code {
+  background: #ffffff;
+  border: 1px solid #d8dad6;
+  border-radius: 6px;
+}
+
+pre {
+  overflow: auto;
+  padding: 12px;
+}
+
+code {
+  padding: 1px 4px;
+}

@@ -9,3 +9,7 @@ build/
 # macOS metadata sidecars
 ._*
 .DS_Store
+
+data/*.jsonl
+data/*.state
+config/woventeam-phase0.conf
