@@ -56,4 +56,5 @@ Useful targets:
 make run-demo
 make test-smoke
 make DEBUG=1
+make install-roomd-service
 ```

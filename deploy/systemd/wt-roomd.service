@@ -1,0 +1,30 @@
+[Unit]
+Description=WovenTeam Phase 0 room daemon
+Documentation=file:///woventeam/repos/WovenTeam/docs/PHASE0_OPERATIONS.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=exec
+User=woven
+Group=woven
+WorkingDirectory=/woventeam/repos/WovenTeam
+ExecStart=/woventeam/repos/WovenTeam/bin/wt-roomd --config /woventeam/repos/WovenTeam/config/woventeam-phase0.conf
+Restart=on-failure
+RestartSec=5s
+KillSignal=SIGTERM
+TimeoutStopSec=10s
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=wt-roomd
+
+# The room daemon writes only under /woventeam: build artifacts when the
+# launcher rebuilds, the JSONL room log, and per-agent state files.
+NoNewPrivileges=yes
+ProtectSystem=full
+ProtectHome=read-only
+ReadWritePaths=/woventeam
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target

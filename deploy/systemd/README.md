@@ -1,9 +1,37 @@
-# systemd deployment for `wt-agent`
+# systemd deployment for WovenTeam Phase 0
 
-This directory holds the systemd unit template used to run one `wt-agent`
-process per peer model (claude, chatgpt, gemini, qwen) on `xenon`.
+This directory holds systemd units for the native Phase 0 room daemon and for
+one `wt-agent` process per peer model (claude, chatgpt, gemini, qwen) on
+`xenon`.
 
-## Install
+## Room daemon
+
+`wt-roomd.service` runs the native HTTP/SSE room daemon. It serves the browser
+UI, accepts `/api/message`, streams `/events`, and appends room messages to
+`data/phase0-room.jsonl`.
+
+Install and enable:
+
+```sh
+sudo install -m 0644 deploy/systemd/wt-roomd.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now wt-roomd.service
+```
+
+Verify:
+
+```sh
+systemctl status wt-roomd.service
+curl -fsS http://127.0.0.1:8787/api/health
+journalctl -u wt-roomd.service -f
+```
+
+The service uses `bin/wt-roomd`, which rebuilds `build/wt-roomd` when the
+binary is missing or stale. The daemon binds according to
+`config/woventeam-phase0.conf`; the default Phase 0 config is `0.0.0.0:8787`
+for headless intranet access.
+
+## Agent install
 
 ```sh
 sudo install -m 0644 deploy/systemd/wt-agent@.service /etc/systemd/system/
