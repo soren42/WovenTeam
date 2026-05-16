@@ -85,3 +85,18 @@ Create and inspect Phase 0 task packages through the room daemon:
 ./bin/wt-task assign task_example_001 --agent gemini
 ./bin/wt-task update-status task_example_001 --status blocked --message "Waiting on operator input."
 ```
+
+After starting `wt-agent` with `WT_ENABLE_CODEX_ADAPTER=1`, create a Codex-
+eligible task for an isolated task workspace:
+
+```sh
+./bin/wt-task create \
+  --title "Draft implementation note" \
+  --body "Write a short implementation note in the task workspace." \
+  --role backend_dev \
+  --agent chatgpt \
+  --tool-profile repo_branch \
+  --model openai/gpt-5.3-codex
+```
+
+Adapter behavior and artifacts are documented in `docs/adapters/codex-adapter.md`.

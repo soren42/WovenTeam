@@ -37,7 +37,11 @@ void wtConfigInitDefaults(WtConfig *config) {
     config->httpPort = 8787;
     config->contextMessageCount = 20;
     config->agentPollMilliseconds = 1000;
+    config->adapterTimeoutSeconds = 1800;
+    config->adapterMaxOutputBytes = 1048576;
     config->fsyncEachMessage = false;
+    config->enableCodexAdapter = false;
+    copyString(config->runtimeRootPath, sizeof(config->runtimeRootPath), "/woventeam/runtime/tasks");
     copyString(config->claudeMode, sizeof(config->claudeMode), "stub");
     copyString(config->chatgptMode, sizeof(config->chatgptMode), "stub");
     copyString(config->geminiMode, sizeof(config->geminiMode), "stub");
@@ -61,8 +65,16 @@ int wtConfigSetValue(WtConfig *config, const char *key, const char *value) {
         config->contextMessageCount = atoi(value);
     } else if (strcmp(key, "agentPollMilliseconds") == 0) {
         config->agentPollMilliseconds = atoi(value);
+    } else if (strcmp(key, "adapterTimeoutSeconds") == 0) {
+        config->adapterTimeoutSeconds = atoi(value);
+    } else if (strcmp(key, "adapterMaxOutputBytes") == 0) {
+        config->adapterMaxOutputBytes = atoi(value);
     } else if (strcmp(key, "fsyncEachMessage") == 0) {
         config->fsyncEachMessage = atoi(value) != 0;
+    } else if (strcmp(key, "enableCodexAdapter") == 0) {
+        config->enableCodexAdapter = atoi(value) != 0;
+    } else if (strcmp(key, "runtimeRootPath") == 0) {
+        copyString(config->runtimeRootPath, sizeof(config->runtimeRootPath), value);
     } else if (strcmp(key, "claudeMode") == 0) {
         copyString(config->claudeMode, sizeof(config->claudeMode), value);
     } else if (strcmp(key, "chatgptMode") == 0) {
@@ -114,5 +126,12 @@ void wtConfigApplyEnvironment(WtConfig *config) {
     if ((value = getenv("WT_HTTP_PORT"))) wtConfigSetValue(config, "httpPort", value);
     if ((value = getenv("WT_CONTEXT_MESSAGE_COUNT"))) wtConfigSetValue(config, "contextMessageCount", value);
     if ((value = getenv("WT_AGENT_POLL_MILLISECONDS"))) wtConfigSetValue(config, "agentPollMilliseconds", value);
+    if ((value = getenv("WT_ADAPTER_TIMEOUT_SECONDS"))) wtConfigSetValue(config, "adapterTimeoutSeconds", value);
+    if ((value = getenv("WT_ADAPTER_MAX_OUTPUT_BYTES"))) wtConfigSetValue(config, "adapterMaxOutputBytes", value);
     if ((value = getenv("WT_FSYNC_EACH_MESSAGE"))) wtConfigSetValue(config, "fsyncEachMessage", value);
+    if ((value = getenv("WT_ENABLE_CODEX_ADAPTER"))) wtConfigSetValue(config, "enableCodexAdapter", value);
+    if ((value = getenv("WT_RUNTIME_ROOT_PATH"))) wtConfigSetValue(config, "runtimeRootPath", value);
+    if ((value = getenv("WT_CLAUDE_COMMAND"))) wtConfigSetValue(config, "claudeCommand", value);
+    if ((value = getenv("WT_GPT_COMMAND"))) wtConfigSetValue(config, "gptCommand", value);
+    if ((value = getenv("WT_GEMINI_COMMAND"))) wtConfigSetValue(config, "geminiCommand", value);
 }
