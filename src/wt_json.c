@@ -48,18 +48,17 @@ int wtJsonEscape(const char *input, char *output, size_t outputSize) {
 static const char *findFieldValue(const char *json, const char *key) {
     char pattern[128];
     snprintf(pattern, sizeof(pattern), "\"%s\"", key);
-    const char *cursor = strstr(json, pattern);
-    if (!cursor) {
-        return NULL;
+    const char *cursor = json;
+    while ((cursor = strstr(cursor, pattern)) != NULL) {
+        cursor += strlen(pattern);
+        while (*cursor && isspace((unsigned char)*cursor)) cursor++;
+        if (*cursor == ':') {
+            cursor++;
+            while (*cursor && isspace((unsigned char)*cursor)) cursor++;
+            return cursor;
+        }
     }
-    cursor += strlen(pattern);
-    while (*cursor && isspace((unsigned char)*cursor)) cursor++;
-    if (*cursor != ':') {
-        return NULL;
-    }
-    cursor++;
-    while (*cursor && isspace((unsigned char)*cursor)) cursor++;
-    return cursor;
+    return NULL;
 }
 
 int wtJsonReadString(const char *json, const char *key, char *output, size_t outputSize) {

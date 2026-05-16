@@ -11,8 +11,10 @@ The Phase 0 browser UI is `WovenTeam Console (Fullscreen)` served by
   - `GET /api/messages`
   - `GET /events`
   - `POST /api/message`
+- The task table reads the append-only task ledger through `GET /api/tasks`.
 - The program initiation composer currently posts a structured CEO directive
-  into the shared room. It does not create durable task packages yet.
+  into the shared room. Direct task-package creation from the browser composer
+  is still pending; use `bin/wt-task` for durable packages.
 - The modal close control is implemented as a 44 by 44 pixel touch target with
   click, pointer, touch, and delegated fallbacks for Safari on iPad.
 
@@ -22,7 +24,7 @@ The following surfaces intentionally show coming-soon placeholders until their
 backend tools exist:
 
 - Initiative/task package table
-- Task package create/list/update endpoints
+- Browser task-package create/list/update controls
 - Review gate approve/reject state
 - Token and cost telemetry
 - Agent topology
@@ -31,11 +33,11 @@ backend tools exist:
 
 ## Backend Contract Needed Next
 
-The scaffold is ready to bind to the Sprint 1 runtime contracts:
+The scaffold now binds to the Sprint 2 read path for task packages:
 
 - `docs/api/task-package-v0.1.json`
 - `docs/api/task-ledger-v0.1.md`
+- `GET /api/tasks`
 
-The next backend step is to add task package APIs and a task ledger projection
-so the console can replace placeholders with live initiative, gate, token, and
-agent state.
+The next backend step is to expose richer initiative, gate, token, and agent
+state so the console can replace the remaining placeholders.

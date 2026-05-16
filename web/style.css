@@ -581,6 +581,57 @@ kbd {
   color: var(--text-dim);
 }
 
+.initiative-placeholder tbody tr:hover {
+  background: var(--accent-soft);
+}
+
+.status-pill,
+.vendor-tag {
+  display: inline-block;
+  border: 1px solid var(--edge-bright);
+  background: var(--panel-alt);
+  color: var(--text-dim);
+  padding: 2px 6px;
+  font-size: 9.5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.status-pill[data-status="queued"],
+.status-pill[data-status="assigned"] {
+  color: var(--warn);
+  border-color: rgba(245, 158, 11, 0.5);
+}
+
+.status-pill[data-status="running"] {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.status-pill[data-status="complete"] {
+  color: var(--ok);
+  border-color: rgba(52, 211, 153, 0.6);
+}
+
+.status-pill[data-status="failed"],
+.status-pill[data-status="blocked"] {
+  color: var(--err);
+  border-color: rgba(248, 113, 113, 0.6);
+}
+
+.mini-progress {
+  width: 90px;
+  height: 6px;
+  border: 1px solid var(--edge);
+  background: var(--panel-alt);
+}
+
+.mini-progress span {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+}
+
 .workspace {
   flex: 1;
   min-height: 0;

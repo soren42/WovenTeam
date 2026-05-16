@@ -32,6 +32,7 @@ static char *trimWhitespace(char *value) {
 void wtConfigInitDefaults(WtConfig *config) {
     copyString(config->roomName, sizeof(config->roomName), "phase0");
     copyString(config->roomLogPath, sizeof(config->roomLogPath), "data/phase0-room.jsonl");
+    copyString(config->taskLedgerPath, sizeof(config->taskLedgerPath), "data/task-packages.jsonl");
     copyString(config->httpBindAddress, sizeof(config->httpBindAddress), "0.0.0.0");
     config->httpPort = 8787;
     config->contextMessageCount = 20;
@@ -50,6 +51,8 @@ int wtConfigSetValue(WtConfig *config, const char *key, const char *value) {
         copyString(config->roomName, sizeof(config->roomName), value);
     } else if (strcmp(key, "roomLogPath") == 0) {
         copyString(config->roomLogPath, sizeof(config->roomLogPath), value);
+    } else if (strcmp(key, "taskLedgerPath") == 0) {
+        copyString(config->taskLedgerPath, sizeof(config->taskLedgerPath), value);
     } else if (strcmp(key, "httpBindAddress") == 0) {
         copyString(config->httpBindAddress, sizeof(config->httpBindAddress), value);
     } else if (strcmp(key, "httpPort") == 0) {
@@ -106,6 +109,7 @@ void wtConfigApplyEnvironment(WtConfig *config) {
     const char *value = NULL;
     if ((value = getenv("WT_ROOM_NAME"))) wtConfigSetValue(config, "roomName", value);
     if ((value = getenv("WT_ROOM_LOG_PATH"))) wtConfigSetValue(config, "roomLogPath", value);
+    if ((value = getenv("WT_TASK_LEDGER_PATH"))) wtConfigSetValue(config, "taskLedgerPath", value);
     if ((value = getenv("WT_HTTP_BIND_ADDRESS"))) wtConfigSetValue(config, "httpBindAddress", value);
     if ((value = getenv("WT_HTTP_PORT"))) wtConfigSetValue(config, "httpPort", value);
     if ((value = getenv("WT_CONTEXT_MESSAGE_COUNT"))) wtConfigSetValue(config, "contextMessageCount", value);

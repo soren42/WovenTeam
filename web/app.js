@@ -12,6 +12,7 @@ const modalBody = document.querySelector("#modalBody");
 const modalClose = document.querySelector("#modalClose");
 const armButton = document.querySelector("#armButton");
 const sendButton = document.querySelector("#sendButton");
+const taskTableBody = document.querySelector("#taskTableBody");
 const seen = new Set();
 
 const roles = [
@@ -109,6 +110,69 @@ async function loadRecent() {
   if (!response.ok) throw new Error("message load failed");
   const messages = await response.json();
   messages.forEach(renderMessage);
+}
+
+async function loadTasks() {
+  const response = await fetch("/api/tasks");
+  if (!response.ok) return;
+  const rows = await response.json();
+  const tasks = summarizeTasks(rows);
+  renderTasks(tasks);
+}
+
+function summarizeTasks(rows) {
+  const byId = new Map();
+  rows.forEach(row => {
+    if (!row.taskId) return;
+    if (row.schema === "woventeam.task_package.v0.1") {
+      byId.set(row.taskId, {
+        taskId: row.taskId,
+        initiativeId: row.initiativeId || "init_phase0",
+        status: row.status || "queued",
+        assignedAgent: row.assignedAgent || "all",
+        assignedRole: row.assignedRole || "",
+        title: row.title || (row.task && row.task.title) || "Untitled task"
+      });
+    } else if (row.schema === "woventeam.task_event.v0.1" && byId.has(row.taskId)) {
+      const task = byId.get(row.taskId);
+      task.status = row.status || task.status;
+      task.assignedAgent = row.assignedAgent || task.assignedAgent;
+    }
+  });
+  return Array.from(byId.values()).reverse();
+}
+
+function renderTasks(tasks) {
+  document.querySelector("#initiativeCount").textContent = String(tasks.length);
+  document.querySelector("#initiativeBadge").textContent = String(tasks.length);
+  if (!tasks.length) {
+    taskTableBody.innerHTML = '<tr><td colspan="9">No task packages yet. Use the composer or wt-task to create one.</td></tr>';
+    return;
+  }
+  taskTableBody.innerHTML = "";
+  tasks.slice(0, 12).forEach(task => {
+    const row = document.createElement("tr");
+    row.innerHTML = `
+      <td></td>
+      <td><span class="status-pill"></span></td>
+      <td></td>
+      <td></td>
+      <td></td>
+      <td><div class="mini-progress"><span></span></div></td>
+      <td>--</td>
+      <td>--</td>
+      <td><span class="vendor-tag"></span></td>
+    `;
+    row.querySelector("td:nth-child(1)").textContent = task.taskId;
+    row.querySelector(".status-pill").textContent = task.status;
+    row.querySelector(".status-pill").dataset.status = task.status;
+    row.querySelector("td:nth-child(3)").textContent = task.title;
+    row.querySelector("td:nth-child(4)").textContent = task.assignedRole || "--";
+    row.querySelector("td:nth-child(5)").textContent = task.assignedAgent || "all";
+    row.querySelector(".mini-progress span").style.width = task.status === "complete" ? "100%" : task.status === "running" ? "55%" : "12%";
+    row.querySelector(".vendor-tag").textContent = task.assignedAgent || "router";
+    taskTableBody.appendChild(row);
+  });
 }
 
 function connectEvents() {
@@ -393,7 +457,9 @@ async function init() {
   wireControls();
   try {
     await loadRecent();
+    await loadTasks();
     connectEvents();
+    setInterval(loadTasks, 5000);
   } catch (error) {
     setUplink(false);
     addAudit("system", "room API unavailable");

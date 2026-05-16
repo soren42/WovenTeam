@@ -82,6 +82,17 @@
         }
       }
     },
+    "title": {
+      "type": "string",
+      "minLength": 3,
+      "maxLength": 160,
+      "description": "Phase 0 native projection of task.title for the C ledger scanner."
+    },
+    "body": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Phase 0 native projection of task.body for the C ledger scanner."
+    },
     "contextRefs": {
       "type": "array",
       "items": {
@@ -211,6 +222,11 @@
         }
       },
       "default": {}
+    },
+    "createdAtUnixMs": {
+      "type": "integer",
+      "minimum": 0,
+      "description": "Phase 0 native timestamp projection used by the append-only task ledger."
     }
   }
 }

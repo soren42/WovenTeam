@@ -12,7 +12,7 @@
 #define WT_MESSAGE_BODY_SIZE 4096
 #define WT_MESSAGE_JSON_SIZE 8192
 #define WT_MESSAGE_NAME_SIZE 64
-#define WT_MESSAGE_TYPE_SIZE 32
+#define WT_MESSAGE_TYPE_SIZE 48
 
 typedef struct {
     long messageId;
