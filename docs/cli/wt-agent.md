@@ -50,6 +50,8 @@ current, rebuilds when needed, and then executes the compiled binary.
 - Claims queued or assigned task packages whose `assignedAgent` matches the
   running agent.
 - Emits `task.status` and `task.result` room messages for claimed tasks.
+- Ignores `task.request` ledger records directly; `wt-roomd` validates those
+  requests and converts allowed manager requests into child task packages.
 - Responds only to messages from `ceo` or `system`.
 - Responds only when `targetName` is the agent name or `all`.
 - Writes one state file per agent beside the room log, such as
@@ -110,4 +112,5 @@ so boot starts the room daemon before agent loops.
 make test-smoke
 make test-task-assignment
 make test-codex-adapter
+make test-manager-subtasks
 ```

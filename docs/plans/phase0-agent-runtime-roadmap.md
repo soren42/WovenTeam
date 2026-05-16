@@ -74,10 +74,26 @@ Implementation notes:
 
 ## Sprint 4: Manager-Driven Subtasks
 
+**Status:** implemented for the Phase 0 task ledger and room daemon.
+
 1. Add `task.request` messages for Program Manager and Project Manager roles.
 1. Enforce role spawn policy from ROLE.md and role YAML constraints.
 1. Add dependency and blocked-state propagation.
 1. Verify the CEO-to-PM-to-worker-to-reviewer path with a smoke test.
+
+Implementation notes:
+
+- `POST /api/task-request` validates `woventeam.task_request.v0.1` records and
+  emits room-visible `task.request` messages.
+- Allowed manager requests create child `woventeam.task_package.v0.1` records
+  with `parentTaskId`, `requestedByRole`, and a dependency on the parent.
+- Program Manager may spawn Project Manager, Software Architect, and Systems
+  Architect roles. Project Manager may spawn non-leadership roles within the
+  initiative.
+- `wt-roomd` propagates `blocked` status to non-terminal dependents.
+- `bin/wt-task request` wraps the API; `tests/integration/wt-manager-subtasks.sh`
+  covers CEO-to-PM-to-worker-to-reviewer flow, role-policy denial, and blocked
+  dependency propagation.
 
 ## UI Coordination Note
 

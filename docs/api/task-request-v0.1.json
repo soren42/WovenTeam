@@ -1,0 +1,92 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://solariangroup.com/woventeam/schemas/task-request-v0.1.json",
+  "title": "WovenTeam Task Request v0.1",
+  "description": "A manager-driven subtask request that records who requested a subtask, which role should receive it, and which parent task it depends on.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema",
+    "taskId",
+    "parentTaskId",
+    "requestedTaskId",
+    "initiativeId",
+    "requestedByRole",
+    "requestedRole",
+    "title",
+    "body"
+  ],
+  "properties": {
+    "schema": {
+      "const": "woventeam.task_request.v0.1"
+    },
+    "taskId": {
+      "type": "string",
+      "pattern": "^task_[A-Za-z0-9][A-Za-z0-9_.-]{2,96}$",
+      "description": "Native ledger projection matching requestedTaskId."
+    },
+    "parentTaskId": {
+      "type": "string",
+      "pattern": "^task_[A-Za-z0-9][A-Za-z0-9_.-]{2,96}$"
+    },
+    "requestedTaskId": {
+      "type": "string",
+      "pattern": "^task_[A-Za-z0-9][A-Za-z0-9_.-]{2,96}$"
+    },
+    "initiativeId": {
+      "type": "string",
+      "pattern": "^init_[A-Za-z0-9][A-Za-z0-9_.-]{2,96}$"
+    },
+    "requestedBy": {
+      "type": "string",
+      "minLength": 2,
+      "maxLength": 64
+    },
+    "requestedByRole": {
+      "type": "string",
+      "enum": ["program_manager", "project_manager"]
+    },
+    "requestedRole": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]{2,63}$"
+    },
+    "assignedAgent": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_-]{2,63}$"
+    },
+    "modelId": {
+      "type": "string",
+      "pattern": "^[a-z0-9_-]+/[A-Za-z0-9_.-]+$"
+    },
+    "priority": {
+      "type": "string",
+      "enum": ["low", "normal", "high", "urgent"],
+      "default": "normal"
+    },
+    "title": {
+      "type": "string",
+      "minLength": 3,
+      "maxLength": 160
+    },
+    "body": {
+      "type": "string",
+      "minLength": 1
+    },
+    "toolPolicy": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "profile": {
+          "type": "string",
+          "enum": ["observe", "repo_branch", "test_local", "ops_read", "ops_change"],
+          "default": "observe"
+        }
+      },
+      "default": {}
+    },
+    "createdAtUnixMs": {
+      "type": "integer",
+      "minimum": 0
+    }
+  }
+}

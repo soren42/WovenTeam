@@ -86,6 +86,23 @@ Create and inspect Phase 0 task packages through the room daemon:
 ./bin/wt-task update-status task_example_001 --status blocked --message "Waiting on operator input."
 ```
 
+Program and Project Manager roles can request subtasks through the same daemon.
+The daemon records a `task.request`, validates the role spawn policy, creates
+the child task package, and links it to the parent task as a dependency:
+
+```sh
+./bin/wt-task request \
+  --parent task_example_001 \
+  --by-role project_manager \
+  --role backend_dev \
+  --agent chatgpt \
+  --title "Implement a scoped change" \
+  --body "Produce the worker artifact and report the result."
+```
+
+Manager-driven subtasks are documented in
+`docs/orchestration/manager-driven-subtasks.md`.
+
 After starting `wt-agent` with `WT_ENABLE_CODEX_ADAPTER=1`, create a Codex-
 eligible task for an isolated task workspace:
 

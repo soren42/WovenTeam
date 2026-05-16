@@ -35,5 +35,7 @@ int wtTaskReadAllJsonArray(const char *ledgerPath, char *buffer, size_t bufferSi
 int wtTaskFindQueuedForAgent(const char *ledgerPath, const char *agentName, WtTaskSummary *task);
 int wtTaskAppendStatusEvent(const char *ledgerPath, const char *taskId, const char *status,
                             const char *createdBy, const char *message, bool fsyncRecord);
+int wtTaskAppendBlockedDependents(const char *ledgerPath, const char *blockedTaskId,
+                                  const char *createdBy, bool fsyncRecord);
 
 #endif
