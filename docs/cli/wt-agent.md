@@ -1,8 +1,9 @@
 # wt-agent
 
-`wt-agent` is the native Phase 0 room participant for the shared JSONL room.
-It reads the durable transcript, decides whether the latest CEO/system message
-targets the instance, and appends one deterministic stub response.
+`wt-agent` is the native Phase 0 room participant for the shared JSONL room and
+task ledger. It reads the durable transcript, claims task packages assigned to
+the instance, and appends room-visible status/result events. It still emits
+deterministic stub responses for plain CEO/system chat messages.
 
 Phase 0 supports these room agents:
 
@@ -21,6 +22,7 @@ make build/wt-agent
 ```
 
 The native room agent has no Redis, SQLite, Jansson, or hiredis dependency.
+The optional Codex adapter shells out to the configured Codex CLI.
 
 ## Run
 
@@ -43,11 +45,31 @@ current, rebuilds when needed, and then executes the compiled binary.
 
 - Reads recent messages from `roomLogPath`, defaulting to
   `data/phase0-room.jsonl`.
+- Reads task packages from `taskLedgerPath`, defaulting to
+  `data/task-packages.jsonl`.
+- Claims queued or assigned task packages whose `assignedAgent` matches the
+  running agent.
+- Emits `task.status` and `task.result` room messages for claimed tasks.
 - Responds only to messages from `ceo` or `system`.
 - Responds only when `targetName` is the agent name or `all`.
 - Writes one state file per agent beside the room log, such as
   `data/claude.state`, so each triggering message is handled once.
 - Uses `agentPollMilliseconds` from config in `--loop` mode.
+
+## Codex Adapter
+
+The first harness runner is opt-in:
+
+```sh
+WT_ENABLE_CODEX_ADAPTER=1 bin/wt-agent --agent chatgpt --once --config config/woventeam-phase0.conf
+```
+
+The adapter runs only for `chatgpt` task packages with `toolPolicy.profile` set
+to `repo_branch` or `test_local`. It creates an isolated workspace under
+`runtimeRootPath`, captures stdout/stderr/result artifacts, writes
+`manifest.json`, and records a final `complete` or `failed` task event.
+
+See `docs/adapters/codex-adapter.md`.
 
 ## systemd
 
@@ -86,4 +108,6 @@ so boot starts the room daemon before agent loops.
 
 ```sh
 make test-smoke
+make test-task-assignment
+make test-codex-adapter
 ```

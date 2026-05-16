@@ -21,7 +21,11 @@ typedef struct {
     int httpPort;
     int contextMessageCount;
     int agentPollMilliseconds;
+    int adapterTimeoutSeconds;
+    int adapterMaxOutputBytes;
     bool fsyncEachMessage;
+    bool enableCodexAdapter;
+    char runtimeRootPath[WT_PATH_SIZE];
     char claudeMode[WT_NAME_SIZE];
     char chatgptMode[WT_NAME_SIZE];
     char geminiMode[WT_NAME_SIZE];

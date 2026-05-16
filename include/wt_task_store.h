@@ -11,6 +11,9 @@
 #define WT_TASK_AGENT_SIZE 64
 #define WT_TASK_STATUS_SIZE 32
 #define WT_TASK_TITLE_SIZE 192
+#define WT_TASK_BODY_SIZE 2048
+#define WT_TASK_POLICY_SIZE 64
+#define WT_TASK_MODEL_SIZE 128
 #define WT_TASK_LEDGER_LINE_SIZE 16384
 
 typedef struct {
@@ -19,6 +22,11 @@ typedef struct {
     char assignedRole[WT_TASK_AGENT_SIZE];
     char status[WT_TASK_STATUS_SIZE];
     char title[WT_TASK_TITLE_SIZE];
+    char body[WT_TASK_BODY_SIZE];
+    char modelId[WT_TASK_MODEL_SIZE];
+    char toolProfile[WT_TASK_POLICY_SIZE];
+    int timeoutSeconds;
+    int maxOutputBytes;
     long long updatedAtUnixMs;
 } WtTaskSummary;
 

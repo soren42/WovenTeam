@@ -10,9 +10,14 @@
 #include "wt_room_store.h"
 #include "wt_task_store.h"
 
+#include <errno.h>
+#include <fcntl.h>
+#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
+#include <sys/wait.h>
 #include <time.h>
 #include <unistd.h>
 
@@ -78,6 +83,193 @@ static int appendAgentTaskMessage(const WtConfig *config, const char *agentName,
     return wtRoomAppendNewMessage(config->roomLogPath, &message, config->fsyncEachMessage);
 }
 
+static int isCodexEligibleTask(const WtConfig *config, const char *agentName, const WtTaskSummary *task) {
+    if (!config->enableCodexAdapter || strcmp(agentName, "chatgpt") != 0) {
+        return 0;
+    }
+    if (!(strcmp(task->toolProfile, "repo_branch") == 0 || strcmp(task->toolProfile, "test_local") == 0)) {
+        return 0;
+    }
+    if (task->modelId[0] != '\0' && strncmp(task->modelId, "openai/", 7) != 0) {
+        return 0;
+    }
+    return 1;
+}
+
+static int writeTextFile(const char *path, const char *content) {
+    if (wtRoomEnsureParentDirs(path) != 0) {
+        return -1;
+    }
+    FILE *file = fopen(path, "w");
+    if (!file) {
+        return -1;
+    }
+    fputs(content ? content : "", file);
+    fclose(file);
+    return 0;
+}
+
+static void readFileSnippet(const char *path, int maxBytes, char *buffer, size_t bufferSize) {
+    buffer[0] = '\0';
+    FILE *file = fopen(path, "r");
+    if (!file || bufferSize == 0) {
+        if (file) fclose(file);
+        return;
+    }
+    int limit = maxBytes > 0 && maxBytes < (int)bufferSize - 1 ? maxBytes : (int)bufferSize - 1;
+    size_t bytes = fread(buffer, 1, (size_t)limit, file);
+    buffer[bytes] = '\0';
+    fclose(file);
+}
+
+static void capFileSize(const char *path, int maxBytes) {
+    if (maxBytes > 0) {
+        int rc = truncate(path, (off_t)maxBytes);
+        (void)rc;
+    }
+}
+
+static int runCodexAdapter(const WtConfig *config, const char *agentName, const WtTaskSummary *task) {
+    char workspace[512];
+    char promptPath[768];
+    char stdoutPath[768];
+    char stderrPath[768];
+    char resultPath[768];
+    char manifestPath[768];
+    snprintf(workspace, sizeof(workspace), "%s/%s", config->runtimeRootPath, task->taskId);
+    snprintf(promptPath, sizeof(promptPath), "%s/prompt.md", workspace);
+    snprintf(stdoutPath, sizeof(stdoutPath), "%s/stdout.log", workspace);
+    snprintf(stderrPath, sizeof(stderrPath), "%s/stderr.log", workspace);
+    snprintf(resultPath, sizeof(resultPath), "%s/result.md", workspace);
+    snprintf(manifestPath, sizeof(manifestPath), "%s/manifest.json", workspace);
+
+    char keepPath[768];
+    snprintf(keepPath, sizeof(keepPath), "%s/.keep", workspace);
+    if (wtRoomEnsureParentDirs(keepPath) != 0 || mkdir(workspace, 0755) != 0) {
+        if (errno != EEXIST) {
+            perror("create adapter workspace");
+            return 1;
+        }
+    }
+
+    char prompt[4096];
+    snprintf(prompt, sizeof(prompt),
+             "You are a WovenTeam Codex adapter worker running in an isolated per-task workspace.\n\n"
+             "Task ID: %s\nRole: %s\nTool policy: %s\n\n"
+             "Task title: %s\n\nTask body:\n%s\n\n"
+             "Write your final result as a concise implementation/report note. "
+             "Do not modify the WovenTeam repository from this adapter workspace.",
+             task->taskId, task->assignedRole, task->toolProfile, task->title, task->body);
+    if (writeTextFile(promptPath, prompt) != 0) {
+        perror("write adapter prompt");
+        return 1;
+    }
+
+    int timeoutSeconds = task->timeoutSeconds > 0 ? task->timeoutSeconds : config->adapterTimeoutSeconds;
+    if (timeoutSeconds <= 0) timeoutSeconds = 1800;
+    int maxOutputBytes = task->maxOutputBytes > 0 ? task->maxOutputBytes : config->adapterMaxOutputBytes;
+    if (maxOutputBytes <= 0) maxOutputBytes = 1048576;
+
+    char actor[128];
+    snprintf(actor, sizeof(actor), "wt-agent@%s", agentName);
+    char runningMessage[512];
+    snprintf(runningMessage, sizeof(runningMessage), "Codex adapter started for taskId=%s", task->taskId);
+    wtTaskAppendStatusEvent(config->taskLedgerPath, task->taskId, "running", actor, runningMessage, config->fsyncEachMessage);
+    appendAgentTaskMessage(config, agentName, task, "task.status", "running", "codex adapter started");
+
+    pid_t child = fork();
+    if (child < 0) {
+        perror("fork codex adapter");
+        return 1;
+    }
+    if (child == 0) {
+        int stdoutFd = open(stdoutPath, O_CREAT | O_TRUNC | O_WRONLY, 0644);
+        int stderrFd = open(stderrPath, O_CREAT | O_TRUNC | O_WRONLY, 0644);
+        if (stdoutFd >= 0) dup2(stdoutFd, STDOUT_FILENO);
+        if (stderrFd >= 0) dup2(stderrFd, STDERR_FILENO);
+        if (stdoutFd > 2) close(stdoutFd);
+        if (stderrFd > 2) close(stderrFd);
+        execlp(config->gptCommand, config->gptCommand,
+               "exec",
+               "--ephemeral",
+               "--skip-git-repo-check",
+               "--cd", workspace,
+               "--sandbox", "workspace-write",
+               "--ask-for-approval", "never",
+               "--output-last-message", resultPath,
+               prompt,
+               (char *)NULL);
+        perror("exec codex");
+        _exit(127);
+    }
+
+    int status = 0;
+    int timedOut = 0;
+    time_t start = time(NULL);
+    while (1) {
+        pid_t done = waitpid(child, &status, WNOHANG);
+        if (done == child) {
+            break;
+        }
+        if (done < 0) {
+            perror("wait codex");
+            return 1;
+        }
+        if ((int)(time(NULL) - start) >= timeoutSeconds) {
+            kill(child, SIGKILL);
+            waitpid(child, &status, 0);
+            timedOut = 1;
+            break;
+        }
+        sleep(1);
+    }
+
+    int exitCode = timedOut ? 124 : (WIFEXITED(status) ? WEXITSTATUS(status) : 125);
+    capFileSize(stdoutPath, maxOutputBytes);
+    capFileSize(stderrPath, maxOutputBytes);
+    capFileSize(resultPath, maxOutputBytes);
+    char resultSnippet[1024];
+    char stderrSnippet[1024];
+    readFileSnippet(resultPath, maxOutputBytes < 1000 ? maxOutputBytes : 1000, resultSnippet, sizeof(resultSnippet));
+    readFileSnippet(stderrPath, maxOutputBytes < 1000 ? maxOutputBytes : 1000, stderrSnippet, sizeof(stderrSnippet));
+
+    char manifest[4096];
+    snprintf(manifest, sizeof(manifest),
+             "{\n"
+             "  \"schema\": \"woventeam.adapter_manifest.v0.1\",\n"
+             "  \"taskId\": \"%s\",\n"
+             "  \"adapter\": \"codex\",\n"
+             "  \"command\": \"%s\",\n"
+             "  \"workspace\": \"%s\",\n"
+             "  \"stdout\": \"%s\",\n"
+             "  \"stderr\": \"%s\",\n"
+             "  \"result\": \"%s\",\n"
+             "  \"timedOut\": %s,\n"
+             "  \"exitCode\": %d\n"
+             "}\n",
+             task->taskId, config->gptCommand, workspace, stdoutPath, stderrPath, resultPath,
+             timedOut ? "true" : "false", exitCode);
+    writeTextFile(manifestPath, manifest);
+
+    char eventMessage[1024];
+    snprintf(eventMessage, sizeof(eventMessage), "Codex adapter exitCode=%d timedOut=%s; see task workspace manifest.",
+             exitCode, timedOut ? "true" : "false");
+    const char *finalStatus = exitCode == 0 ? "complete" : "failed";
+    wtTaskAppendStatusEvent(config->taskLedgerPath, task->taskId, finalStatus, actor, eventMessage, config->fsyncEachMessage);
+
+    char detail[1024];
+    snprintf(detail, sizeof(detail), "codex adapter exitCode=%d workspace=%s", exitCode, workspace);
+    appendAgentTaskMessage(config, agentName, task, "task.result", finalStatus, detail);
+
+    printf("[adapter:%s] %s task=%s exit=%d workspace=%s\n", "codex", finalStatus, task->taskId, exitCode, workspace);
+    if (resultSnippet[0]) {
+        printf("%s\n", resultSnippet);
+    } else if (stderrSnippet[0]) {
+        fprintf(stderr, "%s\n", stderrSnippet);
+    }
+    return exitCode == 0 ? 0 : 1;
+}
+
 static int handleAssignedTask(const WtConfig *config, const char *agentName) {
     WtTaskSummary task;
     int found = wtTaskFindQueuedForAgent(config->taskLedgerPath, agentName, &task);
@@ -86,6 +278,9 @@ static int handleAssignedTask(const WtConfig *config, const char *agentName) {
     }
     char actor[128];
     snprintf(actor, sizeof(actor), "wt-agent@%s", agentName);
+    if (isCodexEligibleTask(config, agentName, &task)) {
+        return runCodexAdapter(config, agentName, &task);
+    }
     if (wtTaskAppendStatusEvent(config->taskLedgerPath, task.taskId, "running", actor,
                                 "Stub agent accepted assigned task.", config->fsyncEachMessage) != 0 ||
         appendAgentTaskMessage(config, agentName, &task, "task.status", "running",

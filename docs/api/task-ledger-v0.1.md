@@ -71,6 +71,24 @@ lines:
 `bin/wt-task` wraps those endpoints for local operator use with `create`,
 `list`, `show`, `assign`, and `update-status` commands.
 
+Codex adapter runs also write an artifact manifest under the per-task runtime
+workspace. The manifest uses:
+
+```json
+{
+  "schema": "woventeam.adapter_manifest.v0.1",
+  "taskId": "task_example_001",
+  "adapter": "codex",
+  "command": "codex",
+  "workspace": "/woventeam/runtime/tasks/task_example_001",
+  "stdout": "/woventeam/runtime/tasks/task_example_001/stdout.log",
+  "stderr": "/woventeam/runtime/tasks/task_example_001/stderr.log",
+  "result": "/woventeam/runtime/tasks/task_example_001/result.md",
+  "timedOut": false,
+  "exitCode": 0
+}
+```
+
 This keeps the Phase 0 storage model consistent with the room transcript:
 append-only, inspectable, and easy to recover after process restarts. A later
 SQLite projection can index this ledger without changing the package contract.

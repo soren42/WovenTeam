@@ -52,6 +52,8 @@ Implementation notes:
 
 ## Sprint 3: First Work Adapter
 
+**Status:** implemented as an opt-in Codex adapter for the Phase 0 runtime.
+
 1. Build a Codex-first adapter behind an explicit feature flag.
 1. Run tasks in per-task workspaces under `/woventeam/runtime/tasks/<taskId>`.
 1. Capture stdout, stderr, exit code, timeout status, output hash, and artifact
@@ -60,6 +62,15 @@ Implementation notes:
 1. Add Claude and Gemini adapters after the Codex path proves the ledger,
    workspace, and permission contracts. The Gemini adapter must set an explicit
    trusted-workspace policy for headless execution.
+
+Implementation notes:
+
+- `WT_ENABLE_CODEX_ADAPTER=1` or `enableCodexAdapter=1` enables the adapter.
+- Only `chatgpt` tasks with `repo_branch` or `test_local` tool profiles run
+  through Codex.
+- The first adapter uses an isolated task workspace, not the repository
+  checkout.
+- Adapter artifacts are documented in `docs/adapters/codex-adapter.md`.
 
 ## Sprint 4: Manager-Driven Subtasks
 

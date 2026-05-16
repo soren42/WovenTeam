@@ -9,6 +9,7 @@
 
 #include <fcntl.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <sys/file.h>
 #include <unistd.h>
@@ -117,6 +118,17 @@ int wtTaskFindQueuedForAgent(const char *ledgerPath, const char *agentName, WtTa
                 readOptionalString(line, "assignedRole", tasks[index].assignedRole, sizeof(tasks[index].assignedRole), "");
                 readOptionalString(line, "status", tasks[index].status, sizeof(tasks[index].status), "queued");
                 readOptionalString(line, "title", tasks[index].title, sizeof(tasks[index].title), "Untitled task");
+                readOptionalString(line, "body", tasks[index].body, sizeof(tasks[index].body), "");
+                readOptionalString(line, "modelId", tasks[index].modelId, sizeof(tasks[index].modelId), "");
+                readOptionalString(line, "profile", tasks[index].toolProfile, sizeof(tasks[index].toolProfile), "observe");
+                long timeout = 0;
+                long maxOutput = 0;
+                if (wtJsonReadLong(line, "timeoutSeconds", &timeout) == 0) {
+                    tasks[index].timeoutSeconds = (int)timeout;
+                }
+                if (wtJsonReadLong(line, "maxOutputBytes", &maxOutput) == 0) {
+                    tasks[index].maxOutputBytes = (int)maxOutput;
+                }
                 wtJsonReadLongLong(line, "createdAtUnixMs", &tasks[index].updatedAtUnixMs);
             }
         } else if (lineHasSchema(line, "woventeam.task_event.v0.1")) {
