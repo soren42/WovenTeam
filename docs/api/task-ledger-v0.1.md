@@ -62,6 +62,15 @@ lines:
 }
 ```
 
+`wt-roomd` exposes the Phase 0 ledger through:
+
+- `POST /api/task-package`
+- `POST /api/task-event`
+- `GET /api/tasks`
+
+`bin/wt-task` wraps those endpoints for local operator use with `create`,
+`list`, `show`, `assign`, and `update-status` commands.
+
 This keeps the Phase 0 storage model consistent with the room transcript:
 append-only, inspectable, and easy to recover after process restarts. A later
 SQLite projection can index this ledger without changing the package contract.

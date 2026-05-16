@@ -93,18 +93,18 @@
       <section class="panel initiatives-panel" data-view-panel="initiatives">
         <header>
           <span>Active initiatives · <b id="initiativeCount">0</b> tracked</span>
-          <small>task package backend pending</small>
+          <small>click row → room-visible task state</small>
         </header>
         <div class="initiative-placeholder">
           <div>
-            <strong>Coming soon: initiative workspace</strong>
-            <p>This table will bind to <code>/api/task-package</code>, <code>/api/tasks</code>, and the task ledger after those backend tools are built.</p>
+            <strong>Task package ledger</strong>
+            <p>Live Phase 0 view backed by <code>GET /api/tasks</code>. Progress, gates, and cost projections remain coming soon.</p>
           </div>
           <table>
             <thead>
               <tr><th>ID</th><th>Status</th><th>Initiative</th><th>Lead</th><th>Agents</th><th>Progress</th><th>Tokens</th><th>Gates</th><th>Vendor</th></tr>
             </thead>
-            <tbody>
+            <tbody id="taskTableBody">
               <tr><td colspan="9">No initiative API is available yet. Use the composer below to announce work into the room.</td></tr>
             </tbody>
           </table>

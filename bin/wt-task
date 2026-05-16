@@ -1,0 +1,198 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOM_URL="${WT_ROOM_URL:-http://127.0.0.1:8787}"
+
+usage() {
+    cat <<'USAGE'
+Usage:
+  wt-task create --title TITLE --body BODY --role ROLE [--agent AGENT] [--initiative INIT] [--priority P]
+  wt-task list
+  wt-task show TASK_ID
+  wt-task assign TASK_ID --agent AGENT [--status assigned]
+  wt-task update-status TASK_ID --status STATUS [--message TEXT]
+
+Environment:
+  WT_ROOM_URL  wt-roomd base URL, default http://127.0.0.1:8787
+USAGE
+}
+
+require_jq() {
+    if ! command -v jq >/dev/null 2>&1; then
+        echo "wt-task: jq is required" >&2
+        exit 2
+    fi
+}
+
+http_get() {
+    curl -fsS "$ROOM_URL$1"
+}
+
+http_post_json() {
+    local path="$1"
+    local json="$2"
+    curl -fsS -H 'Content-Type: application/json' -d "$json" "$ROOM_URL$path"
+}
+
+now_ms() {
+    local seconds nanoseconds
+    seconds="$(date +%s)"
+    nanoseconds="$(date +%N)"
+    printf '%s%03d\n' "$seconds" "$((10#$nanoseconds / 1000000))"
+}
+
+new_id() {
+    local prefix="$1"
+    if command -v uuidgen >/dev/null 2>&1; then
+        printf '%s_%s\n' "$prefix" "$(uuidgen | tr '[:upper:]' '[:lower:]' | tr -d '-')"
+    else
+        printf '%s_%s_%s\n' "$prefix" "$(date +%s)" "$RANDOM"
+    fi
+}
+
+cmd_create() {
+    local title="" body="" role="" agent="" initiative="" priority="normal"
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --title) title="${2:-}"; shift 2 ;;
+            --body) body="${2:-}"; shift 2 ;;
+            --role) role="${2:-}"; shift 2 ;;
+            --agent) agent="${2:-}"; shift 2 ;;
+            --initiative) initiative="${2:-}"; shift 2 ;;
+            --priority) priority="${2:-}"; shift 2 ;;
+            *) echo "wt-task create: unknown argument: $1" >&2; usage >&2; exit 2 ;;
+        esac
+    done
+    if [[ -z "$title" || -z "$body" || -z "$role" ]]; then
+        echo "wt-task create: --title, --body, and --role are required" >&2
+        exit 2
+    fi
+    [[ -n "$agent" ]] || agent="all"
+    [[ -n "$initiative" ]] || initiative="$(new_id init)"
+    local task_id created_at
+    task_id="$(new_id task)"
+    created_at="$(now_ms)"
+    local json
+    json="$(jq -cn \
+        --arg taskId "$task_id" \
+        --arg initiativeId "$initiative" \
+        --arg createdBy "ceo" \
+        --arg assignedRole "$role" \
+        --arg assignedAgent "$agent" \
+        --arg priority "$priority" \
+        --arg title "$title" \
+        --arg body "$body" \
+        --argjson createdAtUnixMs "$created_at" \
+        '{
+          schema:"woventeam.task_package.v0.1",
+          taskId:$taskId,
+          initiativeId:$initiativeId,
+          createdBy:$createdBy,
+          assignedRole:$assignedRole,
+          assignedAgent:$assignedAgent,
+          priority:$priority,
+          status:"queued",
+          title:$title,
+          body:$body,
+          task:{title:$title, body:$body, deliverables:[]},
+          contextRefs:[],
+          acceptanceCriteria:["Task result is recorded in the room and task ledger."],
+          toolPolicy:{profile:"observe", filesystem:"read_only", network:"none", system:"none", git:"none"},
+          budget:{timeoutSeconds:1800, maxOutputBytes:1048576, maxCostUsd:1.0},
+          dependencies:[],
+          createdAtUnixMs:$createdAtUnixMs
+        }')"
+    http_post_json "/api/task-package" "$json"
+}
+
+cmd_list() {
+    http_get "/api/tasks" | jq -r '
+      reduce .[] as $row ({};
+        if $row.schema == "woventeam.task_package.v0.1" then
+          .[$row.taskId] = {
+            taskId:$row.taskId,
+            status:($row.status // "queued"),
+            assignedAgent:($row.assignedAgent // "all"),
+            assignedRole:($row.assignedRole // ""),
+            title:($row.title // $row.task.title // "")
+          }
+        elif $row.schema == "woventeam.task_event.v0.1" and .[$row.taskId] then
+          .[$row.taskId].status = ($row.status // .[$row.taskId].status) |
+          .[$row.taskId].assignedAgent = ($row.assignedAgent // .[$row.taskId].assignedAgent)
+        else . end
+      ) | to_entries[] | [.value.taskId, .value.status, .value.assignedAgent, .value.assignedRole, .value.title] | @tsv'
+}
+
+cmd_show() {
+    local task_id="${1:-}"
+    if [[ -z "$task_id" ]]; then
+        echo "wt-task show: TASK_ID is required" >&2
+        exit 2
+    fi
+    http_get "/api/tasks" | jq --arg taskId "$task_id" '[.[] | select(.taskId == $taskId)]'
+}
+
+cmd_assign() {
+    local task_id="${1:-}" agent="" status="assigned"
+    shift || true
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --agent) agent="${2:-}"; shift 2 ;;
+            --status) status="${2:-}"; shift 2 ;;
+            *) echo "wt-task assign: unknown argument: $1" >&2; usage >&2; exit 2 ;;
+        esac
+    done
+    if [[ -z "$task_id" || -z "$agent" ]]; then
+        echo "wt-task assign: TASK_ID and --agent are required" >&2
+        exit 2
+    fi
+    local created_at json
+    created_at="$(now_ms)"
+    json="$(jq -cn \
+        --arg taskId "$task_id" \
+        --arg status "$status" \
+        --arg assignedAgent "$agent" \
+        --arg createdBy "ceo" \
+        --argjson createdAtUnixMs "$created_at" \
+        '{schema:"woventeam.task_event.v0.1",taskId:$taskId,eventType:"assignment",status:$status,assignedAgent:$assignedAgent,message:"Task assigned by wt-task.",createdBy:$createdBy,createdAtUnixMs:$createdAtUnixMs}')"
+    http_post_json "/api/task-event" "$json"
+}
+
+cmd_update_status() {
+    local task_id="${1:-}" status="" message="Task status updated by wt-task."
+    shift || true
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --status) status="${2:-}"; shift 2 ;;
+            --message) message="${2:-}"; shift 2 ;;
+            *) echo "wt-task update-status: unknown argument: $1" >&2; usage >&2; exit 2 ;;
+        esac
+    done
+    if [[ -z "$task_id" || -z "$status" ]]; then
+        echo "wt-task update-status: TASK_ID and --status are required" >&2
+        exit 2
+    fi
+    local created_at json
+    created_at="$(now_ms)"
+    json="$(jq -cn \
+        --arg taskId "$task_id" \
+        --arg status "$status" \
+        --arg message "$message" \
+        --arg createdBy "ceo" \
+        --argjson createdAtUnixMs "$created_at" \
+        '{schema:"woventeam.task_event.v0.1",taskId:$taskId,eventType:"status",status:$status,message:$message,createdBy:$createdBy,createdAtUnixMs:$createdAtUnixMs}')"
+    http_post_json "/api/task-event" "$json"
+}
+
+require_jq
+cmd="${1:-}"
+shift || true
+case "$cmd" in
+    create) cmd_create "$@" ;;
+    list) cmd_list "$@" ;;
+    show) cmd_show "$@" ;;
+    assign) cmd_assign "$@" ;;
+    update-status) cmd_update_status "$@" ;;
+    -h|--help|help|"") usage ;;
+    *) echo "wt-task: unknown command: $cmd" >&2; usage >&2; exit 2 ;;
+esac

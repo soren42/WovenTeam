@@ -1,0 +1,160 @@
+/*
+ * wt_task_store.c - Append-only JSONL task package ledger.
+ */
+#include "wt_task_store.h"
+
+#include "wt_json.h"
+#include "wt_room_store.h"
+#include "wt_time.h"
+
+#include <fcntl.h>
+#include <stdio.h>
+#include <string.h>
+#include <sys/file.h>
+#include <unistd.h>
+
+static int lineHasSchema(const char *line, const char *schema) {
+    char value[128];
+    return wtJsonReadString(line, "schema", value, sizeof(value)) == 0 &&
+           strcmp(value, schema) == 0;
+}
+
+static void readOptionalString(const char *json, const char *key, char *buffer, size_t bufferSize, const char *fallback) {
+    if (wtJsonReadString(json, key, buffer, bufferSize) != 0) {
+        snprintf(buffer, bufferSize, "%s", fallback ? fallback : "");
+    }
+}
+
+int wtTaskAppendRecord(const char *ledgerPath, const char *jsonLine, bool fsyncRecord) {
+    if (wtRoomEnsureParentDirs(ledgerPath) != 0) {
+        return -1;
+    }
+    int fd = open(ledgerPath, O_APPEND | O_CREAT | O_WRONLY, 0644);
+    if (fd < 0) {
+        return -1;
+    }
+    if (flock(fd, LOCK_EX) != 0) {
+        close(fd);
+        return -1;
+    }
+    size_t length = strlen(jsonLine);
+    int ok = write(fd, jsonLine, length) == (ssize_t)length &&
+             write(fd, "\n", 1) == 1;
+    if (ok && fsyncRecord) {
+        ok = fsync(fd) == 0;
+    }
+    flock(fd, LOCK_UN);
+    close(fd);
+    return ok ? 0 : -1;
+}
+
+int wtTaskReadAllJsonArray(const char *ledgerPath, char *buffer, size_t bufferSize) {
+    FILE *file = fopen(ledgerPath, "r");
+    size_t used = 0;
+    if (bufferSize < 3) {
+        return -1;
+    }
+    buffer[used++] = '[';
+    if (file) {
+        char line[WT_TASK_LEDGER_LINE_SIZE];
+        int first = 1;
+        while (fgets(line, sizeof(line), file)) {
+            size_t length = strlen(line);
+            while (length > 0 && (line[length - 1] == '\n' || line[length - 1] == '\r')) {
+                line[--length] = '\0';
+            }
+            if (length == 0) {
+                continue;
+            }
+            if (used + length + 3 >= bufferSize) {
+                break;
+            }
+            if (!first) {
+                buffer[used++] = ',';
+            }
+            first = 0;
+            memcpy(buffer + used, line, length);
+            used += length;
+        }
+        fclose(file);
+    }
+    buffer[used++] = ']';
+    buffer[used] = '\0';
+    return 0;
+}
+
+static int findKnownTask(WtTaskSummary *tasks, int count, const char *taskId) {
+    for (int index = 0; index < count; index++) {
+        if (strcmp(tasks[index].taskId, taskId) == 0) {
+            return index;
+        }
+    }
+    return -1;
+}
+
+int wtTaskFindQueuedForAgent(const char *ledgerPath, const char *agentName, WtTaskSummary *task) {
+    FILE *file = fopen(ledgerPath, "r");
+    if (!file) {
+        return 0;
+    }
+    WtTaskSummary tasks[256];
+    int count = 0;
+    char line[WT_TASK_LEDGER_LINE_SIZE];
+    while (fgets(line, sizeof(line), file)) {
+        char taskId[WT_TASK_ID_SIZE];
+        if (wtJsonReadString(line, "taskId", taskId, sizeof(taskId)) != 0) {
+            continue;
+        }
+        int index = findKnownTask(tasks, count, taskId);
+        if (lineHasSchema(line, "woventeam.task_package.v0.1")) {
+            if (index < 0 && count < 256) {
+                index = count++;
+                memset(&tasks[index], 0, sizeof(tasks[index]));
+                snprintf(tasks[index].taskId, sizeof(tasks[index].taskId), "%s", taskId);
+            }
+            if (index >= 0) {
+                readOptionalString(line, "assignedAgent", tasks[index].assignedAgent, sizeof(tasks[index].assignedAgent), "");
+                readOptionalString(line, "assignedRole", tasks[index].assignedRole, sizeof(tasks[index].assignedRole), "");
+                readOptionalString(line, "status", tasks[index].status, sizeof(tasks[index].status), "queued");
+                readOptionalString(line, "title", tasks[index].title, sizeof(tasks[index].title), "Untitled task");
+                wtJsonReadLongLong(line, "createdAtUnixMs", &tasks[index].updatedAtUnixMs);
+            }
+        } else if (lineHasSchema(line, "woventeam.task_event.v0.1")) {
+            if (index >= 0) {
+                readOptionalString(line, "status", tasks[index].status, sizeof(tasks[index].status), tasks[index].status);
+                readOptionalString(line, "assignedAgent", tasks[index].assignedAgent, sizeof(tasks[index].assignedAgent), tasks[index].assignedAgent);
+                wtJsonReadLongLong(line, "createdAtUnixMs", &tasks[index].updatedAtUnixMs);
+            }
+        }
+    }
+    fclose(file);
+    for (int index = 0; index < count; index++) {
+        if (strcmp(tasks[index].assignedAgent, agentName) == 0 &&
+            (strcmp(tasks[index].status, "queued") == 0 || strcmp(tasks[index].status, "assigned") == 0)) {
+            *task = tasks[index];
+            return 1;
+        }
+    }
+    return 0;
+}
+
+int wtTaskAppendStatusEvent(const char *ledgerPath, const char *taskId, const char *status,
+                            const char *createdBy, const char *message, bool fsyncRecord) {
+    char escapedTaskId[WT_TASK_ID_SIZE * 2];
+    char escapedStatus[WT_TASK_STATUS_SIZE * 2];
+    char escapedBy[WT_TASK_AGENT_SIZE * 2];
+    char escapedMessage[1024];
+    char json[2048];
+    if (wtJsonEscape(taskId, escapedTaskId, sizeof(escapedTaskId)) != 0 ||
+        wtJsonEscape(status, escapedStatus, sizeof(escapedStatus)) != 0 ||
+        wtJsonEscape(createdBy, escapedBy, sizeof(escapedBy)) != 0 ||
+        wtJsonEscape(message ? message : "", escapedMessage, sizeof(escapedMessage)) != 0) {
+        return -1;
+    }
+    snprintf(json, sizeof(json),
+             "{\"schema\":\"woventeam.task_event.v0.1\",\"taskId\":\"%s\","
+             "\"eventType\":\"status\",\"status\":\"%s\",\"message\":\"%s\","
+             "\"createdBy\":\"%s\",\"createdAtUnixMs\":%lld}",
+             escapedTaskId, escapedStatus, escapedMessage, escapedBy, wtNowUnixMilliseconds());
+    return wtTaskAppendRecord(ledgerPath, json, fsyncRecord);
+}

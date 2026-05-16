@@ -29,7 +29,11 @@ void wtMessageInit(WtMessage *message) {
 int wtMessageValidateNames(const WtMessage *message) {
     static const char *const senders[] = {"ceo", "system", "claude", "chatgpt", "gemini", NULL};
     static const char *const targets[] = {"all", "ceo", "claude", "chatgpt", "gemini", NULL};
-    static const char *const types[] = {"chat", "directive", "status", "error", NULL};
+    static const char *const types[] = {
+        "chat", "directive", "status", "error",
+        "task.assign", "task.status", "task.result",
+        NULL
+    };
     return isAllowedName(message->senderName, senders) &&
            isAllowedName(message->targetName, targets) &&
            isAllowedName(message->messageType, types) ? 0 : -1;

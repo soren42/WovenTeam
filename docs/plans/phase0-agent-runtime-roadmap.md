@@ -33,11 +33,22 @@ message execution.
 
 ## Sprint 2: Assignment Path
 
+**Status:** implemented for the Phase 0 stub runtime.
+
 1. Add `wt-task` commands for `create`, `list`, `show`, `assign`, and
    `update-status`.
 1. Add `POST /api/task-package` and `GET /api/tasks` to `wt-roomd`.
 1. Emit room-visible `task.assign`, `task.status`, and `task.result` events.
 1. Teach `wt-agent` to poll task packages by assigned agent and status.
+
+Implementation notes:
+
+- `bin/wt-task` wraps the daemon APIs.
+- `wt-roomd` exposes `POST /api/task-package`, `POST /api/task-event`, and
+  `GET /api/tasks`.
+- `wt-agent` claims queued or assigned packages for its agent name, emits
+  `task.status`, then emits a stub `task.result`.
+- Harness execution remains Sprint 3 work.
 
 ## Sprint 3: First Work Adapter
 

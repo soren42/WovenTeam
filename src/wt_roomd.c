@@ -11,6 +11,7 @@
 #include "wt_json.h"
 #include "wt_message.h"
 #include "wt_room_store.h"
+#include "wt_task_store.h"
 
 #include <arpa/inet.h>
 #include <errno.h>
@@ -119,6 +120,138 @@ static int handlePostMessage(int clientFd, const WtConfig *config, const char *r
     return wtHttpSendText(clientFd, 200, "OK", "application/json; charset=utf-8", json);
 }
 
+static void compactJsonLine(const char *input, char *output, size_t outputSize) {
+    size_t used = 0;
+    int inString = 0;
+    int escaped = 0;
+    for (const char *cursor = input; *cursor && used + 1 < outputSize; cursor++) {
+        char value = *cursor;
+        if (escaped) {
+            output[used++] = value;
+            escaped = 0;
+            continue;
+        }
+        if (value == '\\' && inString) {
+            output[used++] = value;
+            escaped = 1;
+            continue;
+        }
+        if (value == '"') {
+            inString = !inString;
+            output[used++] = value;
+            continue;
+        }
+        if (!inString && (value == '\n' || value == '\r' || value == '\t')) {
+            continue;
+        }
+        output[used++] = value;
+    }
+    output[used] = '\0';
+}
+
+static int appendTaskRoomEvent(const WtConfig *config, const char *taskId, const char *targetName,
+                               const char *messageType, const char *status, const char *title) {
+    WtMessage message;
+    wtMessageInit(&message);
+    snprintf(message.roomName, sizeof(message.roomName), "%s", config->roomName);
+    snprintf(message.senderName, sizeof(message.senderName), "%s", "system");
+    if (targetName && (strcmp(targetName, "claude") == 0 || strcmp(targetName, "chatgpt") == 0 ||
+                       strcmp(targetName, "gemini") == 0 || strcmp(targetName, "ceo") == 0 ||
+                       strcmp(targetName, "all") == 0)) {
+        snprintf(message.targetName, sizeof(message.targetName), "%s", targetName);
+    } else {
+        snprintf(message.targetName, sizeof(message.targetName), "%s", "all");
+    }
+    snprintf(message.messageType, sizeof(message.messageType), "%s", messageType);
+    snprintf(message.messageBody, sizeof(message.messageBody), "taskId=%s status=%s title=%s",
+             taskId, status, title && title[0] ? title : "Untitled task");
+    return wtRoomAppendNewMessage(config->roomLogPath, &message, config->fsyncEachMessage);
+}
+
+static int handlePostTaskPackage(int clientFd, const WtConfig *config, const char *request) {
+    const char *body = strstr(request, "\r\n\r\n");
+    if (!body) {
+        return wtHttpSendText(clientFd, 400, "Bad Request", "application/json", "{\"ok\":false}\n");
+    }
+    body += 4;
+    char schema[128];
+    char taskId[WT_TASK_ID_SIZE];
+    char assignedRole[WT_TASK_AGENT_SIZE];
+    char assignedAgent[WT_TASK_AGENT_SIZE];
+    char status[WT_TASK_STATUS_SIZE];
+    char title[WT_TASK_TITLE_SIZE];
+    if (wtJsonReadString(body, "schema", schema, sizeof(schema)) != 0 ||
+        strcmp(schema, "woventeam.task_package.v0.1") != 0 ||
+        wtJsonReadString(body, "taskId", taskId, sizeof(taskId)) != 0 ||
+        wtJsonReadString(body, "assignedRole", assignedRole, sizeof(assignedRole)) != 0) {
+        return wtHttpSendText(clientFd, 400, "Bad Request", "application/json", "{\"ok\":false,\"error\":\"invalid task package\"}\n");
+    }
+    if (wtJsonReadString(body, "assignedAgent", assignedAgent, sizeof(assignedAgent)) != 0) {
+        snprintf(assignedAgent, sizeof(assignedAgent), "%s", "all");
+    }
+    if (wtJsonReadString(body, "status", status, sizeof(status)) != 0) {
+        snprintf(status, sizeof(status), "%s", "queued");
+    }
+    if (wtJsonReadString(body, "title", title, sizeof(title)) != 0) {
+        snprintf(title, sizeof(title), "%s", "Untitled task");
+    }
+    char compact[WT_TASK_LEDGER_LINE_SIZE];
+    compactJsonLine(body, compact, sizeof(compact));
+    if (wtTaskAppendRecord(config->taskLedgerPath, compact, config->fsyncEachMessage) != 0 ||
+        appendTaskRoomEvent(config, taskId, assignedAgent, "task.assign", status, title) != 0) {
+        return wtHttpSendText(clientFd, 500, "Internal Server Error", "application/json", "{\"ok\":false,\"error\":\"append failed\"}\n");
+    }
+    char response[512];
+    snprintf(response, sizeof(response), "{\"ok\":true,\"taskId\":\"%s\",\"assignedAgent\":\"%s\",\"status\":\"%s\"}\n",
+             taskId, assignedAgent, status);
+    return wtHttpSendText(clientFd, 200, "OK", "application/json; charset=utf-8", response);
+}
+
+static int sendTasksJson(int clientFd, const WtConfig *config) {
+    char body[WT_TASK_LEDGER_LINE_SIZE * 8];
+    if (wtTaskReadAllJsonArray(config->taskLedgerPath, body, sizeof(body)) != 0) {
+        return wtHttpSendText(clientFd, 500, "Internal Server Error", "application/json", "{\"ok\":false}\n");
+    }
+    return wtHttpSendText(clientFd, 200, "OK", "application/json; charset=utf-8", body);
+}
+
+static int handlePostTaskEvent(int clientFd, const WtConfig *config, const char *request) {
+    const char *body = strstr(request, "\r\n\r\n");
+    if (!body) {
+        return wtHttpSendText(clientFd, 400, "Bad Request", "application/json", "{\"ok\":false}\n");
+    }
+    body += 4;
+    char schema[128];
+    char taskId[WT_TASK_ID_SIZE];
+    char status[WT_TASK_STATUS_SIZE];
+    char message[WT_TASK_TITLE_SIZE];
+    char createdBy[WT_TASK_AGENT_SIZE];
+    if (wtJsonReadString(body, "schema", schema, sizeof(schema)) != 0 ||
+        strcmp(schema, "woventeam.task_event.v0.1") != 0 ||
+        wtJsonReadString(body, "taskId", taskId, sizeof(taskId)) != 0 ||
+        wtJsonReadString(body, "status", status, sizeof(status)) != 0) {
+        return wtHttpSendText(clientFd, 400, "Bad Request", "application/json", "{\"ok\":false,\"error\":\"invalid task event\"}\n");
+    }
+    if (wtJsonReadString(body, "message", message, sizeof(message)) != 0) {
+        snprintf(message, sizeof(message), "%s", "Task status updated.");
+    }
+    if (wtJsonReadString(body, "createdBy", createdBy, sizeof(createdBy)) != 0) {
+        snprintf(createdBy, sizeof(createdBy), "%s", "system");
+    }
+    char compact[WT_TASK_LEDGER_LINE_SIZE];
+    compactJsonLine(body, compact, sizeof(compact));
+    const char *messageType = strcmp(status, "complete") == 0 || strcmp(status, "failed") == 0 ?
+                              "task.result" : "task.status";
+    if (wtTaskAppendRecord(config->taskLedgerPath, compact, config->fsyncEachMessage) != 0 ||
+        appendTaskRoomEvent(config, taskId, "all", messageType, status, message) != 0) {
+        return wtHttpSendText(clientFd, 500, "Internal Server Error", "application/json", "{\"ok\":false,\"error\":\"append failed\"}\n");
+    }
+    char response[512];
+    snprintf(response, sizeof(response), "{\"ok\":true,\"taskId\":\"%s\",\"status\":\"%s\",\"createdBy\":\"%s\"}\n",
+             taskId, status, createdBy);
+    return wtHttpSendText(clientFd, 200, "OK", "application/json; charset=utf-8", response);
+}
+
 static void sendSseEvent(int clientFd, const WtMessage *message) {
     char json[WT_MESSAGE_JSON_SIZE];
     char frame[WT_MESSAGE_JSON_SIZE + 64];
@@ -179,8 +312,14 @@ static void handleClient(int clientFd, const WtConfig *config) {
         char *limitText = strstr(path, "limit=");
         if (limitText) limit = atoi(limitText + 6);
         sendMessagesJson(clientFd, config, limit);
+    } else if (strcmp(method, "GET") == 0 && strcmp(path, "/api/tasks") == 0) {
+        sendTasksJson(clientFd, config);
     } else if (strcmp(method, "POST") == 0 && strcmp(path, "/api/message") == 0) {
         handlePostMessage(clientFd, config, request);
+    } else if (strcmp(method, "POST") == 0 && strcmp(path, "/api/task-package") == 0) {
+        handlePostTaskPackage(clientFd, config, request);
+    } else if (strcmp(method, "POST") == 0 && strcmp(path, "/api/task-event") == 0) {
+        handlePostTaskEvent(clientFd, config, request);
     } else if (strcmp(method, "GET") == 0 && strcmp(path, "/api/health") == 0) {
         char body[256];
         snprintf(body, sizeof(body), "{\"ok\":true,\"roomName\":\"%s\"}\n", config->roomName);

@@ -75,3 +75,13 @@ The first structured orchestration contract is documented as JSON Schema in
 `docs/api/task-package-v0.1.json`. Runtime task packages are expected to land in
 the append-only `data/task-packages.jsonl` ledger, described in
 `docs/api/task-ledger-v0.1.md`, until the project needs a queryable store.
+
+Create and inspect Phase 0 task packages through the room daemon:
+
+```sh
+./bin/wt-task create --title "Verify assignment path" --body "Claim and complete this stub task." --role backend_dev --agent chatgpt
+./bin/wt-task list
+./bin/wt-task show task_example_001
+./bin/wt-task assign task_example_001 --agent gemini
+./bin/wt-task update-status task_example_001 --status blocked --message "Waiting on operator input."
+```

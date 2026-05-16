@@ -16,6 +16,7 @@
 typedef struct {
     char roomName[WT_NAME_SIZE];
     char roomLogPath[WT_PATH_SIZE];
+    char taskLedgerPath[WT_PATH_SIZE];
     char httpBindAddress[WT_NAME_SIZE];
     int httpPort;
     int contextMessageCount;
