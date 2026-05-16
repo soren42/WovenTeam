@@ -1,0 +1,434 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>WovenTeam Phase 0 Agent Access And Workload Roadmap</title>
+  <style>
+    :root {
+      --bg: #f7f7f4;
+      --paper: #ffffff;
+      --ink: #202326;
+      --muted: #606970;
+      --line: #d9ddd8;
+      --good: #1f6f5b;
+      --warn: #9b6a13;
+      --bad: #a33a32;
+      --info: #285f8f;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      line-height: 1.52;
+    }
+    main {
+      max-width: 1120px;
+      margin: 0 auto;
+      padding: 28px 18px 56px;
+    }
+    header {
+      border-bottom: 2px solid var(--line);
+      padding-bottom: 18px;
+      margin-bottom: 20px;
+    }
+    h1 {
+      margin: 0 0 8px;
+      font-size: 34px;
+      line-height: 1.15;
+      letter-spacing: 0;
+    }
+    h2 {
+      margin: 28px 0 10px;
+      font-size: 22px;
+      border-top: 1px solid var(--line);
+      padding-top: 20px;
+    }
+    h3 { margin: 20px 0 8px; font-size: 17px; }
+    p { margin: 8px 0; }
+    code, pre {
+      background: #f0f2ef;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+    }
+    code { padding: 1px 5px; }
+    pre {
+      overflow: auto;
+      padding: 12px;
+      white-space: pre-wrap;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 12px 0 18px;
+      background: var(--paper);
+    }
+    th, td {
+      border: 1px solid var(--line);
+      padding: 9px 10px;
+      text-align: left;
+      vertical-align: top;
+    }
+    th { background: #ecefeb; }
+    ul, ol { padding-left: 22px; }
+    .meta {
+      color: var(--muted);
+      margin: 0;
+    }
+    .summary {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 12px;
+      margin: 18px 0;
+    }
+    .card {
+      background: var(--paper);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 14px;
+    }
+    .card strong {
+      display: block;
+      font-size: 15px;
+      margin-bottom: 4px;
+    }
+    .pass { color: var(--good); font-weight: 700; }
+    .warn { color: var(--warn); font-weight: 700; }
+    .fail { color: var(--bad); font-weight: 700; }
+    .info { color: var(--info); font-weight: 700; }
+    .diagram {
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 13px;
+    }
+    @media (max-width: 760px) {
+      .summary { grid-template-columns: 1fr; }
+      h1 { font-size: 28px; }
+    }
+  </style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Phase 0 Agent Access And Workload Roadmap</h1>
+    <p class="meta">Generated 2026-05-16 UTC from live inspection of <code>xenon</code> and <code>/woventeam/repos/WovenTeam</code>.</p>
+  </header>
+
+  <section class="summary">
+    <div class="card">
+      <strong>Are agents running on xenon?</strong>
+      <span class="pass">Yes.</span>
+      <p><code>wt-roomd</code>, <code>wt-agent@claude</code>, <code>wt-agent@chatgpt</code>, and <code>wt-agent@gemini</code> are active systemd services on host <code>xenon</code>.</p>
+    </div>
+    <div class="card">
+      <strong>Can agents use harnesses today?</strong>
+      <span class="warn">No, not through WovenTeam.</span>
+      <p>Some harness CLIs are installed, but the current native agents are stub responders and have no adapter execution path.</p>
+    </div>
+    <div class="card">
+      <strong>Can role/task/agent packages be added?</strong>
+      <span class="pass">Yes, feasible.</span>
+      <p>The path is an orchestrator layer over the existing room: task schema, durable task state, role routing, adapter runners, permissions, and context packaging.</p>
+    </div>
+  </section>
+
+  <h2>Questions Answered</h2>
+
+  <h3>1. Are these agents running on xenon?</h3>
+  <p><span class="pass">Yes.</span> Live inspection reports static hostname <code>xenon</code>, Ubuntu 26.04 LTS, and active systemd units:</p>
+  <table>
+    <thead>
+      <tr><th>Unit</th><th>State</th><th>Observed command</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>wt-roomd.service</code></td><td>active</td><td><code>build/wt-roomd --config config/woventeam-phase0.conf</code></td></tr>
+      <tr><td><code>wt-agent@claude.service</code></td><td>active</td><td><code>build/wt-agent --agent claude --loop --config ...</code></td></tr>
+      <tr><td><code>wt-agent@chatgpt.service</code></td><td>active</td><td><code>build/wt-agent --agent chatgpt --loop --config ...</code></td></tr>
+      <tr><td><code>wt-agent@gemini.service</code></td><td>active</td><td><code>build/wt-agent --agent gemini --loop --config ...</code></td></tr>
+      <tr><td><code>wt-agent@qwen.service</code></td><td>disabled, inactive</td><td>Disabled until a Qwen room adapter exists.</td></tr>
+    </tbody>
+  </table>
+
+  <p>These are WovenTeam-native stub room agents, not independent model harness sessions.</p>
+
+  <h3>2. Do they have access to their harnesses, and can they launch them?</h3>
+  <p>The host has some harnesses installed and launchable for version probes under a systemd sandbox similar to the current service hardening. That does not mean the WovenTeam agents can perform meaningful work through them today.</p>
+
+  <table>
+    <thead>
+      <tr><th>Harness</th><th>Installed on xenon</th><th>Sandbox version probe</th><th>Current WovenTeam execution support</th><th>Notes</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Claude Code</td>
+        <td><span class="pass">Yes</span>: <code>/home/woven/.local/bin/claude</code></td>
+        <td><span class="pass">Pass</span>: <code>2.1.140</code></td>
+        <td><span class="fail">No</span></td>
+        <td>The CLI exists, but <code>wt-agent</code> only emits stub replies.</td>
+      </tr>
+      <tr>
+        <td>Codex CLI</td>
+        <td><span class="pass">Yes</span>: <code>/usr/local/bin/codex</code></td>
+        <td><span class="pass">Pass</span>: <code>0.130.0</code>, with a read-only home warning during sandbox probe</td>
+        <td><span class="fail">No</span></td>
+        <td>The current live Codex process is this session, not a WovenTeam-managed worker.</td>
+      </tr>
+      <tr>
+        <td>Ollama</td>
+        <td><span class="pass">Yes</span>: <code>/usr/local/bin/ollama</code></td>
+        <td><span class="pass">Pass</span>: <code>0.23.1</code></td>
+        <td><span class="fail">No</span></td>
+        <td><code>ollama.service</code> is active, but <code>ollama list</code> shows no local models installed.</td>
+      </tr>
+      <tr>
+        <td>Gemini CLI</td>
+        <td><span class="pass">Yes</span>: <code>/usr/local/bin/gemini</code></td>
+        <td><span class="pass">Pass</span>: <code>0.42.0</code></td>
+        <td><span class="fail">No</span></td>
+        <td>The CLI is now visible to the service environment. Headless task execution must handle Gemini trusted-workspace policy explicitly.</td>
+      </tr>
+      <tr>
+        <td>Qwen CLI</td>
+        <td><span class="fail">No</span></td>
+        <td>Not applicable</td>
+        <td><span class="fail">No</span></td>
+        <td>Qwen remains adapter work. Existing docs already note no Qwen CLI path is wired.</td>
+      </tr>
+      <tr>
+        <td>OpenAI CLI profile path</td>
+        <td><span class="pass">Corrected</span>: <code>codex</code></td>
+        <td><span class="pass">Pass</span>: <code>0.130.0</code></td>
+        <td><span class="fail">No</span></td>
+        <td>OpenAI model profiles now route through the installed Codex CLI harness.</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <p>Current answer: <strong>the services can launch version probes for installed binaries, but WovenTeam agents cannot yet launch harnesses to perform tasks.</strong> Extending the framework is feasible, but it requires a deliberate adapter and permission design.</p>
+
+  <h3>3. Can the common conversation evolve into role + task + agent packages?</h3>
+  <p><span class="pass">Yes.</span> The current room is a good transport and audit substrate, but it is not yet an orchestrator. It needs a task package schema, task ledger, assignment endpoints, routing rules, and agent execution contracts.</p>
+
+  <h2>Current Architecture</h2>
+  <pre class="diagram">Browser / wt-say
+    |
+    | POST /api/message
+    v
+wt-roomd
+    |
+    | append JSONL message
+    v
+data/phase0-room.jsonl
+    |
+    | polling
+    v
+wt-agent@claude / wt-agent@chatgpt / wt-agent@gemini
+    |
+    | stub response only
+    v
+data/phase0-room.jsonl</pre>
+
+  <h2>Observed Limits</h2>
+  <table>
+    <thead>
+      <tr><th>Area</th><th>Current limit</th><th>Impact</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>Message schema</td><td>Only flat chat-style fields: sender, target, type, body, reply link.</td><td>No structured role/task/agent package.</td></tr>
+      <tr><td>Durable task state</td><td>Room JSONL is the only native state.</td><td>No task lifecycle, ownership, dependency graph, or retry accounting.</td></tr>
+      <tr><td>Agent behavior</td><td>Responds to CEO/system messages with deterministic stub text.</td><td>No real work execution.</td></tr>
+      <tr><td>Harness execution</td><td>No adapter runner in native <code>wt-agent</code>.</td><td>Installed CLIs are unused.</td></tr>
+      <tr><td>Permissions</td><td>Systemd agents have <code>ProtectHome=read-only</code> and only <code>/woventeam</code> writable.</td><td>Real harnesses may need dedicated writable runtime homes or caches.</td></tr>
+      <tr><td>Role routing</td><td>Role/model profiles exist, but no runtime resolver consumes them.</td><td>No automatic role to model to agent assignment.</td></tr>
+      <tr><td>Context control</td><td>Agents read last N room messages.</td><td>No scoped context bundle, artifact references, or token budget controls.</td></tr>
+      <tr><td>Management hierarchy</td><td>Role docs describe PM/PgM spawning, but code has no spawn API.</td><td>Management agents cannot kick off sub-agents.</td></tr>
+    </tbody>
+  </table>
+
+  <h2>Feasibility</h2>
+  <p>The project path is feasible if the next phase keeps the room as the shared conversation layer and adds a separate execution plane. The room should carry task events and human-readable summaries; a task ledger should carry authoritative task state.</p>
+
+  <h3>Proposed Target Architecture</h3>
+  <pre class="diagram">CEO / Program Manager / Project Manager
+    |
+    | POST /api/task-package
+    v
+wt-roomd + task ledger
+    |
+    | task.assign event in room + durable task row
+    v
+wt-orchestrator
+    |
+    | resolve role, model, harness, permissions, workspace
+    v
+wt-agent@role-instance
+    |
+    | adapter runner: codex / claude / local model / future wrappers
+    v
+workspace artifact + task.result event + room summary</pre>
+
+  <h2>Minimum Task Package</h2>
+  <p>A complete package should be explicit enough for stateless agents and strict enough for orchestration:</p>
+  <pre>{
+  "schema": "woventeam.task_package.v1",
+  "taskId": "task-20260516-0001",
+  "initiativeId": "phase0-agent-runtime",
+  "createdBy": "ceo",
+  "assignedRole": "backend_dev",
+  "assignedAgent": "chatgpt",
+  "modelId": "openai/gpt-5.3-codex",
+  "priority": "normal",
+  "taskTitle": "Implement task ledger schema",
+  "taskBody": "Build the smallest durable task state layer...",
+  "contextRefs": [
+    {"type": "file", "path": "docs/PHASE0_OPERATIONS.md"},
+    {"type": "room_message", "messageId": 19}
+  ],
+  "acceptanceCriteria": [
+    "Task create/read/update paths are covered by smoke tests",
+    "No vendor CLI is invoked without an adapter allowlist"
+  ],
+  "toolPolicy": {
+    "filesystem": "repo_write",
+    "network": "none",
+    "system": "none",
+    "git": "branch_only"
+  },
+  "budget": {
+    "maxRuntimeSeconds": 900,
+    "maxOutputBytes": 1048576,
+    "maxCostUsd": 1.00
+  },
+  "dependencies": []
+}</pre>
+
+  <h2>Roadmap</h2>
+  <table>
+    <thead>
+      <tr><th>Phase</th><th>Goal</th><th>Deliverables</th><th>Exit criteria</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>0.1 Capability Inventory</td>
+        <td>Make host and harness reality visible.</td>
+        <td><code>wt-harness-check</code>, JSON capability report, model-profile drift report.</td>
+        <td>Report says which agents are installed, authenticated, launchable, writable, and supported.</td>
+      </tr>
+      <tr>
+        <td>0.2 Task Package Schema</td>
+        <td>Represent role + task + agent as a durable package.</td>
+        <td><code>woventeam.task_package.v1</code>, task JSONL or SQLite ledger, validation tests.</td>
+        <td>CEO can create a structured task package and see it in the room and ledger.</td>
+      </tr>
+      <tr>
+        <td>0.3 Router</td>
+        <td>Resolve roles to models and agent instances.</td>
+        <td>Role/model profile loader, suitability filter, blocked-vendor filter, missing-harness filter.</td>
+        <td>Router selects an available model or explains why no assignment is possible.</td>
+      </tr>
+      <tr>
+        <td>0.4 Adapter Runner</td>
+        <td>Run meaningful work through one safe harness.</td>
+        <td>Codex-first adapter with stdin prompt, bounded stdout/stderr, timeout, workspace path, audit event.</td>
+        <td>One task executes in a controlled workspace and writes a task result without manual shell use.</td>
+      </tr>
+      <tr>
+        <td>0.5 Claude Adapter Decision</td>
+        <td>Define an approved Claude execution path.</td>
+        <td>Design note choosing human-mediated, API-backed, or other approved mode; no implicit automation.</td>
+        <td>Claude tasks are either explicitly supported by policy or routed elsewhere.</td>
+      </tr>
+      <tr>
+        <td>0.6 Manager Spawn Flow</td>
+        <td>Allow PM/PgM agents to create sub-agent packages.</td>
+        <td><code>/api/task-package</code>, <code>task.request</code>, <code>task.assign</code>, dependency and gate states.</td>
+        <td>A PM task can spawn a backend or tester subtask with bounded context and permissions.</td>
+      </tr>
+      <tr>
+        <td>0.7 Operations Hardening</td>
+        <td>Make boot and runtime reliable.</td>
+        <td>Per-agent runtime homes, systemd templates, journald correlation IDs, crash/retry policy.</td>
+        <td>Agents survive reboot and do not lose in-progress task state.</td>
+      </tr>
+      <tr>
+        <td>0.8 Dashboard</td>
+        <td>Expose task state to CEO and managers.</td>
+        <td>Task list, filters, status badges, role/model assignment display, result links.</td>
+        <td>CEO can see pending, running, blocked, complete, and failed tasks.</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h2>Project Plan</h2>
+  <h3>Sprint 1: Reality And Schema</h3>
+  <ol>
+    <li>Add <code>docs/api/task-package-v0.1.json</code> with the package schema.</li>
+    <li>Add <code>wt-harness-check</code> to inspect installed CLIs, version, launchability, service sandbox write constraints, and model-profile drift.</li>
+    <li>Add tests for missing Gemini/Qwen/OpenAI CLI mismatch and installed Claude/Codex/Ollama visibility.</li>
+    <li>Add a task ledger in JSONL first, or SQLite if task querying becomes immediately necessary.</li>
+  </ol>
+
+  <h3>Sprint 2: Assignment Path</h3>
+  <ol>
+    <li>Add <code>wt-task</code> CLI: create, list, show, assign, update-status.</li>
+    <li>Add <code>POST /api/task-package</code> and <code>GET /api/tasks</code> to <code>wt-roomd</code>.</li>
+    <li>Emit room-visible <code>task.assign</code>, <code>task.status</code>, and <code>task.result</code> events.</li>
+    <li>Teach <code>wt-agent</code> to poll task packages by assigned agent and status.</li>
+  </ol>
+
+  <h3>Sprint 3: First Meaningful Work Adapter</h3>
+  <ol>
+    <li>Implement one adapter runner, preferably Codex-first because the CLI is installed and already being used on this host.</li>
+    <li>Use per-task workspaces under <code>/woventeam/runtime/tasks/&lt;taskId&gt;</code>.</li>
+    <li>Use bounded input/output, timeout, exit-code capture, and artifact manifest writing.</li>
+    <li>Keep tool permissions conservative: repo read/write only in a branch workspace; no live system changes.</li>
+  </ol>
+
+  <h3>Sprint 4: Manager-Driven Subtasks</h3>
+  <ol>
+    <li>Implement <code>task.request</code> messages for PM/PgM roles.</li>
+    <li>Add policy checks: which roles may spawn which other roles, max concurrency, and required approval gates.</li>
+    <li>Add dependency handling and blocked-state propagation.</li>
+    <li>Add smoke test: CEO creates initiative, PM creates two subtasks, worker completes one, tester reviews result.</li>
+  </ol>
+
+  <h2>Permission Model</h2>
+  <p>Do not give every harness the same authority. Define tool profiles that are part of each task package and enforced by the runner.</p>
+  <table>
+    <thead>
+      <tr><th>Profile</th><th>Filesystem</th><th>Network</th><th>System</th><th>Git</th><th>Use case</th></tr>
+    </thead>
+    <tbody>
+      <tr><td><code>observe</code></td><td>read-only</td><td>none</td><td>none</td><td>none</td><td>Review, planning, summarization.</td></tr>
+      <tr><td><code>repo_branch</code></td><td>repo workspace write</td><td>none by default</td><td>none</td><td>branch only</td><td>Coding tasks.</td></tr>
+      <tr><td><code>test_local</code></td><td>repo workspace write</td><td>loopback only</td><td>none</td><td>branch only</td><td>Build and local test tasks.</td></tr>
+      <tr><td><code>ops_read</code></td><td>read-only</td><td>intranet read</td><td>status commands only</td><td>none</td><td>Systems investigation.</td></tr>
+      <tr><td><code>ops_change</code></td><td>explicit paths</td><td>intranet</td><td>approved commands</td><td>branch plus change report</td><td>Requires human approval.</td></tr>
+    </tbody>
+  </table>
+
+  <h2>Systemd And Runtime Changes Needed</h2>
+  <ul>
+    <li>Replace <code>ProtectHome=read-only</code> for harness runners with dedicated writable runtime homes, such as <code>/woventeam/runtime/homes/&lt;agent&gt;</code>, or bind-mount only the required credential files read-only plus a writable cache/state directory.</li>
+    <li>Keep <code>wt-roomd</code> and task ledger small and native; do not embed vendor SDKs in the daemon.</li>
+    <li>Run adapters as child processes with explicit argv arrays, not shell-concatenated commands.</li>
+    <li>Capture stdout/stderr separately, cap output, and store large artifacts as files referenced from task results.</li>
+    <li>Record every adapter launch in the task ledger with command path, argv summary, timeout, exit status, output hash, and workspace path.</li>
+    <li>For Gemini adapters, set an explicit trusted-workspace policy for headless execution instead of relying on an interactive trust prompt.</li>
+  </ul>
+
+  <h2>Recommended Immediate Next Steps</h2>
+  <ol>
+    <li><span class="pass">Done:</span> Create <code>docs/api/task-package-v0.1.json</code>.</li>
+    <li><span class="pass">Done:</span> Create <code>docs/plans/phase0-agent-runtime-roadmap.md</code> from this report for issue tracking.</li>
+    <li><span class="pass">Done:</span> Implement <code>wt-harness-check</code> and report active model profiles whose CLIs are missing on the target host.</li>
+    <li><span class="pass">Done:</span> Correct model-profile drift for the primary active set: Claude, Codex, and Gemini are launchable; Qwen and Grok are standby until supported.</li>
+    <li>Build Codex-first adapter behind a feature flag with a single safe task type.</li>
+  </ol>
+
+  <h2>Bottom Line</h2>
+  <p>The current common chat system has proven durable shared state and live stub participants on xenon. It is not yet a work-capable multi-agent system. The path from here to role/task/agent packages is feasible and should be built as a staged orchestration layer rather than by letting chat messages execute commands directly.</p>
+</main>
+</body>
+</html>

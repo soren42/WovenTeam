@@ -54,8 +54,22 @@ Useful targets:
 
 ```sh
 make run-demo
+make harness-check
 make test-smoke
+make test-harness-check
 make DEBUG=1
 make install-roomd-service
 make install-agent-services
 ```
+
+Check host harness visibility against active model profiles:
+
+```sh
+./bin/wt-harness-check
+./bin/wt-harness-check --json --strict
+```
+
+The first structured orchestration contract is documented as JSON Schema in
+`docs/api/task-package-v0.1.json`. Runtime task packages are expected to land in
+the append-only `data/task-packages.jsonl` ledger, described in
+`docs/api/task-ledger-v0.1.md`, until the project needs a queryable store.

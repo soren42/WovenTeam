@@ -12,6 +12,7 @@ build/
 
 data/*.jsonl
 data/*.state
+data/task-packages.jsonl
 config/woventeam-phase0.conf
 
 # Local private analysis artifacts must remain outside this repository.

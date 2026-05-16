@@ -17,7 +17,7 @@ COMMON_OBJS := \
 	$(BUILD_DIR)/wt_room_store.o \
 	$(BUILD_DIR)/wt_time.o
 
-.PHONY: all clean run-roomd run-demo test-smoke test install-roomd-service install-agent-services
+.PHONY: all clean run-roomd run-demo harness-check test-smoke test-harness-check test install-roomd-service install-agent-services
 
 all: $(BUILD_DIR)/wt-roomd $(BUILD_DIR)/wt-say $(BUILD_DIR)/wt-tail $(BUILD_DIR)/wt-agent
 
@@ -50,10 +50,16 @@ run-demo: all
 	./$(BUILD_DIR)/wt-agent --agent gemini --once
 	./$(BUILD_DIR)/wt-tail --limit 20
 
+harness-check:
+	./bin/wt-harness-check
+
 test-smoke: all
 	./tests/smoke-phase0-room.sh
 
-test: test-smoke
+test-harness-check:
+	./tests/integration/wt-harness-check.sh
+
+test: test-smoke test-harness-check
 
 install-roomd-service: all
 	sudo install -m 0644 deploy/systemd/wt-roomd.service /etc/systemd/system/

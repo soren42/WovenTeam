@@ -1,8 +1,8 @@
 # ─────────────────────────────────────────────
 # WovenTeam Model Profile: Gemini Pro
 # ─────────────────────────────────────────────
-profile_version: "1.1"
-last_updated: "2026-05-13"
+profile_version: "1.2"
+last_updated: "2026-05-16"
 
 # ─── Identity ───
 model_id: google/gemini-pro
@@ -16,7 +16,7 @@ api_model_string: gemini-2.5-pro
 # ─── Operational Status ───
 status: active
 status_reason: ""
-last_verified: "2026-05-13T00:00:00Z"
+last_verified: "2026-05-16T00:00:00Z"
 
 # ─── Cost & Capacity ───
 cost:

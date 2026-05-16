@@ -1,22 +1,22 @@
 # ─────────────────────────────────────────────
 # WovenTeam Model Profile: GPT-4o
 # ─────────────────────────────────────────────
-profile_version: "1.1"
-last_updated: "2026-05-13"
+profile_version: "1.2"
+last_updated: "2026-05-16"
 
 # ─── Identity ───
 model_id: openai/gpt-4o
 vendor: openai
 model_name: GPT-4o
 version: gpt-4o
-cli_tool: openai
-cli_auth: openai auth login
+cli_tool: codex
+cli_auth: codex login
 api_model_string: gpt-4o
 
 # ─── Operational Status ───
 status: active
 status_reason: ""
-last_verified: "2026-05-13T00:00:00Z"
+last_verified: "2026-05-16T00:00:00Z"
 
 # ─── Cost & Capacity ───
 cost:
