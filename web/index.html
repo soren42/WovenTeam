@@ -3,39 +3,191 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>WovenTeam Phase 0 Room</title>
+  <title>WovenTeam Console (Fullscreen)</title>
   <link rel="stylesheet" href="/style.css">
 </head>
 <body>
-  <main class="shell">
+  <div class="console" data-accent="cyan">
     <header class="topbar">
-      <div>
-        <h1>Phase 0 Room</h1>
-        <p>CEO, Claude, ChatGPT, and Gemini shared transcript</p>
+      <div class="brand">
+        <svg class="logo" viewBox="0 0 84 34" role="img" aria-label="WovenTeam">
+          <path class="strand ok" d="M2 10 C18 10 18 24 34 24 S50 10 66 10 H82"></path>
+          <path class="strand warn" d="M2 16 C18 16 18 6 34 6 S50 28 66 28 H82"></path>
+          <path class="strand err" d="M2 22 C18 22 18 10 34 10 S50 24 66 24 H82"></path>
+          <path class="strand accent" d="M2 28 C18 28 18 16 34 16 S50 4 66 4 H82"></path>
+        </svg>
+        <div class="wordmark">WOVENTEAM</div>
+        <div class="build">Mission Control · v0.42</div>
       </div>
-      <span id="status" class="status disconnected">disconnected</span>
+
+      <div class="top-actions">
+        <button id="paletteButton" class="search-button" type="button">
+          <span>⌕</span>
+          <span>Search agents, initiatives, gates...</span>
+          <kbd>Ctrl K</kbd>
+        </button>
+        <button id="helpButton" class="icon-button" type="button" title="Keyboard shortcuts">?</button>
+        <div class="swatches" aria-label="Accent hue">
+          <span>HUE</span>
+          <button type="button" class="swatch cyan active" data-accent="cyan" aria-label="Cyan"></button>
+          <button type="button" class="swatch amber" data-accent="amber" aria-label="Amber"></button>
+          <button type="button" class="swatch green" data-accent="green" aria-label="Green"></button>
+          <button type="button" class="swatch red" data-accent="red" aria-label="Red"></button>
+        </div>
+        <div class="placement" aria-label="Composer placement">
+          <span>COMP</span>
+          <button type="button" class="active" data-placement="right" title="Right">▮▯</button>
+          <button type="button" data-placement="bottom" title="Bottom">▔▁</button>
+          <button type="button" data-placement="drawer" title="Drawer">▮ →</button>
+        </div>
+        <span id="uplinkBadge" class="uplink disconnected">● LINK</span>
+        <span class="clock-label">UTC</span>
+        <span id="clock" class="clock">----</span>
+        <span class="operator-label">CEO</span>
+        <span class="operator">jason@homelab</span>
+      </div>
     </header>
 
-    <section id="transcript" class="transcript" aria-live="polite"></section>
+    <aside class="rail" aria-label="Console navigation">
+      <button type="button" class="rail-button active" data-view="initiatives" title="Initiatives"><span>◰</span><b id="initiativeBadge">0</b></button>
+      <button type="button" class="rail-button" data-view="agents" title="Agents"><span>◫</span><b id="agentBadge">3</b></button>
+      <button type="button" class="rail-button" data-view="gates" title="Gates"><span>▣</span><b>0</b></button>
+      <button type="button" class="rail-button" data-view="topology" title="Topology"><span>⫳</span></button>
+      <button type="button" class="rail-button" data-view="audit" title="Audit log"><span>≣</span></button>
+      <div class="rail-spacer"></div>
+      <button id="settingsButton" type="button" class="rail-button" title="Settings"><span>⚙</span></button>
+    </aside>
 
-    <form id="composer" class="composer">
-      <select id="targetName" aria-label="Target">
-        <option value="all">All</option>
-        <option value="claude">Claude</option>
-        <option value="chatgpt">ChatGPT</option>
-        <option value="gemini">Gemini</option>
-      </select>
-      <textarea id="messageBody" rows="3" maxlength="4000" placeholder="Message the room"></textarea>
-      <button type="submit">Send</button>
-    </form>
+    <main class="main">
+      <section class="status-grid" aria-label="Fleet status">
+        <article class="panel agents-panel">
+          <header><span>Agents in flight · by role</span><small id="agentMeta">● 3 ACTIVE · 0R · 0P · 0 STUCK</small></header>
+          <div class="agent-summary">
+            <div><strong id="agentCount">3</strong><span>agents tracked</span></div>
+            <div class="role-grid" id="roleGrid"></div>
+          </div>
+        </article>
 
-    <nav class="quickbar" aria-label="Quick targets">
-      <button data-target="all">Ask all agents</button>
-      <button data-target="claude">Ask Claude</button>
-      <button data-target="chatgpt">Ask ChatGPT</button>
-      <button data-target="gemini">Ask Gemini</button>
-    </nav>
-  </main>
+        <article class="panel token-panel">
+          <header><span>Token spend · today / month</span><small>COMING SOON</small></header>
+          <div class="token-headline"><strong>--</strong><span>/ budget pending</span></div>
+          <svg id="tokenSparkline" class="sparkline" viewBox="0 0 310 36" aria-hidden="true"></svg>
+          <div class="meter"><span style="width: 0%"></span></div>
+          <footer><span>Today <b>--</b></span><span>This month <b>--</b></span><span>Burn/hr <b>--</b></span></footer>
+        </article>
+
+        <article class="panel vendor-panel">
+          <header><span>Vendor CLI · health</span><small id="vendorMeta">● runtime probe pending</small></header>
+          <div id="vendorGrid" class="vendor-grid"></div>
+        </article>
+
+        <article class="panel alerts-panel">
+          <header><span>Alerts · failed / stuck</span><small>0 OPEN</small></header>
+          <div class="placeholder compact">
+            <strong>Coming soon</strong>
+            <span>Failure, stuck-agent, and gate alert feeds need the task ledger and runner events.</span>
+          </div>
+        </article>
+      </section>
+
+      <section class="panel initiatives-panel" data-view-panel="initiatives">
+        <header>
+          <span>Active initiatives · <b id="initiativeCount">0</b> tracked</span>
+          <small>task package backend pending</small>
+        </header>
+        <div class="initiative-placeholder">
+          <div>
+            <strong>Coming soon: initiative workspace</strong>
+            <p>This table will bind to <code>/api/task-package</code>, <code>/api/tasks</code>, and the task ledger after those backend tools are built.</p>
+          </div>
+          <table>
+            <thead>
+              <tr><th>ID</th><th>Status</th><th>Initiative</th><th>Lead</th><th>Agents</th><th>Progress</th><th>Tokens</th><th>Gates</th><th>Vendor</th></tr>
+            </thead>
+            <tbody>
+              <tr><td colspan="9">No initiative API is available yet. Use the composer below to announce work into the room.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="workspace">
+        <article class="panel chat-panel">
+          <header>
+            <span>Cross-agent meeting log</span>
+            <div class="chat-controls">
+              <select id="initiativeFilter" disabled><option>all initiatives</option></select>
+              <select id="roleFilter" disabled><option>all roles</option></select>
+            </div>
+          </header>
+          <div id="transcript" class="transcript" aria-live="polite"></div>
+          <div class="gate-strip">
+            <strong>Review gates · awaiting CEO</strong>
+            <span>Coming soon: approve/reject requires gate state and task packages.</span>
+          </div>
+        </article>
+
+        <article id="composerPanel" class="panel composer-panel">
+          <header><span>Program initiation · composer</span><small>ROOM MESSAGE MODE</small></header>
+          <div class="drafts">
+            <div><span>Queued drafts · 0</span><small>load → composer</small></div>
+            <p>queue empty</p>
+          </div>
+          <form id="composer" class="composer-form">
+            <label>
+              <span>Initiative name</span>
+              <input id="initiativeName" maxlength="120" placeholder="e.g. Build Codex adapter runner">
+            </label>
+            <label>
+              <span>Task brief</span>
+              <textarea id="messageBody" rows="5" maxlength="4000" placeholder="Describe the work, success criteria, touched systems, and review gates."></textarea>
+            </label>
+            <div class="field-group">
+              <div class="field-heading"><span>Lead role</span><small id="selectedRoleLabel">Project Manager</small></div>
+              <div id="roleButtons" class="role-buttons"></div>
+            </div>
+            <div class="field-group">
+              <div class="field-heading"><span>Authority preset</span><small id="selectedPresetLabel">Build</small></div>
+              <div id="presetButtons" class="preset-buttons"></div>
+            </div>
+            <div class="sliders">
+              <label><span>Token budget <b id="tokenReadout">2.0M</b></span><input id="tokenBudget" type="range" min="100000" max="20000000" step="100000" value="2000000"></label>
+              <label><span>Max sub-agents <b id="agentReadout">6</b></span><input id="maxAgents" type="range" min="1" max="40" step="1" value="6"></label>
+              <label><span>Timeframe <b id="hoursReadout">8h</b></span><input id="timeframeHours" type="range" min="1" max="96" step="1" value="8"></label>
+              <label><span>Priority</span><select id="priority"><option>low</option><option selected>normal</option><option>high</option><option>critical</option></select></label>
+            </div>
+            <div class="summary-cells">
+              <div><span>Est. burn</span><b id="burnEstimate">$20.00</b></div>
+              <div><span>Vendor</span><b>router</b></div>
+              <div><span>Sub-agents</span><b id="subAgentSummary">0 / 6</b></div>
+              <div><span>Priority</span><b id="prioritySummary">normal</b></div>
+            </div>
+            <div class="launch-row">
+              <button id="armButton" type="button" class="arm-button">ARM</button>
+              <button id="sendButton" type="submit" class="execute-button" disabled>EXECUTE</button>
+            </div>
+            <p class="composer-note">Temporary behavior: EXECUTE posts a structured CEO directive to the shared room. Task package execution is coming soon.</p>
+          </form>
+        </article>
+      </section>
+    </main>
+
+    <footer class="audit-strip">
+      <span>● AUDIT</span>
+      <div id="auditLog">Waiting for room events...</div>
+    </footer>
+
+    <button id="drawerFab" class="drawer-fab" type="button">+ New initiative <kbd>N</kbd></button>
+    <div id="modalBackdrop" class="modal-backdrop" hidden>
+      <section class="modal">
+        <button id="modalClose" type="button" class="modal-close" aria-label="Close dialog">
+          <span aria-hidden="true">×</span>
+        </button>
+        <h2 id="modalTitle">Coming soon</h2>
+        <p id="modalBody">This console surface is scaffolded and will connect to backend tooling in a later phase.</p>
+      </section>
+    </div>
+  </div>
   <script src="/app.js"></script>
 </body>
 </html>

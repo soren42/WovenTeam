@@ -49,6 +49,8 @@ Send a CEO message and inspect the transcript:
 
 Open the browser UI from another intranet machine at `http://HOSTNAME_OR_IP:8787/`.
 For local checks on the server itself, `http://127.0.0.1:8787/` still works.
+The served UI is the fullscreen Phase 0 console scaffold documented in
+`docs/ui/phase0-console-scaffold.md`.
 
 Useful targets:
 
