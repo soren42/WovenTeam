@@ -6,8 +6,8 @@
 # See `models/README.md` and `roles/README.md` for the three-layer paradigm.
 
 role_id: "technical_writer"
-config_version: "1.0"
-last_updated: "2026-05-13"
+config_version: "1.1"
+last_updated: "2026-05-16"
 
 # ─── Role Metadata ───
 category: "delivery"
@@ -15,14 +15,11 @@ role_md_path: "roles/delivery/ROLE_technical_writer.md"
 
 # ─── Model Routing ───
 #
-# Routing rationale (2026-05-13):
+# Routing rationale (2026-05-16):
 #   Suitability scores favor Claude Opus (10) and Qwen Max (8) for this
-#   role. However, the live deployment on xenon has an installed `claude`
-#   agentic CLI but no `qwen` CLI or DashScope client wired into wt-agent.
-#   Until a vendor adapter exists for Qwen (tracked separately), route
-#   technical_writer tasks to Claude Opus so they actually execute end
-#   to end. Fallback stays on Qwen for forward-compatibility once an
-#   adapter ships.
+#   role. The live deployment has `claude` available and still lacks a Qwen
+#   adapter wired into wt-agent. Keep Claude as the executable default until
+#   the harness router can prove Qwen availability and policy support.
 #
 routing:
   preferred_model: "anthropic/claude-opus"
@@ -74,3 +71,9 @@ changelog:
       Initial routing config for the technical_writer role.
       preferred_model set to anthropic/claude-opus pending a Qwen
       adapter (see GitHub issue for vendor-CLI orchestration).
+  - version: "1.1"
+    date: "2026-05-16"
+    changes: |
+      Refreshed routing rationale for Sprint 1 harness inventory work.
+      Claude remains the executable default until Qwen has a supported
+      runtime adapter.

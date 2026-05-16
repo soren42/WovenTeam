@@ -1,8 +1,8 @@
 # ─────────────────────────────────────────────
 # WovenTeam Model Profile: Qwen Max
 # ─────────────────────────────────────────────
-profile_version: "1.1"
-last_updated: "2026-05-13"
+profile_version: "1.2"
+last_updated: "2026-05-16"
 
 # ─── Identity ───
 model_id: qwen/qwen-max
@@ -14,9 +14,9 @@ cli_auth: qwen login
 api_model_string: qwen-max
 
 # ─── Operational Status ───
-status: active
-status_reason: ""
-last_verified: "2026-05-13T00:00:00Z"
+status: standby
+status_reason: "No supported Qwen runtime adapter is wired into WovenTeam yet."
+last_verified: "2026-05-16T00:00:00Z"
 
 # ─── Cost & Capacity ───
 cost:

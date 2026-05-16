@@ -1,0 +1,215 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+usage() {
+    cat <<'USAGE'
+Usage: wt-harness-check [--json] [--strict] [--models-dir DIR]
+
+Inspect WovenTeam model profiles and report whether active CLI harnesses are
+visible on PATH and launchable for a version probe.
+
+Options:
+  --json            Emit JSON instead of a text table.
+  --strict          Exit non-zero when an active profile names a missing CLI.
+  --models-dir DIR  Read model profiles from DIR instead of ./models.
+  -h, --help        Show this help.
+USAGE
+}
+
+json=0
+strict=0
+models_dir="models"
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --json)
+            json=1
+            shift
+            ;;
+        --strict)
+            strict=1
+            shift
+            ;;
+        --models-dir)
+            models_dir="${2:-}"
+            if [[ -z "$models_dir" ]]; then
+                echo "wt-harness-check: --models-dir requires a value" >&2
+                exit 2
+            fi
+            shift 2
+            ;;
+        -h|--help)
+            usage
+            exit 0
+            ;;
+        *)
+            echo "wt-harness-check: unknown argument: $1" >&2
+            usage >&2
+            exit 2
+            ;;
+    esac
+done
+
+if [[ ! -d "$models_dir" ]]; then
+    echo "wt-harness-check: models directory not found: $models_dir" >&2
+    exit 2
+fi
+
+yaml_value() {
+    local key="$1"
+    local file="$2"
+    awk -F: -v key="$key" '
+        $1 == key {
+            value = substr($0, index($0, ":") + 1)
+            sub(/^[[:space:]]+/, "", value)
+            sub(/[[:space:]]+#.*$/, "", value)
+            sub(/[[:space:]]+$/, "", value)
+            gsub(/^"|"$/, "", value)
+            print value
+            exit
+        }
+    ' "$file"
+}
+
+json_escape() {
+    local value="$1"
+    value=${value//\\/\\\\}
+    value=${value//\"/\\\"}
+    value=${value//$'\n'/\\n}
+    value=${value//$'\r'/}
+    printf '%s' "$value"
+}
+
+probe_version() {
+    local tool="$1"
+    local output=""
+    if output=$(timeout 5 "$tool" --version 2>&1); then
+        printf '%s' "$output" | head -n 1
+        return 0
+    fi
+    if output=$(timeout 5 "$tool" version 2>&1); then
+        printf '%s' "$output" | head -n 1
+        return 0
+    fi
+    return 1
+}
+
+tmp_report="$(mktemp)"
+tmp_tools="$(mktemp)"
+trap 'rm -f "$tmp_report" "$tmp_tools"' EXIT
+
+missing_active=0
+count=0
+
+record_tool() {
+    local tool="$1"
+    local command_path=""
+    local version=""
+    local state="missing"
+
+    if command_path="$(command -v "$tool" 2>/dev/null)"; then
+        if version="$(probe_version "$tool")"; then
+            state="launchable"
+        else
+            state="found_version_probe_failed"
+        fi
+    fi
+
+    printf '%s|%s|%s|%s\n' "$tool" "$state" "$command_path" "$version" >> "$tmp_tools"
+}
+
+while IFS= read -r -d '' profile; do
+    model_id="$(yaml_value model_id "$profile")"
+    status="$(yaml_value status "$profile")"
+    cli_tool="$(yaml_value cli_tool "$profile")"
+
+    [[ -n "$model_id" ]] || model_id="${profile#$models_dir/}"
+    [[ -n "$status" ]] || status="unknown"
+
+    command_path=""
+    version=""
+    state="not_configured"
+
+    if [[ -n "$cli_tool" && "$cli_tool" != "null" ]]; then
+        if command_path="$(command -v "$cli_tool" 2>/dev/null)"; then
+            if version="$(probe_version "$cli_tool")"; then
+                state="launchable"
+            else
+                state="found_version_probe_failed"
+            fi
+        else
+            state="missing"
+        fi
+    fi
+
+    if [[ "$status" == "active" && "$state" == "missing" ]]; then
+        missing_active=1
+    fi
+
+    printf '%s|%s|%s|%s|%s|%s|%s\n' \
+        "$model_id" "$status" "$cli_tool" "$state" "$command_path" "$version" "$profile" >> "$tmp_report"
+    count=$((count + 1))
+done < <(find "$models_dir" -type f -name '*.yaml' -print0 | sort -z)
+
+for tool in claude codex gemini qwen ollama; do
+    record_tool "$tool"
+done
+
+if [[ "$json" -eq 1 ]]; then
+    printf '{\n'
+    printf '  "schema": "woventeam.harness_check.v0.1",\n'
+    printf '  "modelsDir": "%s",\n' "$(json_escape "$models_dir")"
+    printf '  "profileCount": %d,\n' "$count"
+    printf '  "missingActiveCli": %s,\n' "$([[ "$missing_active" -eq 1 ]] && echo true || echo false)"
+    printf '  "hostTools": [\n'
+    first=1
+    while IFS='|' read -r tool state command_path version; do
+        if [[ "$first" -eq 0 ]]; then
+            printf ',\n'
+        fi
+        first=0
+        printf '    {"tool":"%s","state":"%s","commandPath":"%s","version":"%s"}' \
+            "$(json_escape "$tool")" \
+            "$(json_escape "$state")" \
+            "$(json_escape "$command_path")" \
+            "$(json_escape "$version")"
+    done < "$tmp_tools"
+    printf '\n  ],\n'
+    printf '  "profiles": [\n'
+    first=1
+    while IFS='|' read -r model_id status cli_tool state command_path version profile; do
+        if [[ "$first" -eq 0 ]]; then
+            printf ',\n'
+        fi
+        first=0
+        printf '    {"modelId":"%s","status":"%s","cliTool":"%s","state":"%s","commandPath":"%s","version":"%s","profilePath":"%s"}' \
+            "$(json_escape "$model_id")" \
+            "$(json_escape "$status")" \
+            "$(json_escape "$cli_tool")" \
+            "$(json_escape "$state")" \
+            "$(json_escape "$command_path")" \
+            "$(json_escape "$version")" \
+            "$(json_escape "$profile")"
+    done < "$tmp_report"
+    printf '\n  ]\n'
+    printf '}\n'
+else
+    printf 'Host tools:\n'
+    printf '%-12s %-28s %s\n' "TOOL" "STATE" "PATH"
+    printf '%-12s %-28s %s\n' "----" "-----" "----"
+    while IFS='|' read -r tool state command_path version; do
+        : "$version"
+        printf '%-12s %-28s %s\n' "$tool" "$state" "${command_path:-"-"}"
+    done < "$tmp_tools"
+    printf '\nModel profiles:\n'
+    printf '%-28s %-10s %-12s %-28s %s\n' "MODEL" "STATUS" "CLI" "STATE" "PATH"
+    printf '%-28s %-10s %-12s %-28s %s\n' "-----" "------" "---" "-----" "----"
+    while IFS='|' read -r model_id status cli_tool state command_path version profile; do
+        : "$version" "$profile"
+        printf '%-28s %-10s %-12s %-28s %s\n' "$model_id" "$status" "${cli_tool:-null}" "$state" "${command_path:-"-"}"
+    done < "$tmp_report"
+fi
+
+if [[ "$strict" -eq 1 && "$missing_active" -eq 1 ]]; then
+    exit 1
+fi
