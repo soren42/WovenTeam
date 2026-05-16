@@ -170,3 +170,73 @@ int wtTaskAppendStatusEvent(const char *ledgerPath, const char *taskId, const ch
              escapedTaskId, escapedStatus, escapedMessage, escapedBy, wtNowUnixMilliseconds());
     return wtTaskAppendRecord(ledgerPath, json, fsyncRecord);
 }
+
+static int lineDependsOnTask(const char *line, const char *blockedTaskId) {
+    const char *dependencies = strstr(line, "\"dependencies\"");
+    if (!dependencies) {
+        return 0;
+    }
+    const char *end = strchr(dependencies, ']');
+    if (!end) {
+        return 0;
+    }
+    char quoted[WT_TASK_ID_SIZE + 4];
+    snprintf(quoted, sizeof(quoted), "\"%s\"", blockedTaskId);
+    const char *match = strstr(dependencies, quoted);
+    return match && match < end;
+}
+
+int wtTaskAppendBlockedDependents(const char *ledgerPath, const char *blockedTaskId,
+                                  const char *createdBy, bool fsyncRecord) {
+    FILE *file = fopen(ledgerPath, "r");
+    if (!file) {
+        return 0;
+    }
+    WtTaskSummary tasks[256];
+    int count = 0;
+    char dependsOnBlocked[256][WT_TASK_ID_SIZE];
+    int dependentCount = 0;
+    char line[WT_TASK_LEDGER_LINE_SIZE];
+    while (fgets(line, sizeof(line), file)) {
+        char taskId[WT_TASK_ID_SIZE];
+        if (wtJsonReadString(line, "taskId", taskId, sizeof(taskId)) != 0) {
+            continue;
+        }
+        int index = findKnownTask(tasks, count, taskId);
+        if (lineHasSchema(line, "woventeam.task_package.v0.1")) {
+            if (index < 0 && count < 256) {
+                index = count++;
+                memset(&tasks[index], 0, sizeof(tasks[index]));
+                snprintf(tasks[index].taskId, sizeof(tasks[index].taskId), "%s", taskId);
+            }
+            if (index >= 0) {
+                readOptionalString(line, "status", tasks[index].status, sizeof(tasks[index].status), "queued");
+                if (lineDependsOnTask(line, blockedTaskId) && dependentCount < 256) {
+                    snprintf(dependsOnBlocked[dependentCount++], sizeof(dependsOnBlocked[0]), "%s", taskId);
+                }
+            }
+        } else if (lineHasSchema(line, "woventeam.task_event.v0.1") && index >= 0) {
+            readOptionalString(line, "status", tasks[index].status, sizeof(tasks[index].status), tasks[index].status);
+        }
+    }
+    fclose(file);
+
+    int appended = 0;
+    for (int depIndex = 0; depIndex < dependentCount; depIndex++) {
+        int taskIndex = findKnownTask(tasks, count, dependsOnBlocked[depIndex]);
+        if (taskIndex < 0 || strcmp(tasks[taskIndex].status, "complete") == 0 ||
+            strcmp(tasks[taskIndex].status, "failed") == 0 ||
+            strcmp(tasks[taskIndex].status, "cancelled") == 0 ||
+            strcmp(tasks[taskIndex].status, "blocked") == 0) {
+            continue;
+        }
+        char message[256];
+        snprintf(message, sizeof(message), "Blocked because dependency %s is blocked.", blockedTaskId);
+        if (wtTaskAppendStatusEvent(ledgerPath, dependsOnBlocked[depIndex], "blocked",
+                                    createdBy, message, fsyncRecord) != 0) {
+            return -1;
+        }
+        appended++;
+    }
+    return appended;
+}

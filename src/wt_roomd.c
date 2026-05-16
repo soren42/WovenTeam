@@ -12,6 +12,7 @@
 #include "wt_message.h"
 #include "wt_room_store.h"
 #include "wt_task_store.h"
+#include "wt_time.h"
 
 #include <arpa/inet.h>
 #include <errno.h>
@@ -168,6 +169,50 @@ static int appendTaskRoomEvent(const WtConfig *config, const char *taskId, const
     return wtRoomAppendNewMessage(config->roomLogPath, &message, config->fsyncEachMessage);
 }
 
+static int roleMatchesAny(const char *role, const char *const *roles, size_t roleCount) {
+    for (size_t index = 0; index < roleCount; index++) {
+        if (strcmp(role, roles[index]) == 0) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static int roleMaySpawn(const char *requestingRole, const char *requestedRole) {
+    static const char *const pgmRoles[] = {
+        "project_manager", "software_architect", "systems_architect"
+    };
+    static const char *const pmRoles[] = {
+        "software_architect", "systems_architect", "mockup_artist",
+        "graphic_artist", "frontend_dev", "backend_dev", "database_engineer",
+        "code_reviewer", "tester", "performance_engineer",
+        "systems_administrator", "network_administrator", "database_administrator",
+        "integration_specialist", "deployment_engineer", "technical_writer"
+    };
+    if (strcmp(requestingRole, "program_manager") == 0) {
+        return roleMatchesAny(requestedRole, pgmRoles, sizeof(pgmRoles) / sizeof(pgmRoles[0]));
+    }
+    if (strcmp(requestingRole, "project_manager") == 0) {
+        return roleMatchesAny(requestedRole, pmRoles, sizeof(pmRoles) / sizeof(pmRoles[0]));
+    }
+    return 0;
+}
+
+static void defaultAgentForRole(const char *role, char *agent, size_t agentSize) {
+    if (strcmp(role, "backend_dev") == 0 || strcmp(role, "frontend_dev") == 0 ||
+        strcmp(role, "database_engineer") == 0 || strcmp(role, "tester") == 0 ||
+        strcmp(role, "code_reviewer") == 0) {
+        snprintf(agent, agentSize, "%s", "chatgpt");
+    } else if (strcmp(role, "technical_writer") == 0 || strcmp(role, "project_manager") == 0) {
+        snprintf(agent, agentSize, "%s", "claude");
+    } else if (strcmp(role, "software_architect") == 0 || strcmp(role, "systems_architect") == 0 ||
+               strcmp(role, "performance_engineer") == 0) {
+        snprintf(agent, agentSize, "%s", "gemini");
+    } else {
+        snprintf(agent, agentSize, "%s", "all");
+    }
+}
+
 static int handlePostTaskPackage(int clientFd, const WtConfig *config, const char *request) {
     const char *body = strstr(request, "\r\n\r\n");
     if (!body) {
@@ -204,6 +249,115 @@ static int handlePostTaskPackage(int clientFd, const WtConfig *config, const cha
     char response[512];
     snprintf(response, sizeof(response), "{\"ok\":true,\"taskId\":\"%s\",\"assignedAgent\":\"%s\",\"status\":\"%s\"}\n",
              taskId, assignedAgent, status);
+    return wtHttpSendText(clientFd, 200, "OK", "application/json; charset=utf-8", response);
+}
+
+static int handlePostTaskRequest(int clientFd, const WtConfig *config, const char *request) {
+    const char *body = strstr(request, "\r\n\r\n");
+    if (!body) {
+        return wtHttpSendText(clientFd, 400, "Bad Request", "application/json", "{\"ok\":false}\n");
+    }
+    body += 4;
+    char schema[128];
+    char parentTaskId[WT_TASK_ID_SIZE];
+    char requestedTaskId[WT_TASK_ID_SIZE];
+    char initiativeId[WT_TASK_ID_SIZE];
+    char requestedByRole[WT_TASK_AGENT_SIZE];
+    char requestedBy[WT_TASK_AGENT_SIZE];
+    char requestedRole[WT_TASK_AGENT_SIZE];
+    char assignedAgent[WT_TASK_AGENT_SIZE];
+    char priority[32];
+    char title[WT_TASK_TITLE_SIZE];
+    char taskBody[WT_TASK_BODY_SIZE];
+    char toolProfile[WT_TASK_POLICY_SIZE];
+    char modelId[WT_TASK_MODEL_SIZE];
+    if (wtJsonReadString(body, "schema", schema, sizeof(schema)) != 0 ||
+        strcmp(schema, "woventeam.task_request.v0.1") != 0 ||
+        wtJsonReadString(body, "parentTaskId", parentTaskId, sizeof(parentTaskId)) != 0 ||
+        wtJsonReadString(body, "requestedTaskId", requestedTaskId, sizeof(requestedTaskId)) != 0 ||
+        wtJsonReadString(body, "initiativeId", initiativeId, sizeof(initiativeId)) != 0 ||
+        wtJsonReadString(body, "requestedByRole", requestedByRole, sizeof(requestedByRole)) != 0 ||
+        wtJsonReadString(body, "requestedRole", requestedRole, sizeof(requestedRole)) != 0 ||
+        wtJsonReadString(body, "title", title, sizeof(title)) != 0 ||
+        wtJsonReadString(body, "body", taskBody, sizeof(taskBody)) != 0) {
+        return wtHttpSendText(clientFd, 400, "Bad Request", "application/json", "{\"ok\":false,\"error\":\"invalid task request\"}\n");
+    }
+    if (!roleMaySpawn(requestedByRole, requestedRole)) {
+        return wtHttpSendText(clientFd, 403, "Forbidden", "application/json", "{\"ok\":false,\"error\":\"role spawn policy denied\"}\n");
+    }
+    if (wtJsonReadString(body, "requestedBy", requestedBy, sizeof(requestedBy)) != 0) {
+        snprintf(requestedBy, sizeof(requestedBy), "%s", requestedByRole);
+    }
+    if (wtJsonReadString(body, "assignedAgent", assignedAgent, sizeof(assignedAgent)) != 0) {
+        defaultAgentForRole(requestedRole, assignedAgent, sizeof(assignedAgent));
+    }
+    if (wtJsonReadString(body, "priority", priority, sizeof(priority)) != 0) {
+        snprintf(priority, sizeof(priority), "%s", "normal");
+    }
+    if (wtJsonReadString(body, "profile", toolProfile, sizeof(toolProfile)) != 0) {
+        snprintf(toolProfile, sizeof(toolProfile), "%s", "observe");
+    }
+    if (wtJsonReadString(body, "modelId", modelId, sizeof(modelId)) != 0) {
+        snprintf(modelId, sizeof(modelId), "%s", "openai/gpt-5.3-codex");
+    }
+
+    char compact[WT_TASK_LEDGER_LINE_SIZE];
+    compactJsonLine(body, compact, sizeof(compact));
+    char escapedTaskId[WT_TASK_ID_SIZE * 2];
+    char escapedInitiative[WT_TASK_ID_SIZE * 2];
+    char escapedRequestedBy[WT_TASK_AGENT_SIZE * 2];
+    char escapedRequestedByRole[WT_TASK_AGENT_SIZE * 2];
+    char escapedRole[WT_TASK_AGENT_SIZE * 2];
+    char escapedAgent[WT_TASK_AGENT_SIZE * 2];
+    char escapedModel[WT_TASK_MODEL_SIZE * 2];
+    char escapedPriority[64];
+    char escapedTitle[WT_TASK_TITLE_SIZE * 2];
+    char escapedBody[WT_TASK_BODY_SIZE * 2];
+    char escapedProfile[WT_TASK_POLICY_SIZE * 2];
+    char escapedParent[WT_TASK_ID_SIZE * 2];
+    if (wtJsonEscape(requestedTaskId, escapedTaskId, sizeof(escapedTaskId)) != 0 ||
+        wtJsonEscape(initiativeId, escapedInitiative, sizeof(escapedInitiative)) != 0 ||
+        wtJsonEscape(requestedBy, escapedRequestedBy, sizeof(escapedRequestedBy)) != 0 ||
+        wtJsonEscape(requestedByRole, escapedRequestedByRole, sizeof(escapedRequestedByRole)) != 0 ||
+        wtJsonEscape(requestedRole, escapedRole, sizeof(escapedRole)) != 0 ||
+        wtJsonEscape(assignedAgent, escapedAgent, sizeof(escapedAgent)) != 0 ||
+        wtJsonEscape(modelId, escapedModel, sizeof(escapedModel)) != 0 ||
+        wtJsonEscape(priority, escapedPriority, sizeof(escapedPriority)) != 0 ||
+        wtJsonEscape(title, escapedTitle, sizeof(escapedTitle)) != 0 ||
+        wtJsonEscape(taskBody, escapedBody, sizeof(escapedBody)) != 0 ||
+        wtJsonEscape(toolProfile, escapedProfile, sizeof(escapedProfile)) != 0 ||
+        wtJsonEscape(parentTaskId, escapedParent, sizeof(escapedParent)) != 0) {
+        return wtHttpSendText(clientFd, 400, "Bad Request", "application/json", "{\"ok\":false,\"error\":\"request too large\"}\n");
+    }
+    char taskPackage[WT_TASK_LEDGER_LINE_SIZE];
+    snprintf(taskPackage, sizeof(taskPackage),
+             "{\"schema\":\"woventeam.task_package.v0.1\",\"taskId\":\"%s\","
+             "\"initiativeId\":\"%s\",\"createdBy\":\"%s\",\"assignedRole\":\"%s\","
+             "\"assignedAgent\":\"%s\",\"modelId\":\"%s\",\"priority\":\"%s\","
+             "\"status\":\"queued\",\"title\":\"%s\",\"body\":\"%s\","
+             "\"parentTaskId\":\"%s\",\"requestedByRole\":\"%s\","
+             "\"task\":{\"title\":\"%s\",\"body\":\"%s\",\"deliverables\":[]},"
+             "\"contextRefs\":[],\"acceptanceCriteria\":[\"Task result is recorded in the room and task ledger.\"],"
+             "\"toolPolicy\":{\"profile\":\"%s\",\"filesystem\":\"%s\",\"network\":\"%s\",\"system\":\"none\",\"git\":\"%s\"},"
+             "\"budget\":{\"timeoutSeconds\":1800,\"maxOutputBytes\":1048576,\"maxCostUsd\":1.0},"
+             "\"dependencies\":[\"%s\"],\"createdAtUnixMs\":%lld}",
+             escapedTaskId, escapedInitiative, escapedRequestedBy, escapedRole,
+             escapedAgent, escapedModel, escapedPriority, escapedTitle, escapedBody,
+             escapedParent, escapedRequestedByRole, escapedTitle, escapedBody, escapedProfile,
+             strcmp(toolProfile, "repo_branch") == 0 || strcmp(toolProfile, "test_local") == 0 ? "workspace_write" : "read_only",
+             strcmp(toolProfile, "test_local") == 0 ? "loopback" : "none",
+             strcmp(toolProfile, "repo_branch") == 0 || strcmp(toolProfile, "test_local") == 0 ? "branch_only" : "none",
+             escapedParent, wtNowUnixMilliseconds());
+    if (wtTaskAppendRecord(config->taskLedgerPath, compact, config->fsyncEachMessage) != 0 ||
+        appendTaskRoomEvent(config, requestedTaskId, assignedAgent, "task.request", "requested", title) != 0 ||
+        wtTaskAppendRecord(config->taskLedgerPath, taskPackage, config->fsyncEachMessage) != 0 ||
+        appendTaskRoomEvent(config, requestedTaskId, assignedAgent, "task.assign", "queued", title) != 0) {
+        return wtHttpSendText(clientFd, 500, "Internal Server Error", "application/json", "{\"ok\":false,\"error\":\"append failed\"}\n");
+    }
+    char response[512];
+    snprintf(response, sizeof(response),
+             "{\"ok\":true,\"taskId\":\"%s\",\"parentTaskId\":\"%s\",\"assignedRole\":\"%s\",\"assignedAgent\":\"%s\",\"status\":\"queued\"}\n",
+             requestedTaskId, parentTaskId, requestedRole, assignedAgent);
     return wtHttpSendText(clientFd, 200, "OK", "application/json; charset=utf-8", response);
 }
 
@@ -245,6 +399,10 @@ static int handlePostTaskEvent(int clientFd, const WtConfig *config, const char 
     if (wtTaskAppendRecord(config->taskLedgerPath, compact, config->fsyncEachMessage) != 0 ||
         appendTaskRoomEvent(config, taskId, "all", messageType, status, message) != 0) {
         return wtHttpSendText(clientFd, 500, "Internal Server Error", "application/json", "{\"ok\":false,\"error\":\"append failed\"}\n");
+    }
+    if (strcmp(status, "blocked") == 0 &&
+        wtTaskAppendBlockedDependents(config->taskLedgerPath, taskId, createdBy, config->fsyncEachMessage) < 0) {
+        return wtHttpSendText(clientFd, 500, "Internal Server Error", "application/json", "{\"ok\":false,\"error\":\"dependency propagation failed\"}\n");
     }
     char response[512];
     snprintf(response, sizeof(response), "{\"ok\":true,\"taskId\":\"%s\",\"status\":\"%s\",\"createdBy\":\"%s\"}\n",
@@ -318,6 +476,8 @@ static void handleClient(int clientFd, const WtConfig *config) {
         handlePostMessage(clientFd, config, request);
     } else if (strcmp(method, "POST") == 0 && strcmp(path, "/api/task-package") == 0) {
         handlePostTaskPackage(clientFd, config, request);
+    } else if (strcmp(method, "POST") == 0 && strcmp(path, "/api/task-request") == 0) {
+        handlePostTaskRequest(clientFd, config, request);
     } else if (strcmp(method, "POST") == 0 && strcmp(path, "/api/task-event") == 0) {
         handlePostTaskEvent(clientFd, config, request);
     } else if (strcmp(method, "GET") == 0 && strcmp(path, "/api/health") == 0) {

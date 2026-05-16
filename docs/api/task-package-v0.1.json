@@ -31,6 +31,11 @@
       "type": "string",
       "pattern": "^task_[A-Za-z0-9][A-Za-z0-9_.-]{2,96}$"
     },
+    "requestedByRole": {
+      "type": "string",
+      "enum": ["program_manager", "project_manager"],
+      "description": "Manager role that requested this child package through task.request."
+    },
     "createdBy": {
       "type": "string",
       "minLength": 2,

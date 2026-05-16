@@ -7,6 +7,7 @@ usage() {
     cat <<'USAGE'
 Usage:
   wt-task create --title TITLE --body BODY --role ROLE [--agent AGENT] [--initiative INIT] [--priority P] [--model MODEL] [--tool-profile PROFILE]
+  wt-task request --parent TASK_ID --by-role ROLE --role ROLE --title TITLE --body BODY [--by NAME] [--agent AGENT] [--initiative INIT] [--priority P] [--model MODEL] [--tool-profile PROFILE]
   wt-task list
   wt-task show TASK_ID
   wt-task assign TASK_ID --agent AGENT [--status assigned]
@@ -116,6 +117,67 @@ cmd_create() {
     http_post_json "/api/task-package" "$json"
 }
 
+cmd_request() {
+    local parent="" by_role="" by="" role="" title="" body="" agent="" initiative="" priority="normal" model="openai/gpt-5.3-codex" tool_profile="observe"
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --parent) parent="${2:-}"; shift 2 ;;
+            --by-role) by_role="${2:-}"; shift 2 ;;
+            --by) by="${2:-}"; shift 2 ;;
+            --role) role="${2:-}"; shift 2 ;;
+            --title) title="${2:-}"; shift 2 ;;
+            --body) body="${2:-}"; shift 2 ;;
+            --agent) agent="${2:-}"; shift 2 ;;
+            --initiative) initiative="${2:-}"; shift 2 ;;
+            --priority) priority="${2:-}"; shift 2 ;;
+            --model) model="${2:-}"; shift 2 ;;
+            --tool-profile) tool_profile="${2:-}"; shift 2 ;;
+            *) echo "wt-task request: unknown argument: $1" >&2; usage >&2; exit 2 ;;
+        esac
+    done
+    if [[ -z "$parent" || -z "$by_role" || -z "$role" || -z "$title" || -z "$body" ]]; then
+        echo "wt-task request: --parent, --by-role, --role, --title, and --body are required" >&2
+        exit 2
+    fi
+    [[ -n "$by" ]] || by="$by_role"
+    [[ -n "$initiative" ]] || initiative="$(new_id init)"
+    local task_id created_at
+    task_id="$(new_id task)"
+    created_at="$(now_ms)"
+    local json
+    json="$(jq -cn \
+        --arg parentTaskId "$parent" \
+        --arg requestedTaskId "$task_id" \
+        --arg initiativeId "$initiative" \
+        --arg requestedBy "$by" \
+        --arg requestedByRole "$by_role" \
+        --arg requestedRole "$role" \
+        --arg assignedAgent "$agent" \
+        --arg modelId "$model" \
+        --arg priority "$priority" \
+        --arg toolProfile "$tool_profile" \
+        --arg title "$title" \
+        --arg body "$body" \
+        --argjson createdAtUnixMs "$created_at" \
+        '{
+          schema:"woventeam.task_request.v0.1",
+          taskId:$requestedTaskId,
+          parentTaskId:$parentTaskId,
+          requestedTaskId:$requestedTaskId,
+          initiativeId:$initiativeId,
+          requestedBy:$requestedBy,
+          requestedByRole:$requestedByRole,
+          requestedRole:$requestedRole,
+          modelId:$modelId,
+          priority:$priority,
+          title:$title,
+          body:$body,
+          toolPolicy:{profile:$toolProfile},
+          createdAtUnixMs:$createdAtUnixMs
+        } + (if $assignedAgent == "" then {} else {assignedAgent:$assignedAgent} end)')"
+    http_post_json "/api/task-request" "$json"
+}
+
 cmd_list() {
     http_get "/api/tasks" | jq -r '
       reduce .[] as $row ({};
@@ -200,6 +262,7 @@ cmd="${1:-}"
 shift || true
 case "$cmd" in
     create) cmd_create "$@" ;;
+    request) cmd_request "$@" ;;
     list) cmd_list "$@" ;;
     show) cmd_show "$@" ;;
     assign) cmd_assign "$@" ;;

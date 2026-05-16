@@ -18,7 +18,7 @@ COMMON_OBJS := \
 	$(BUILD_DIR)/wt_task_store.o \
 	$(BUILD_DIR)/wt_time.o
 
-.PHONY: all clean run-roomd run-demo harness-check test-smoke test-harness-check test-task-assignment test-codex-adapter test install-roomd-service install-agent-services
+.PHONY: all clean run-roomd run-demo harness-check test-smoke test-harness-check test-task-assignment test-codex-adapter test-manager-subtasks test install-roomd-service install-agent-services
 
 all: $(BUILD_DIR)/wt-roomd $(BUILD_DIR)/wt-say $(BUILD_DIR)/wt-tail $(BUILD_DIR)/wt-agent
 
@@ -66,7 +66,10 @@ test-task-assignment: all
 test-codex-adapter: all
 	./tests/integration/wt-codex-adapter.sh
 
-test: test-smoke test-harness-check test-task-assignment test-codex-adapter
+test-manager-subtasks: all
+	./tests/integration/wt-manager-subtasks.sh
+
+test: test-smoke test-harness-check test-task-assignment test-codex-adapter test-manager-subtasks
 
 install-roomd-service: all
 	sudo install -m 0644 deploy/systemd/wt-roomd.service /etc/systemd/system/

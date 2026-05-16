@@ -62,14 +62,47 @@ lines:
 }
 ```
 
+Manager-driven subtasks append an explicit request record before the generated
+child package:
+
+```json
+{
+  "schema": "woventeam.task_request.v0.1",
+  "taskId": "task_child_001",
+  "parentTaskId": "task_parent_001",
+  "requestedTaskId": "task_child_001",
+  "initiativeId": "init_example",
+  "requestedBy": "project_manager",
+  "requestedByRole": "project_manager",
+  "requestedRole": "backend_dev",
+  "assignedAgent": "chatgpt",
+  "title": "Implement a small backend change",
+  "body": "Make the requested code change.",
+  "toolPolicy": {
+    "profile": "observe"
+  },
+  "createdAtUnixMs": 1778917466000
+}
+```
+
+`wt-roomd` validates the request against the Phase 0 spawn policy, appends the
+request, emits a `task.request` room message, appends the generated child task
+package, and emits `task.assign`. The child package includes `parentTaskId`,
+`requestedByRole`, and a dependency on the parent task.
+
 `wt-roomd` exposes the Phase 0 ledger through:
 
 - `POST /api/task-package`
+- `POST /api/task-request`
 - `POST /api/task-event`
 - `GET /api/tasks`
 
 `bin/wt-task` wraps those endpoints for local operator use with `create`,
-`list`, `show`, `assign`, and `update-status` commands.
+`request`, `list`, `show`, `assign`, and `update-status` commands.
+
+When a task is marked `blocked`, queued/running child tasks that list it in
+`dependencies` receive an appended `blocked` task event. Terminal dependents are
+not rewritten.
 
 Codex adapter runs also write an artifact manifest under the per-task runtime
 workspace. The manifest uses:
