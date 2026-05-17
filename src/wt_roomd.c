@@ -301,8 +301,6 @@ static int handlePostTaskRequest(int clientFd, const WtConfig *config, const cha
         snprintf(modelId, sizeof(modelId), "%s", "openai/gpt-5.3-codex");
     }
 
-    char compact[WT_TASK_LEDGER_LINE_SIZE];
-    compactJsonLine(body, compact, sizeof(compact));
     char escapedTaskId[WT_TASK_ID_SIZE * 2];
     char escapedInitiative[WT_TASK_ID_SIZE * 2];
     char escapedRequestedBy[WT_TASK_AGENT_SIZE * 2];
@@ -329,6 +327,20 @@ static int handlePostTaskRequest(int clientFd, const WtConfig *config, const cha
         wtJsonEscape(parentTaskId, escapedParent, sizeof(escapedParent)) != 0) {
         return wtHttpSendText(clientFd, 400, "Bad Request", "application/json", "{\"ok\":false,\"error\":\"request too large\"}\n");
     }
+    long long createdAtUnixMs = wtNowUnixMilliseconds();
+    char taskRequest[WT_TASK_LEDGER_LINE_SIZE];
+    snprintf(taskRequest, sizeof(taskRequest),
+             "{\"schema\":\"woventeam.task_request.v0.1\",\"taskId\":\"%s\","
+             "\"parentTaskId\":\"%s\",\"requestedTaskId\":\"%s\","
+             "\"initiativeId\":\"%s\",\"requestedBy\":\"%s\","
+             "\"requestedByRole\":\"%s\",\"requestedRole\":\"%s\","
+             "\"assignedAgent\":\"%s\",\"modelId\":\"%s\",\"priority\":\"%s\","
+             "\"title\":\"%s\",\"body\":\"%s\","
+             "\"toolPolicy\":{\"profile\":\"%s\"},\"createdAtUnixMs\":%lld}",
+             escapedTaskId, escapedParent, escapedTaskId, escapedInitiative,
+             escapedRequestedBy, escapedRequestedByRole, escapedRole,
+             escapedAgent, escapedModel, escapedPriority, escapedTitle,
+             escapedBody, escapedProfile, createdAtUnixMs);
     char taskPackage[WT_TASK_LEDGER_LINE_SIZE];
     snprintf(taskPackage, sizeof(taskPackage),
              "{\"schema\":\"woventeam.task_package.v0.1\",\"taskId\":\"%s\","
@@ -347,8 +359,8 @@ static int handlePostTaskRequest(int clientFd, const WtConfig *config, const cha
              strcmp(toolProfile, "repo_branch") == 0 || strcmp(toolProfile, "test_local") == 0 ? "workspace_write" : "read_only",
              strcmp(toolProfile, "test_local") == 0 ? "loopback" : "none",
              strcmp(toolProfile, "repo_branch") == 0 || strcmp(toolProfile, "test_local") == 0 ? "branch_only" : "none",
-             escapedParent, wtNowUnixMilliseconds());
-    if (wtTaskAppendRecord(config->taskLedgerPath, compact, config->fsyncEachMessage) != 0 ||
+             escapedParent, createdAtUnixMs);
+    if (wtTaskAppendRecord(config->taskLedgerPath, taskRequest, config->fsyncEachMessage) != 0 ||
         appendTaskRoomEvent(config, requestedTaskId, assignedAgent, "task.request", "requested", title) != 0 ||
         wtTaskAppendRecord(config->taskLedgerPath, taskPackage, config->fsyncEachMessage) != 0 ||
         appendTaskRoomEvent(config, requestedTaskId, assignedAgent, "task.assign", "queued", title) != 0) {
