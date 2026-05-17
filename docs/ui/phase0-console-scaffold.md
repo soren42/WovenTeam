@@ -10,21 +10,23 @@ The Phase 0 browser UI is `WovenTeam Console (Fullscreen)` served by
 - `web/app.js` connects the live room transcript to:
   - `GET /api/messages`
   - `GET /events`
-  - `POST /api/message`
-- The task table reads the append-only task ledger through `GET /api/tasks`.
-- The program initiation composer currently posts a structured CEO directive
-  into the shared room. Direct task-package creation from the browser composer
-  is still pending; use `bin/wt-task` for durable packages.
-- The modal close control is implemented as a 44 by 44 pixel touch target with
-  click, pointer, touch, and delegated fallbacks for Safari on iPad.
+  - `GET /api/tasks`
+  - `POST /api/task-package`
+  - `POST /api/task-request`
+- The task table reads the append-only task ledger and shows task status,
+  parent task IDs, requested-by role, dependencies, assigned role, and assigned
+  agent.
+- The program initiation composer can create CEO task packages or
+  manager-driven subtasks. Subtask mode requires a parent task ID and uses the
+  daemon-enforced Program Manager / Project Manager spawn policy.
+- The previous placeholder modal has been removed. Unimplemented surfaces are
+  greyed out and disabled in place.
 
 ## Temporary Placeholders
 
-The following surfaces intentionally show coming-soon placeholders until their
+The following surfaces intentionally stay visible but disabled until their
 backend tools exist:
 
-- Initiative/task package table
-- Browser task-package create/list/update controls
 - Review gate approve/reject state
 - Token and cost telemetry
 - Agent topology
@@ -33,11 +35,14 @@ backend tools exist:
 
 ## Backend Contract Needed Next
 
-The scaffold now binds to the Sprint 2 read path for task packages:
+The scaffold now binds to the Sprint 2-4 task package paths:
 
 - `docs/api/task-package-v0.1.json`
+- `docs/api/task-request-v0.1.json`
 - `docs/api/task-ledger-v0.1.md`
 - `GET /api/tasks`
+- `POST /api/task-package`
+- `POST /api/task-request`
 
 The next backend step is to expose richer initiative, gate, token, and agent
-state so the console can replace the remaining placeholders.
+state so the console can enable the remaining disabled controls.

@@ -4,39 +4,38 @@ const uplinkBadge = document.querySelector("#uplinkBadge");
 const form = document.querySelector("#composer");
 const bodyEl = document.querySelector("#messageBody");
 const initiativeNameEl = document.querySelector("#initiativeName");
+const parentTaskIdEl = document.querySelector("#parentTaskId");
+const requestedByRoleEl = document.querySelector("#requestedByRole");
 const auditLog = document.querySelector("#auditLog");
 const clockEl = document.querySelector("#clock");
-const modalBackdrop = document.querySelector("#modalBackdrop");
-const modalTitle = document.querySelector("#modalTitle");
-const modalBody = document.querySelector("#modalBody");
-const modalClose = document.querySelector("#modalClose");
 const armButton = document.querySelector("#armButton");
 const sendButton = document.querySelector("#sendButton");
 const taskTableBody = document.querySelector("#taskTableBody");
 const seen = new Set();
 
 const roles = [
-  ["pgm", "Program Manager", "PGM", 200],
-  ["pm", "Project Manager", "PM", 215],
-  ["swar", "Software Architect", "SWAR", 260],
-  ["sysar", "Systems Architect", "SYSAR", 275],
-  ["fe", "Frontend Developer", "FE", 165],
-  ["be", "Backend Developer", "BE", 145],
-  ["dbe", "Database Engineer", "DBE", 125],
-  ["dba", "Database Admin", "DBA", 110],
-  ["sa", "System Admin", "SA", 60],
-  ["neta", "Network Admin", "NETA", 45],
-  ["depl", "Deployment Engineer", "DEPL", 30],
-  ["perf", "Performance Engineer", "PERF", 350],
-  ["test", "Tester", "TEST", 320],
-  ["revu", "Code Reviewer", "REVU", 295],
-  ["intg", "Integration Specialist", "INTG", 240],
-  ["wrtr", "Technical Writer", "WRTR", 185],
-  ["mock", "Mockup Artist", "MOCK", 15],
-  ["gfx", "Graphic Artist", "GFX", 335]
-].map(([id, name, short, hue]) => ({id, name, short, hue}));
+  ["pgm", "program_manager", "Program Manager", "PGM", 200, "claude"],
+  ["pm", "project_manager", "Project Manager", "PM", 215, "claude"],
+  ["swar", "software_architect", "Software Architect", "SWAR", 260, "gemini"],
+  ["sysar", "systems_architect", "Systems Architect", "SYSAR", 275, "gemini"],
+  ["fe", "frontend_dev", "Frontend Developer", "FE", 165, "chatgpt"],
+  ["be", "backend_dev", "Backend Developer", "BE", 145, "chatgpt"],
+  ["dbe", "database_engineer", "Database Engineer", "DBE", 125, "chatgpt"],
+  ["dba", "database_administrator", "Database Admin", "DBA", 110, "all"],
+  ["sa", "systems_administrator", "System Admin", "SA", 60, "all"],
+  ["neta", "network_administrator", "Network Admin", "NETA", 45, "all"],
+  ["depl", "deployment_engineer", "Deployment Engineer", "DEPL", 30, "all"],
+  ["perf", "performance_engineer", "Performance Engineer", "PERF", 350, "gemini"],
+  ["test", "tester", "Tester", "TEST", 320, "chatgpt"],
+  ["revu", "code_reviewer", "Code Reviewer", "REVU", 295, "chatgpt"],
+  ["intg", "integration_specialist", "Integration Specialist", "INTG", 240, "all"],
+  ["wrtr", "technical_writer", "Technical Writer", "WRTR", 185, "claude"],
+  ["mock", "mockup_artist", "Mockup Artist", "MOCK", 15, "all"],
+  ["gfx", "graphic_artist", "Graphic Artist", "GFX", 335, "all"]
+].map(([id, roleId, name, short, hue, agent]) => ({id, roleId, name, short, hue, agent}));
 
 const roleById = Object.fromEntries(roles.map(role => [role.id, role]));
+const roleByBackendId = Object.fromEntries(roles.map(role => [role.roleId, role]));
 
 const presets = [
   {id: "scout", name: "Scout", tokens: 500000, agents: 3, hours: 2, priority: "low"},
@@ -48,9 +47,11 @@ const presets = [
 let state = {
   selectedRole: "pm",
   selectedPreset: "build",
+  dispatchMode: "package",
   armed: false,
   armTimer: null,
-  audit: []
+  audit: [],
+  taskStats: {roleCounts: {}, requestCount: 0, blockedCount: 0, activeAgents: 3}
 };
 
 function fmtTokens(value) {
@@ -99,6 +100,10 @@ function renderMessage(message) {
 }
 
 function prefixForKind(kind) {
+  if (kind === "task.request") return "⇢ ";
+  if (kind === "task.assign") return "→ ";
+  if (kind === "task.status") return "✓ ";
+  if (kind === "task.result") return "■ ";
   if (kind === "status") return "✓ ";
   if (kind === "error") return "✗ ";
   if (kind === "directive") return "⏵ ";
@@ -122,6 +127,9 @@ async function loadTasks() {
 
 function summarizeTasks(rows) {
   const byId = new Map();
+  const requests = new Map();
+  const roleCounts = {};
+  let blockedCount = 0;
   rows.forEach(row => {
     if (!row.taskId) return;
     if (row.schema === "woventeam.task_package.v0.1") {
@@ -131,20 +139,46 @@ function summarizeTasks(rows) {
         status: row.status || "queued",
         assignedAgent: row.assignedAgent || "all",
         assignedRole: row.assignedRole || "",
-        title: row.title || (row.task && row.task.title) || "Untitled task"
+        title: row.title || (row.task && row.task.title) || "Untitled task",
+        parentTaskId: row.parentTaskId || "",
+        requestedByRole: row.requestedByRole || "",
+        dependencies: Array.isArray(row.dependencies) ? row.dependencies : []
       });
+      roleCounts[row.assignedRole || "unassigned"] = (roleCounts[row.assignedRole || "unassigned"] || 0) + 1;
+    } else if (row.schema === "woventeam.task_request.v0.1") {
+      requests.set(row.taskId, row);
     } else if (row.schema === "woventeam.task_event.v0.1" && byId.has(row.taskId)) {
       const task = byId.get(row.taskId);
       task.status = row.status || task.status;
       task.assignedAgent = row.assignedAgent || task.assignedAgent;
     }
   });
+  byId.forEach(task => {
+    const request = requests.get(task.taskId);
+    if (request) {
+      task.requestedByRole = request.requestedByRole || task.requestedByRole;
+      task.requestedRole = request.requestedRole || "";
+    }
+    if (task.status === "blocked") blockedCount++;
+  });
+  state.taskStats = {
+    roleCounts,
+    requestCount: requests.size,
+    blockedCount,
+    activeAgents: new Set(Array.from(byId.values()).map(task => task.assignedAgent).filter(Boolean)).size || 3
+  };
   return Array.from(byId.values()).reverse();
 }
 
 function renderTasks(tasks) {
   document.querySelector("#initiativeCount").textContent = String(tasks.length);
   document.querySelector("#initiativeBadge").textContent = String(tasks.length);
+  document.querySelector("#requestCount").textContent = String(state.taskStats.requestCount);
+  document.querySelector("#blockedCount").textContent = String(state.taskStats.blockedCount);
+  document.querySelector("#agentCount").textContent = String(state.taskStats.activeAgents);
+  document.querySelector("#agentBadge").textContent = String(state.taskStats.activeAgents);
+  document.querySelector("#agentMeta").textContent = `● ${state.taskStats.activeAgents} ACTIVE · ${state.taskStats.requestCount}R · ${state.taskStats.blockedCount} BLOCKED`;
+  renderRoles();
   if (!tasks.length) {
     taskTableBody.innerHTML = '<tr><td colspan="9">No task packages yet. Use the composer or wt-task to create one.</td></tr>';
     return;
@@ -159,20 +193,29 @@ function renderTasks(tasks) {
       <td></td>
       <td></td>
       <td><div class="mini-progress"><span></span></div></td>
-      <td>--</td>
-      <td>--</td>
-      <td><span class="vendor-tag"></span></td>
+      <td></td>
+      <td></td>
+      <td></td>
     `;
     row.querySelector("td:nth-child(1)").textContent = task.taskId;
     row.querySelector(".status-pill").textContent = task.status;
     row.querySelector(".status-pill").dataset.status = task.status;
-    row.querySelector("td:nth-child(3)").textContent = task.title;
+    row.querySelector("td:nth-child(3)").textContent = task.parentTaskId || "--";
     row.querySelector("td:nth-child(4)").textContent = task.assignedRole || "--";
     row.querySelector("td:nth-child(5)").textContent = task.assignedAgent || "all";
-    row.querySelector(".mini-progress span").style.width = task.status === "complete" ? "100%" : task.status === "running" ? "55%" : "12%";
-    row.querySelector(".vendor-tag").textContent = task.assignedAgent || "router";
+    row.querySelector(".mini-progress span").style.width = progressForStatus(task.status);
+    row.querySelector("td:nth-child(7)").textContent = task.requestedByRole || "--";
+    row.querySelector("td:nth-child(8)").textContent = task.dependencies.length ? task.dependencies.join(", ") : "--";
+    row.querySelector("td:nth-child(9)").textContent = task.title;
     taskTableBody.appendChild(row);
   });
+}
+
+function progressForStatus(status) {
+  if (status === "complete") return "100%";
+  if (status === "running") return "55%";
+  if (status === "blocked" || status === "failed") return "35%";
+  return "12%";
 }
 
 function connectEvents() {
@@ -198,7 +241,7 @@ function renderRoles() {
   roleGrid.innerHTML = "";
   roleButtons.innerHTML = "";
 
-  const activeCounts = {pm: 1, be: 1, test: 0, revu: 0, wrtr: 0, sysar: 0, dba: 0, neta: 0, fe: 0, depl: 0, sa: 0, pgm: 0, swar: 0, perf: 0, intg: 0, mock: 0, gfx: 0, dbe: 0};
+  const activeCounts = Object.fromEntries(roles.map(role => [role.id, state.taskStats.roleCounts[role.roleId] || 0]));
   roles.slice(0, 12).forEach(role => {
     const chip = document.createElement("div");
     chip.className = "role-chip";
@@ -208,13 +251,17 @@ function renderRoles() {
   });
 
   roles.forEach(role => {
+    const disabled = state.dispatchMode === "request" && !canRequestRole(requestedByRoleEl.value, role.roleId);
     const button = document.createElement("button");
     button.type = "button";
     button.className = `role-button ${role.id === state.selectedRole ? "active" : ""}`;
     button.style.setProperty("--role-hue", role.hue);
     button.title = role.name;
+    button.disabled = disabled;
+    button.setAttribute("aria-disabled", disabled ? "true" : "false");
     button.innerHTML = `<i></i><span>${role.short}</span>`;
     button.addEventListener("click", () => {
+      if (button.disabled) return;
       state.selectedRole = role.id;
       document.querySelector("#selectedRoleLabel").textContent = role.name;
       renderRoles();
@@ -265,9 +312,10 @@ function updateReadouts() {
 function renderVendors() {
   const vendors = [
     {name: "Claude Code", cli: "claude", state: "launchable", quota: 34},
-    {name: "Codex CLI", cli: "codex", state: "launchable", quota: 41},
+    {name: "Codex CLI", cli: "codex", state: "opt-in adapter", quota: 41},
     {name: "Gemini CLI", cli: "gemini", state: "launchable", quota: 22},
-    {name: "Task Runner", cli: "adapter", state: "coming soon", quota: 0, warn: true}
+    {name: "Manager Tasks", cli: "task.request", state: "live", quota: 100},
+    {name: "Gate Controls", cli: "review", state: "disabled", quota: 0, warn: true}
   ];
   const grid = document.querySelector("#vendorGrid");
   grid.innerHTML = "";
@@ -281,7 +329,7 @@ function renderVendors() {
     `;
     grid.appendChild(card);
   });
-  document.querySelector("#vendorMeta").textContent = "● 3 OK · ● 1 PENDING";
+  document.querySelector("#vendorMeta").textContent = "● 4 LIVE · ● 1 DISABLED";
 }
 
 function drawSparkline() {
@@ -303,22 +351,6 @@ function drawSparkline() {
   `;
 }
 
-function openModal(title, body) {
-  modalTitle.textContent = title;
-  modalBody.textContent = body;
-  modalBackdrop.hidden = false;
-}
-
-function closeModal() {
-  modalBackdrop.hidden = true;
-}
-
-function closeModalFromPointer(event) {
-  event.preventDefault();
-  event.stopPropagation();
-  closeModal();
-}
-
 function armComposer() {
   state.armed = true;
   armButton.textContent = "ARMED";
@@ -333,6 +365,113 @@ function disarmComposer() {
   armButton.textContent = "ARM";
   armButton.classList.remove("armed");
   sendButton.disabled = true;
+}
+
+function nowMs() {
+  return Date.now();
+}
+
+function newTaskId() {
+  const cryptoApi = globalThis.crypto;
+  if (cryptoApi && cryptoApi.randomUUID) {
+    return `task_${cryptoApi.randomUUID().replace(/-/g, "")}`;
+  }
+  return `task_${Date.now()}_${Math.floor(Math.random() * 100000)}`;
+}
+
+function newInitiativeId() {
+  const raw = initiativeNameEl.value.trim().toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "").slice(0, 48);
+  return `init_${raw || Date.now()}`;
+}
+
+function roleAgent(role) {
+  return role.agent || "all";
+}
+
+function toolPolicy(profile = "observe") {
+  const writable = profile === "repo_branch" || profile === "test_local";
+  return {
+    profile,
+    filesystem: writable ? "workspace_write" : "read_only",
+    network: profile === "test_local" ? "loopback" : "none",
+    system: "none",
+    git: writable ? "branch_only" : "none"
+  };
+}
+
+function canRequestRole(requesterRole, requestedRole) {
+  if (requesterRole === "program_manager") {
+    return ["project_manager", "software_architect", "systems_architect"].includes(requestedRole);
+  }
+  if (requesterRole === "project_manager") {
+    return !["program_manager", "project_manager"].includes(requestedRole);
+  }
+  return false;
+}
+
+function ensureSelectedRoleAllowed() {
+  if (state.dispatchMode !== "request") return;
+  const requesterRole = requestedByRoleEl.value;
+  const selected = roleById[state.selectedRole];
+  if (selected && canRequestRole(requesterRole, selected.roleId)) return;
+  const fallback = roles.find(role => canRequestRole(requesterRole, role.roleId));
+  if (fallback) {
+    state.selectedRole = fallback.id;
+    document.querySelector("#selectedRoleLabel").textContent = fallback.name;
+  }
+}
+
+function buildTaskPackage() {
+  const role = roleById[state.selectedRole];
+  const name = initiativeNameEl.value.trim() || "Untitled initiative";
+  const body = bodyEl.value.trim();
+  const priority = document.querySelector("#priority").value;
+  const taskId = newTaskId();
+  return {
+    schema: "woventeam.task_package.v0.1",
+    taskId,
+    initiativeId: newInitiativeId(),
+    createdBy: "ceo",
+    assignedRole: role.roleId,
+    assignedAgent: roleAgent(role),
+    modelId: "openai/gpt-5.3-codex",
+    priority: priority === "critical" ? "urgent" : priority,
+    status: "queued",
+    title: name,
+    body,
+    task: {title: name, body, deliverables: []},
+    contextRefs: [],
+    acceptanceCriteria: ["Task result is recorded in the room and task ledger."],
+    toolPolicy: toolPolicy("observe"),
+    budget: {timeoutSeconds: 1800, maxOutputBytes: 1048576, maxCostUsd: 1.0},
+    dependencies: [],
+    createdAtUnixMs: nowMs()
+  };
+}
+
+function buildTaskRequest() {
+  const role = roleById[state.selectedRole];
+  const title = initiativeNameEl.value.trim() || "Untitled subtask";
+  const body = bodyEl.value.trim();
+  const priority = document.querySelector("#priority").value;
+  const requestedTaskId = newTaskId();
+  return {
+    schema: "woventeam.task_request.v0.1",
+    taskId: requestedTaskId,
+    parentTaskId: parentTaskIdEl.value.trim(),
+    requestedTaskId,
+    initiativeId: newInitiativeId(),
+    requestedBy: requestedByRoleEl.value,
+    requestedByRole: requestedByRoleEl.value,
+    requestedRole: role.roleId,
+    assignedAgent: roleAgent(role),
+    modelId: "openai/gpt-5.3-codex",
+    priority: priority === "critical" ? "urgent" : priority,
+    title,
+    body,
+    toolPolicy: {profile: "observe"},
+    createdAtUnixMs: nowMs()
+  };
 }
 
 function buildDirective() {
@@ -359,19 +498,39 @@ async function submitDirective(event) {
   if (!state.armed) return;
   const messageBody = bodyEl.value.trim();
   if (!messageBody) return;
-  await fetch("/api/message", {
+  if (state.dispatchMode === "request" && !parentTaskIdEl.value.trim()) {
+    addAudit("ui", "parent task id required for manager subtask");
+    disarmComposer();
+    return;
+  }
+  const path = state.dispatchMode === "request" ? "/api/task-request" : "/api/task-package";
+  const payload = state.dispatchMode === "request" ? buildTaskRequest() : buildTaskPackage();
+  const response = await fetch(path, {
     method: "POST",
     headers: {"Content-Type": "application/json"},
-    body: JSON.stringify({
-      senderName: "ceo",
-      targetName: "all",
-      messageType: "directive",
-      messageBody: buildDirective()
-    })
+    body: JSON.stringify(payload)
   });
+  if (!response.ok) {
+    addAudit("ui", `${state.dispatchMode} dispatch failed`);
+    disarmComposer();
+    return;
+  }
+  addAudit("ui", `${state.dispatchMode} dispatched ${payload.taskId || payload.requestedTaskId}`);
   bodyEl.value = "";
   initiativeNameEl.value = "";
+  parentTaskIdEl.value = "";
   disarmComposer();
+  await loadTasks();
+}
+
+function setDispatchMode(mode) {
+  state.dispatchMode = mode;
+  ensureSelectedRoleAllowed();
+  document.querySelectorAll(".mode-button").forEach(button => button.classList.toggle("active", button.dataset.mode === mode));
+  document.querySelector("#requestFields").hidden = mode !== "request";
+  document.querySelector("#selectedModeLabel").textContent = mode === "request" ? "Manager subtask" : "CEO task package";
+  document.querySelector("#composerModeLabel").textContent = mode === "request" ? "TASK REQUEST MODE" : "TASK PACKAGE MODE";
+  renderRoles();
 }
 
 function wireControls() {
@@ -391,40 +550,24 @@ function wireControls() {
     });
   });
 
-  document.querySelectorAll(".rail-button[data-view]").forEach(button => {
+  document.querySelectorAll(".rail-button[data-view]:not(:disabled)").forEach(button => {
     button.addEventListener("click", () => {
       document.querySelectorAll(".rail-button").forEach(item => item.classList.remove("active"));
       button.classList.add("active");
-      if (button.dataset.view !== "initiatives") {
-        openModal(`${button.title} coming soon`, "This navigation destination is scaffolded. It will render once the matching backend endpoint and state model exist.");
-      }
     });
   });
 
-  document.querySelector("#paletteButton").addEventListener("click", () => {
-    openModal("Command palette coming soon", "The command palette needs indexed agents, initiatives, review gates, and task actions.");
+  document.querySelectorAll(".mode-button").forEach(button => {
+    button.addEventListener("click", () => setDispatchMode(button.dataset.mode));
   });
-  document.querySelector("#helpButton").addEventListener("click", () => {
-    openModal("Keyboard shortcuts", "Ctrl+K opens the future command palette. N opens the composer drawer. Escape closes dialogs.");
-  });
-  document.querySelector("#settingsButton").addEventListener("click", () => {
-    openModal("Settings coming soon", "Vendor CLI settings and runtime homes will connect after adapter execution is implemented.");
+  requestedByRoleEl.addEventListener("change", () => {
+    ensureSelectedRoleAllowed();
+    renderRoles();
   });
   document.querySelector("#drawerFab").addEventListener("click", () => {
     consoleEl.dataset.placement = "right";
     document.querySelectorAll(".placement button").forEach(item => item.classList.toggle("active", item.dataset.placement === "right"));
     bodyEl.focus();
-  });
-  modalClose.addEventListener("click", closeModalFromPointer);
-  modalClose.addEventListener("pointerup", closeModalFromPointer);
-  modalClose.addEventListener("touchend", closeModalFromPointer, {passive: false});
-  modalBackdrop.addEventListener("click", event => {
-    if (event.target === modalBackdrop) closeModal();
-  });
-  document.addEventListener("click", event => {
-    if (event.target instanceof Element && event.target.closest("#modalClose")) {
-      closeModalFromPointer(event);
-    }
   });
 
   armButton.addEventListener("click", armComposer);
@@ -434,10 +577,9 @@ function wireControls() {
   });
 
   window.addEventListener("keydown", event => {
-    if (event.key === "Escape") closeModal();
     if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") {
       event.preventDefault();
-      openModal("Command palette coming soon", "Search and command execution require the task index and agent registry backend.");
+      addAudit("ui", "command palette disabled until task action indexing exists");
     }
     if (!["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement.tagName) && event.key.toLowerCase() === "n") {
       bodyEl.focus();
