@@ -62,6 +62,21 @@ worker_response="$(
 worker_task="$(jq -r '.taskId' <<<"$worker_response")"
 test "$worker_task" != "null"
 
+direct_task="task_direct_request_without_projection"
+direct_response="$(
+    jq -cn \
+      --arg parentTaskId "$pm_task" \
+      --arg requestedTaskId "$direct_task" \
+      --arg initiativeId "$initiative" \
+      --arg requestedByRole "project_manager" \
+      --arg requestedRole "technical_writer" \
+      --arg title "Document canonical request fixture" \
+      --arg body "This request intentionally omits taskId; wt-roomd must add the native projection." \
+      '{schema:"woventeam.task_request.v0.1",parentTaskId:$parentTaskId,requestedTaskId:$requestedTaskId,initiativeId:$initiativeId,requestedByRole:$requestedByRole,requestedRole:$requestedRole,title:$title,body:$body}' |
+      curl -fsS -H 'Content-Type: application/json' -d @- "$ROOM_URL/api/task-request"
+)"
+test "$(jq -r '.taskId' <<<"$direct_response")" = "$direct_task"
+
 review_response="$(
     WT_ROOM_URL="$ROOM_URL" "$ROOT/bin/wt-task" request \
         --parent "$worker_task" \
@@ -118,6 +133,9 @@ WT_ROOM_URL="$ROOM_URL" "$ROOT/bin/wt-task" update-status "$blocked_parent" --st
 tasks_json="$(curl -fsS "$ROOM_URL/api/tasks")"
 jq -e --arg taskId "$worker_task" '
   [.[] | select(.taskId == $taskId and .schema == "woventeam.task_request.v0.1")] | length == 1
+' <<<"$tasks_json" >/dev/null
+jq -e --arg taskId "$direct_task" '
+  [.[] | select(.taskId == $taskId and .schema == "woventeam.task_request.v0.1" and .requestedTaskId == $taskId)] | length == 1
 ' <<<"$tasks_json" >/dev/null
 jq -e --arg taskId "$worker_task" '
   [.[] | select(.taskId == $taskId and .schema == "woventeam.task_package.v0.1" and .parentTaskId != null and .requestedByRole == "project_manager")] | length == 1
