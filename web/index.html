@@ -21,12 +21,12 @@
       </div>
 
       <div class="top-actions">
-        <button id="paletteButton" class="search-button" type="button">
+        <button id="paletteButton" class="search-button disabled-control" type="button" disabled aria-disabled="true" title="Command palette disabled until task action indexing exists">
           <span>⌕</span>
-          <span>Search agents, initiatives, gates...</span>
+          <span>Search disabled until indexing exists</span>
           <kbd>Ctrl K</kbd>
         </button>
-        <button id="helpButton" class="icon-button" type="button" title="Keyboard shortcuts">?</button>
+        <button id="helpButton" class="icon-button disabled-control" type="button" disabled aria-disabled="true" title="Keyboard shortcut overlay not implemented">?</button>
         <div class="swatches" aria-label="Accent hue">
           <span>HUE</span>
           <button type="button" class="swatch cyan active" data-accent="cyan" aria-label="Cyan"></button>
@@ -51,11 +51,11 @@
     <aside class="rail" aria-label="Console navigation">
       <button type="button" class="rail-button active" data-view="initiatives" title="Initiatives"><span>◰</span><b id="initiativeBadge">0</b></button>
       <button type="button" class="rail-button" data-view="agents" title="Agents"><span>◫</span><b id="agentBadge">3</b></button>
-      <button type="button" class="rail-button" data-view="gates" title="Gates"><span>▣</span><b>0</b></button>
-      <button type="button" class="rail-button" data-view="topology" title="Topology"><span>⫳</span></button>
-      <button type="button" class="rail-button" data-view="audit" title="Audit log"><span>≣</span></button>
+      <button type="button" class="rail-button disabled-control" data-view="gates" title="Gates disabled until gate API exists" disabled aria-disabled="true"><span>▣</span><b>0</b></button>
+      <button type="button" class="rail-button disabled-control" data-view="topology" title="Topology disabled until topology API exists" disabled aria-disabled="true"><span>⫳</span></button>
+      <button type="button" class="rail-button disabled-control" data-view="audit" title="Audit view disabled until audit query API exists" disabled aria-disabled="true"><span>≣</span></button>
       <div class="rail-spacer"></div>
-      <button id="settingsButton" type="button" class="rail-button" title="Settings"><span>⚙</span></button>
+      <button id="settingsButton" type="button" class="rail-button disabled-control" title="Settings disabled until runtime settings API exists" disabled aria-disabled="true"><span>⚙</span></button>
     </aside>
 
     <main class="main">
@@ -69,7 +69,7 @@
         </article>
 
         <article class="panel token-panel">
-          <header><span>Token spend · today / month</span><small>COMING SOON</small></header>
+          <header><span>Token spend · today / month</span><small>DISABLED</small></header>
           <div class="token-headline"><strong>--</strong><span>/ budget pending</span></div>
           <svg id="tokenSparkline" class="sparkline" viewBox="0 0 310 36" aria-hidden="true"></svg>
           <div class="meter"><span style="width: 0%"></span></div>
@@ -83,9 +83,9 @@
 
         <article class="panel alerts-panel">
           <header><span>Alerts · failed / stuck</span><small>0 OPEN</small></header>
-          <div class="placeholder compact">
-            <strong>Coming soon</strong>
-            <span>Failure, stuck-agent, and gate alert feeds need the task ledger and runner events.</span>
+          <div class="placeholder compact disabled-surface">
+            <strong>Alert feed disabled</strong>
+            <span>Needs alert and gate query endpoints. Task failures and blocked states are visible in the live task ledger below.</span>
           </div>
         </article>
       </section>
@@ -93,19 +93,19 @@
       <section class="panel initiatives-panel" data-view-panel="initiatives">
         <header>
           <span>Active initiatives · <b id="initiativeCount">0</b> tracked</span>
-          <small>click row → room-visible task state</small>
+          <small><span id="requestCount">0</span> manager requests · <span id="blockedCount">0</span> blocked</small>
         </header>
         <div class="initiative-placeholder">
           <div>
             <strong>Task package ledger</strong>
-            <p>Live Phase 0 view backed by <code>GET /api/tasks</code>. Progress, gates, and cost projections remain coming soon.</p>
+            <p>Live Phase 0 view backed by <code>GET /api/tasks</code>. Manager subtasks, parent dependencies, and blocked propagation are active.</p>
           </div>
           <table>
             <thead>
-              <tr><th>ID</th><th>Status</th><th>Initiative</th><th>Lead</th><th>Agents</th><th>Progress</th><th>Tokens</th><th>Gates</th><th>Vendor</th></tr>
+              <tr><th>ID</th><th>Status</th><th>Parent</th><th>Role</th><th>Agent</th><th>Progress</th><th>Requested by</th><th>Dependency</th><th>Title</th></tr>
             </thead>
             <tbody id="taskTableBody">
-              <tr><td colspan="9">No initiative API is available yet. Use the composer below to announce work into the room.</td></tr>
+              <tr><td colspan="9">No task packages yet. Use the composer to create a live task or manager subtask.</td></tr>
             </tbody>
           </table>
         </div>
@@ -116,28 +116,48 @@
           <header>
             <span>Cross-agent meeting log</span>
             <div class="chat-controls">
-              <select id="initiativeFilter" disabled><option>all initiatives</option></select>
-              <select id="roleFilter" disabled><option>all roles</option></select>
+              <select id="initiativeFilter" class="disabled-control" disabled aria-disabled="true"><option>all initiatives</option></select>
+              <select id="roleFilter" class="disabled-control" disabled aria-disabled="true"><option>all roles</option></select>
             </div>
           </header>
           <div id="transcript" class="transcript" aria-live="polite"></div>
           <div class="gate-strip">
-            <strong>Review gates · awaiting CEO</strong>
-            <span>Coming soon: approve/reject requires gate state and task packages.</span>
+            <strong>Review gates · disabled</strong>
+            <span>Approve/reject controls are disabled until a gate-state API exists.</span>
           </div>
         </article>
 
         <article id="composerPanel" class="panel composer-panel">
-          <header><span>Program initiation · composer</span><small>ROOM MESSAGE MODE</small></header>
+          <header><span>Program initiation · composer</span><small id="composerModeLabel">TASK PACKAGE MODE</small></header>
           <div class="drafts">
             <div><span>Queued drafts · 0</span><small>load → composer</small></div>
             <p>queue empty</p>
           </div>
           <form id="composer" class="composer-form">
+            <div class="field-group">
+              <div class="field-heading"><span>Dispatch mode</span><small id="selectedModeLabel">CEO task package</small></div>
+              <div class="mode-buttons">
+                <button type="button" class="mode-button active" data-mode="package">Task package</button>
+                <button type="button" class="mode-button" data-mode="request">Manager subtask</button>
+              </div>
+            </div>
             <label>
               <span>Initiative name</span>
               <input id="initiativeName" maxlength="120" placeholder="e.g. Build Codex adapter runner">
             </label>
+            <div id="requestFields" class="request-fields" hidden>
+              <label>
+                <span>Parent task ID</span>
+                <input id="parentTaskId" maxlength="120" placeholder="task_parent_id">
+              </label>
+              <label>
+                <span>Requested by</span>
+                <select id="requestedByRole">
+                  <option value="project_manager" selected>Project Manager</option>
+                  <option value="program_manager">Program Manager</option>
+                </select>
+              </label>
+            </div>
             <label>
               <span>Task brief</span>
               <textarea id="messageBody" rows="5" maxlength="4000" placeholder="Describe the work, success criteria, touched systems, and review gates."></textarea>
@@ -166,7 +186,7 @@
               <button id="armButton" type="button" class="arm-button">ARM</button>
               <button id="sendButton" type="submit" class="execute-button" disabled>EXECUTE</button>
             </div>
-            <p class="composer-note">Temporary behavior: EXECUTE posts a structured CEO directive to the shared room. Task package execution is coming soon.</p>
+            <p class="composer-note">EXECUTE writes live task packages or manager subtask requests to the Phase 0 ledger. Token, gate, and cost controls are displayed but not enforced yet.</p>
           </form>
         </article>
       </section>
@@ -176,17 +196,7 @@
       <span>● AUDIT</span>
       <div id="auditLog">Waiting for room events...</div>
     </footer>
-
-    <button id="drawerFab" class="drawer-fab" type="button">+ New initiative <kbd>N</kbd></button>
-    <div id="modalBackdrop" class="modal-backdrop" hidden>
-      <section class="modal">
-        <button id="modalClose" type="button" class="modal-close" aria-label="Close dialog">
-          <span aria-hidden="true">×</span>
-        </button>
-        <h2 id="modalTitle">Coming soon</h2>
-        <p id="modalBody">This console surface is scaffolded and will connect to backend tooling in a later phase.</p>
-      </section>
-    </div>
+    <button id="drawerFab" class="drawer-fab" type="button">+ New task <kbd>N</kbd></button>
   </div>
   <script src="/app.js"></script>
 </body>
