@@ -193,6 +193,12 @@
           "type": "number",
           "minimum": 0,
           "default": 1.0
+        },
+        "maxTokens": {
+          "type": "integer",
+          "minimum": 0,
+          "default": 2000000,
+          "description": "Phase 0 allocation budget used by token telemetry. Adapter-reported usage is a later subsystem."
         }
       },
       "default": {}

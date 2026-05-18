@@ -240,3 +240,37 @@ int wtTaskAppendBlockedDependents(const char *ledgerPath, const char *blockedTas
     }
     return appended;
 }
+
+int wtTaskSummarizeTokenBudgets(const char *ledgerPath, long long nowUnixMs, WtTokenSummary *summary) {
+    memset(summary, 0, sizeof(*summary));
+    FILE *file = fopen(ledgerPath, "r");
+    if (!file) {
+        return 0;
+    }
+    const long long dayWindowMs = 24LL * 60LL * 60LL * 1000LL;
+    const long long monthWindowMs = 30LL * dayWindowMs;
+    char line[WT_TASK_LEDGER_LINE_SIZE];
+    while (fgets(line, sizeof(line), file)) {
+        if (!lineHasSchema(line, "woventeam.task_package.v0.1")) {
+            continue;
+        }
+        long maxTokens = 0;
+        long long createdAtUnixMs = 0;
+        if (wtJsonReadLong(line, "maxTokens", &maxTokens) != 0 || maxTokens < 0) {
+            maxTokens = 0;
+        }
+        wtJsonReadLongLong(line, "createdAtUnixMs", &createdAtUnixMs);
+        summary->allTimeAllocatedTokens += maxTokens;
+        summary->allTimePackages++;
+        if (createdAtUnixMs > 0 && createdAtUnixMs >= nowUnixMs - monthWindowMs) {
+            summary->monthWindowAllocatedTokens += maxTokens;
+            summary->monthWindowPackages++;
+        }
+        if (createdAtUnixMs > 0 && createdAtUnixMs >= nowUnixMs - dayWindowMs) {
+            summary->dayWindowAllocatedTokens += maxTokens;
+            summary->dayWindowPackages++;
+        }
+    }
+    fclose(file);
+    return 0;
+}

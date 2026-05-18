@@ -283,7 +283,7 @@
         <span class="badge live">LIVE: manager subtasks</span>
         <span class="badge live">LIVE: web composer</span>
         <span class="badge">OPT-IN: Codex adapter</span>
-        <span class="badge future">FUTURE: gates / cost / topology</span>
+        <span class="badge future">FUTURE: gates / actual usage / topology</span>
       </div>
     </div>
     <svg class="flow" viewBox="0 0 300 170" role="img" aria-label="Phase 0 flow from CEO to daemon to agent to results">
@@ -337,6 +337,8 @@
         <tr><td>Manager subtask</td><td><span class="pill live">live</span></td><td>PM/PgM request child tasks</td></tr>
         <tr><td>Stub agents</td><td><span class="pill live">live</span></td><td>Claim tasks and write results</td></tr>
         <tr><td>Codex adapter</td><td><span class="pill opt">opt-in</span></td><td>ChatGPT tasks with repo/test policies</td></tr>
+        <tr><td>Token allocation panel</td><td><span class="pill live">live</span></td><td>24h/30d budget allocation from task packages</td></tr>
+        <tr><td>Token config UI</td><td><span class="pill live">live</span></td><td>Settings rail edits budget telemetry config</td></tr>
       </table>
     </section>
 
@@ -345,9 +347,9 @@
       <table class="status-table">
         <tr><th>Feature</th><th>Status</th></tr>
         <tr><td>Review gate approve/reject</td><td><span class="pill future">disabled</span></td></tr>
-        <tr><td>Token/cost enforcement</td><td><span class="pill future">disabled</span></td></tr>
+        <tr><td>Adapter-reported token usage</td><td><span class="pill future">future</span></td></tr>
         <tr><td>Agent topology view</td><td><span class="pill future">disabled</span></td></tr>
-        <tr><td>Runtime settings UI</td><td><span class="pill future">disabled</span></td></tr>
+        <tr><td>Full runtime settings UI</td><td><span class="pill future">future</span></td></tr>
         <tr><td>Capacity counters for spawn caps</td><td><span class="pill future">future</span></td></tr>
       </table>
     </section>
@@ -367,6 +369,7 @@
       <div class="quick-list">
         <div><span class="label">Create</span><span>Composer mode <b>Task package</b>: title + task brief + role, then <b>ARM</b> and <b>EXECUTE</b>.</span></div>
         <div><span class="label">Subtask</span><span>Composer mode <b>Manager subtask</b>: parent task ID + requester role + target role.</span></div>
+        <div><span class="label">Budgets</span><span>Use the token slider per task and the settings rail for 24h/30d token allocation budgets.</span></div>
         <div><span class="label">Observe</span><span>Use the task table for status, parent, dependencies, requested-by role, assigned role, and agent.</span></div>
         <div><span class="label">Disabled</span><span>Grey controls are intentionally inert until their backend APIs exist.</span></div>
       </div>

@@ -461,6 +461,10 @@ kbd {
   background: var(--ok);
 }
 
+.meter span[data-level="warn"] {
+  background: var(--warn);
+}
+
 .token-panel footer {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
@@ -544,6 +548,86 @@ kbd {
 .disabled-surface {
   opacity: 0.68;
   filter: grayscale(0.45);
+}
+
+.settings-panel {
+  position: fixed;
+  z-index: 8;
+  top: 56px;
+  right: 0;
+  bottom: 36px;
+  width: 340px;
+  border-left: 1px solid var(--edge-bright);
+  background: var(--panel-alt);
+  box-shadow: -18px 0 30px rgba(0, 0, 0, 0.28);
+}
+
+.settings-panel[hidden] {
+  display: none;
+}
+
+.settings-panel header {
+  min-height: 42px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--edge);
+  color: var(--accent);
+  font-size: 10.5px;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.settings-form {
+  display: grid;
+  gap: 12px;
+  padding: 12px;
+}
+
+.settings-form label {
+  display: grid;
+  gap: 5px;
+  color: var(--text-dim);
+  font-size: 11px;
+}
+
+.settings-form input,
+.settings-form select {
+  width: 100%;
+  border: 1px solid var(--edge);
+  background: var(--panel);
+  color: var(--text);
+  padding: 7px 8px;
+}
+
+.settings-readonly {
+  display: grid;
+  gap: 6px;
+  border-top: 1px solid var(--edge);
+  border-bottom: 1px solid var(--edge);
+  padding: 10px 0;
+  font-family: var(--mono);
+  font-size: 10.5px;
+}
+
+.settings-readonly div {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--text-dim);
+}
+
+.settings-readonly b {
+  color: var(--text);
+}
+
+.settings-status {
+  min-height: 18px;
+  margin: 0;
+  color: var(--text-dim);
+  font-size: 11px;
+  overflow-wrap: anywhere;
 }
 
 .initiatives-panel {

@@ -11,8 +11,11 @@ The Phase 0 browser UI is `WovenTeam Console (Fullscreen)` served by
   - `GET /api/messages`
   - `GET /events`
   - `GET /api/tasks`
+  - `GET /api/tokens`
+  - `GET /api/config`
   - `POST /api/task-package`
   - `POST /api/task-request`
+  - `POST /api/config`
 - The task table reads the append-only task ledger and shows task status,
   parent task IDs, requested-by role, dependencies, assigned role, and assigned
   agent.
@@ -21,6 +24,11 @@ The Phase 0 browser UI is `WovenTeam Console (Fullscreen)` served by
   daemon-enforced Program Manager / Project Manager spawn policy.
 - The previous placeholder modal has been removed. Unimplemented surfaces are
   greyed out and disabled in place.
+- The token sub-panel is live allocation telemetry. It sums package
+  `budget.maxTokens` values over rolling 24-hour and 30-day windows, displays
+  estimated cost from config, and does not yet claim adapter-reported usage.
+- The rail settings button opens a runtime configuration panel for token
+  telemetry. Saving writes the active Phase 0 key/value config file.
 
 ## Temporary Placeholders
 
@@ -28,7 +36,6 @@ The following surfaces intentionally stay visible but disabled until their
 backend tools exist:
 
 - Review gate approve/reject state
-- Token and cost telemetry
 - Agent topology
 - Vendor runtime settings
 - Command palette search/actions
@@ -44,5 +51,5 @@ The scaffold now binds to the Sprint 2-4 task package paths:
 - `POST /api/task-package`
 - `POST /api/task-request`
 
-The next backend step is to expose richer initiative, gate, token, and agent
-state so the console can enable the remaining disabled controls.
+The next backend step is to expose richer initiative, gate, adapter usage, and
+agent state so the console can enable the remaining disabled controls.

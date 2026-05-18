@@ -14,6 +14,7 @@
 #define WT_NAME_SIZE 64
 
 typedef struct {
+    char configPath[WT_PATH_SIZE];
     char roomName[WT_NAME_SIZE];
     char roomLogPath[WT_PATH_SIZE];
     char taskLedgerPath[WT_PATH_SIZE];
@@ -25,6 +26,11 @@ typedef struct {
     int adapterMaxOutputBytes;
     bool fsyncEachMessage;
     bool enableCodexAdapter;
+    bool tokenTelemetryEnabled;
+    long tokenDailyBudget;
+    long tokenMonthlyBudget;
+    int tokenWarningPercent;
+    int tokenCostPerMillionCents;
     char runtimeRootPath[WT_PATH_SIZE];
     char claudeMode[WT_NAME_SIZE];
     char chatgptMode[WT_NAME_SIZE];
@@ -36,6 +42,7 @@ typedef struct {
 
 void wtConfigInitDefaults(WtConfig *config);
 int wtConfigLoadFile(WtConfig *config, const char *path);
+int wtConfigWriteFile(const WtConfig *config, const char *path);
 void wtConfigApplyEnvironment(WtConfig *config);
 int wtConfigSetValue(WtConfig *config, const char *key, const char *value);
 

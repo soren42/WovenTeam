@@ -55,7 +55,46 @@
       <button type="button" class="rail-button disabled-control" data-view="topology" title="Topology disabled until topology API exists" disabled aria-disabled="true"><span>⫳</span></button>
       <button type="button" class="rail-button disabled-control" data-view="audit" title="Audit view disabled until audit query API exists" disabled aria-disabled="true"><span>≣</span></button>
       <div class="rail-spacer"></div>
-      <button id="settingsButton" type="button" class="rail-button disabled-control" title="Settings disabled until runtime settings API exists" disabled aria-disabled="true"><span>⚙</span></button>
+      <button id="settingsButton" type="button" class="rail-button" title="Runtime settings"><span>⚙</span></button>
+    </aside>
+
+    <aside id="settingsPanel" class="settings-panel" hidden aria-label="Runtime configuration">
+      <header>
+        <span>Runtime configuration</span>
+        <button id="settingsCloseButton" type="button" class="icon-button" title="Close settings">×</button>
+      </header>
+      <form id="settingsForm" class="settings-form">
+        <label>
+          <span>Token telemetry</span>
+          <select id="configTokenTelemetryEnabled">
+            <option value="1">enabled</option>
+            <option value="0">disabled</option>
+          </select>
+        </label>
+        <label>
+          <span>Daily token budget</span>
+          <input id="configTokenDailyBudget" type="number" min="0" step="100000">
+        </label>
+        <label>
+          <span>Monthly token budget</span>
+          <input id="configTokenMonthlyBudget" type="number" min="0" step="1000000">
+        </label>
+        <label>
+          <span>Warning threshold %</span>
+          <input id="configTokenWarningPercent" type="number" min="1" max="100" step="1">
+        </label>
+        <label>
+          <span>Cost per 1M tokens, cents</span>
+          <input id="configTokenCostPerMillionCents" type="number" min="0" step="1">
+        </label>
+        <div class="settings-readonly">
+          <div><span>Context messages</span><b id="configContextMessages">--</b></div>
+          <div><span>Agent poll</span><b id="configAgentPoll">--</b></div>
+          <div><span>Adapter timeout</span><b id="configAdapterTimeout">--</b></div>
+        </div>
+        <button type="submit" class="execute-button">SAVE CONFIG</button>
+        <p id="settingsStatus" class="settings-status">Config not loaded yet.</p>
+      </form>
     </aside>
 
     <main class="main">
@@ -69,11 +108,11 @@
         </article>
 
         <article class="panel token-panel">
-          <header><span>Token spend · today / month</span><small>DISABLED</small></header>
-          <div class="token-headline"><strong>--</strong><span>/ budget pending</span></div>
+          <header><span>Token allocation · 24h / 30d</span><small id="tokenMeta">LOADING</small></header>
+          <div class="token-headline"><strong id="tokenHeadline">--</strong><span id="tokenBudgetLabel">/ budget pending</span></div>
           <svg id="tokenSparkline" class="sparkline" viewBox="0 0 310 36" aria-hidden="true"></svg>
-          <div class="meter"><span style="width: 0%"></span></div>
-          <footer><span>Today <b>--</b></span><span>This month <b>--</b></span><span>Burn/hr <b>--</b></span></footer>
+          <div class="meter"><span id="tokenMeter" style="width: 0%"></span></div>
+          <footer><span>24h <b id="tokenDay">--</b></span><span>30d <b id="tokenMonth">--</b></span><span>Est. cost <b id="tokenCost">--</b></span></footer>
         </article>
 
         <article class="panel vendor-panel">
@@ -186,7 +225,7 @@
               <button id="armButton" type="button" class="arm-button">ARM</button>
               <button id="sendButton" type="submit" class="execute-button" disabled>EXECUTE</button>
             </div>
-            <p class="composer-note">EXECUTE writes live task packages or manager subtask requests to the Phase 0 ledger. Token, gate, and cost controls are displayed but not enforced yet.</p>
+            <p class="composer-note">EXECUTE writes live task packages or manager subtask requests to the Phase 0 ledger. Token budgets are recorded for allocation telemetry; gate enforcement is still disabled.</p>
           </form>
         </article>
       </section>
