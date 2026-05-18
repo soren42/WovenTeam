@@ -22,7 +22,7 @@ make build/wt-agent
 ```
 
 The native room agent has no Redis, SQLite, Jansson, or hiredis dependency.
-The optional Codex adapter shells out to the configured Codex CLI.
+The optional adapters shell out to configured CLI commands.
 
 ## Run
 
@@ -72,6 +72,32 @@ to `repo_branch` or `test_local`. It creates an isolated workspace under
 `manifest.json`, and records a final `complete` or `failed` task event.
 
 See `docs/adapters/codex-adapter.md`.
+
+## Claude And Gemini Artifact Adapters
+
+Phase 1 adds opt-in artifact adapters for Claude and Gemini:
+
+```sh
+WT_ENABLE_CLAUDE_ADAPTER=1 WT_CLAUDE_MODE=adapter \
+  bin/wt-agent --agent claude --once --config config/woventeam-phase0.conf
+
+WT_ENABLE_GEMINI_ADAPTER=1 WT_GEMINI_MODE=adapter \
+  bin/wt-agent --agent gemini --once --config config/woventeam-phase0.conf
+```
+
+These adapters run the configured `claudeCommand` or `geminiCommand` in
+non-interactive mode, capture stdout/stderr, write `result.md`, and record an
+adapter manifest in the task workspace. They are meant for bounded review,
+planning, and documentation artifacts first; repository-writing work remains
+behind explicit future tool policies.
+
+When running under systemd, prefer absolute CLI paths in
+`config/woventeam-phase0.conf` if a tool is installed outside the service
+account's default PATH. For example, a user-local Claude Code install may need
+`claudeCommand=/home/woven/.local/bin/claude`.
+
+The shared adapter contract is documented in
+`docs/adapters/adapter-contract-v0.1.md`.
 
 ## systemd
 

@@ -3,6 +3,9 @@
 The Phase 0 Codex adapter is the first work-capable harness runner for
 `wt-agent`. It is intentionally opt-in and isolated.
 
+The shared Phase 1 adapter contract is documented in
+`docs/adapters/adapter-contract-v0.1.md`.
+
 ## Enablement
 
 The adapter only runs when all of these are true:
@@ -29,6 +32,8 @@ The runner writes:
 - `stderr.log` - Codex stderr, capped by `adapterMaxOutputBytes`
 - `result.md` - final Codex message from `--output-last-message`
 - `manifest.json` - command path, workspace, artifact paths, timeout state, and exit code
+- `manifest.json` - command path, workspace, artifact paths, tool profile,
+  timeout, output cap, timeout state, and exit code
 
 The adapter invokes:
 

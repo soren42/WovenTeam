@@ -171,6 +171,14 @@ async function loadConfig() {
   document.querySelector("#configContextMessages").textContent = config.contextMessageCount ?? "--";
   document.querySelector("#configAgentPoll").textContent = config.agentPollMilliseconds ? `${config.agentPollMilliseconds}ms` : "--";
   document.querySelector("#configAdapterTimeout").textContent = config.adapterTimeoutSeconds ? `${config.adapterTimeoutSeconds}s` : "--";
+  document.querySelector("#configEnableCodexAdapter").value = config.enableCodexAdapter ? "1" : "0";
+  document.querySelector("#configEnableClaudeAdapter").value = config.enableClaudeAdapter ? "1" : "0";
+  document.querySelector("#configEnableGeminiAdapter").value = config.enableGeminiAdapter ? "1" : "0";
+  document.querySelector("#configClaudeMode").value = config.claudeMode || "stub";
+  document.querySelector("#configGeminiMode").value = config.geminiMode || "stub";
+  document.querySelector("#configGptCommand").value = config.gptCommand || "codex";
+  document.querySelector("#configClaudeCommand").value = config.claudeCommand || "claude";
+  document.querySelector("#configGeminiCommand").value = config.geminiCommand || "gemini";
   document.querySelector("#settingsStatus").textContent = config.configPath ? `Editing ${config.configPath}` : "Runtime started without a writable config path.";
   updateReadouts();
 }
@@ -182,7 +190,15 @@ async function saveConfig(event) {
     tokenDailyBudget: Number(document.querySelector("#configTokenDailyBudget").value),
     tokenMonthlyBudget: Number(document.querySelector("#configTokenMonthlyBudget").value),
     tokenWarningPercent: Number(document.querySelector("#configTokenWarningPercent").value),
-    tokenCostPerMillionCents: Number(document.querySelector("#configTokenCostPerMillionCents").value)
+    tokenCostPerMillionCents: Number(document.querySelector("#configTokenCostPerMillionCents").value),
+    enableCodexAdapter: Number(document.querySelector("#configEnableCodexAdapter").value),
+    enableClaudeAdapter: Number(document.querySelector("#configEnableClaudeAdapter").value),
+    enableGeminiAdapter: Number(document.querySelector("#configEnableGeminiAdapter").value),
+    claudeMode: document.querySelector("#configClaudeMode").value,
+    geminiMode: document.querySelector("#configGeminiMode").value,
+    gptCommand: document.querySelector("#configGptCommand").value.trim() || "codex",
+    claudeCommand: document.querySelector("#configClaudeCommand").value.trim() || "claude",
+    geminiCommand: document.querySelector("#configGeminiCommand").value.trim() || "gemini"
   };
   const response = await fetch("/api/config", {
     method: "POST",
@@ -199,6 +215,7 @@ async function saveConfig(event) {
   document.querySelector("#settingsStatus").textContent = "Config saved.";
   addAudit("ui", "token configuration saved");
   await loadTokens();
+  await loadAdapters();
   updateReadouts();
 }
 
@@ -219,6 +236,20 @@ async function loadTokens() {
   document.querySelector("#tokenMeter").style.width = `${Math.min(100, dayPercent)}%`;
   document.querySelector("#tokenMeter").dataset.level = dayPercent >= (tokens.tokenWarningPercent || 80) ? "warn" : "ok";
   drawSparkline(Math.max(dayPercent, monthPercent));
+}
+
+async function loadAdapters() {
+  const response = await fetch("/api/adapters");
+  if (!response.ok) return;
+  const payload = await response.json();
+  if (!payload.ok || !Array.isArray(payload.adapters)) return;
+  renderVendors(payload.adapters.map(adapter => ({
+    name: adapter.agent === "chatgpt" ? "Codex CLI" : adapter.agent === "claude" ? "Claude Code" : "Gemini CLI",
+    cli: adapter.commandPath || adapter.command,
+    state: adapter.enabled ? adapter.state : "disabled",
+    quota: adapter.enabled ? 70 : 0,
+    warn: !adapter.enabled
+  })));
 }
 
 function summarizeTasks(rows) {
@@ -462,8 +493,8 @@ function updateReadouts() {
   document.querySelector("#prioritySummary").textContent = priority;
 }
 
-function renderVendors() {
-  const vendors = [
+function renderVendors(vendors = null) {
+  vendors = vendors || [
     {name: "Claude Code", cli: "claude", state: "launchable", quota: 34},
     {name: "Codex CLI", cli: "codex", state: "opt-in adapter", quota: 41},
     {name: "Gemini CLI", cli: "gemini", state: "launchable", quota: 22},
@@ -482,7 +513,9 @@ function renderVendors() {
     `;
     grid.appendChild(card);
   });
-  document.querySelector("#vendorMeta").textContent = "● 4 LIVE · ● 1 DISABLED";
+  const enabled = vendors.filter(vendor => !vendor.warn).length;
+  const disabled = vendors.length - enabled;
+  document.querySelector("#vendorMeta").textContent = `● ${enabled} LIVE · ● ${disabled} DISABLED`;
 }
 
 function drawSparkline(percent = 0) {
@@ -777,9 +810,11 @@ async function init() {
     await loadRecent();
     await loadTasks();
     await loadTokens();
+    await loadAdapters();
     connectEvents();
     setInterval(loadTasks, 5000);
     setInterval(loadTokens, 5000);
+    setInterval(loadAdapters, 15000);
   } catch (error) {
     setUplink(false);
     addAudit("system", "room API unavailable");

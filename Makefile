@@ -20,7 +20,7 @@ COMMON_OBJS := \
 	$(BUILD_DIR)/wt_task_store.o \
 	$(BUILD_DIR)/wt_time.o
 
-.PHONY: all clean run-roomd run-demo harness-check test-smoke test-harness-check test-task-assignment test-codex-adapter test-manager-subtasks test-token-config test-task-projection test install-roomd-service install-agent-services
+.PHONY: all clean run-roomd run-demo harness-check test-smoke test-harness-check test-task-assignment test-codex-adapter test-cli-artifact-adapter test-adapter-capabilities test-manager-subtasks test-token-config test-task-projection test install-roomd-service install-agent-services
 
 all: $(BUILD_DIR)/wt-roomd $(BUILD_DIR)/wt-say $(BUILD_DIR)/wt-tail $(BUILD_DIR)/wt-agent
 
@@ -68,6 +68,12 @@ test-task-assignment: all
 test-codex-adapter: all
 	./tests/integration/wt-codex-adapter.sh
 
+test-cli-artifact-adapter: all
+	./tests/integration/wt-cli-artifact-adapter.sh
+
+test-adapter-capabilities: all
+	./tests/integration/wt-adapter-capabilities.sh
+
 test-manager-subtasks: all
 	./tests/integration/wt-manager-subtasks.sh
 
@@ -77,7 +83,7 @@ test-token-config: all
 test-task-projection: all
 	./tests/integration/wt-task-projection.sh
 
-test: test-smoke test-harness-check test-task-assignment test-codex-adapter test-manager-subtasks test-token-config test-task-projection
+test: test-smoke test-harness-check test-task-assignment test-codex-adapter test-cli-artifact-adapter test-adapter-capabilities test-manager-subtasks test-token-config test-task-projection
 
 install-roomd-service: all
 	sudo install -m 0644 deploy/systemd/wt-roomd.service /etc/systemd/system/

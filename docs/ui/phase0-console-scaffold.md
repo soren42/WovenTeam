@@ -15,6 +15,7 @@ The Phase 0 browser UI is `WovenTeam Console (Fullscreen)` served by
   - `GET /api/task-detail?taskId=...`
   - `GET /api/tokens`
   - `GET /api/config`
+  - `GET /api/adapters`
   - `POST /api/task-package`
   - `POST /api/task-request`
   - `POST /api/config`
@@ -32,7 +33,11 @@ The Phase 0 browser UI is `WovenTeam Console (Fullscreen)` served by
   `budget.maxTokens` values over rolling 24-hour and 30-day windows, displays
   estimated cost from config, and does not yet claim adapter-reported usage.
 - The rail settings button opens a runtime configuration panel for token
-  telemetry. Saving writes the active Phase 0 key/value config file.
+  telemetry and opt-in adapter settings. Saving writes the active Phase 0
+  key/value config file.
+- The vendor panel reads live adapter capability state from `/api/adapters`,
+  including enabled state, configured command, resolved command path, and
+  launchability.
 
 ## Temporary Placeholders
 
@@ -41,7 +46,7 @@ backend tools exist:
 
 - Review gate approve/reject state
 - Agent topology
-- Vendor runtime settings
+- Adapter artifact links and detailed per-run output browsing
 - Command palette search/actions
 
 ## Backend Contract Needed Next
@@ -54,9 +59,10 @@ The scaffold now binds to the task package and Phase 1 state paths:
 - `GET /api/tasks`
 - `GET /api/task-summaries`
 - `GET /api/task-detail?taskId=...`
+- `GET /api/adapters`
 - `POST /api/task-package`
 - `POST /api/task-request`
 
-The next backend step is to expose richer initiative, gate, adapter artifact,
-usage, and agent state so the console can enable the remaining disabled
+The next backend step is to expose richer initiative, gate, adapter artifact
+detail, usage, and agent state so the console can enable the remaining disabled
 controls.

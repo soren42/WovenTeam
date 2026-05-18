@@ -96,6 +96,20 @@ static int isCodexEligibleTask(const WtConfig *config, const char *agentName, co
     return 1;
 }
 
+static int isCliArtifactEligibleTask(const WtConfig *config, const char *agentName, const WtTaskSummary *task) {
+    if (strcmp(agentName, "claude") == 0) {
+        return config->enableClaudeAdapter &&
+               strcmp(config->claudeMode, "adapter") == 0 &&
+               (task->modelId[0] == '\0' || strncmp(task->modelId, "anthropic/", 10) == 0);
+    }
+    if (strcmp(agentName, "gemini") == 0) {
+        return config->enableGeminiAdapter &&
+               strcmp(config->geminiMode, "adapter") == 0 &&
+               (task->modelId[0] == '\0' || strncmp(task->modelId, "google/", 7) == 0);
+    }
+    return 0;
+}
+
 static int writeTextFile(const char *path, const char *content) {
     if (wtRoomEnsureParentDirs(path) != 0) {
         return -1;
@@ -240,6 +254,9 @@ static int runCodexAdapter(const WtConfig *config, const char *agentName, const 
              "  \"taskId\": \"%s\",\n"
              "  \"adapter\": \"codex\",\n"
              "  \"command\": \"%s\",\n"
+             "  \"toolProfile\": \"%s\",\n"
+             "  \"timeoutSeconds\": %d,\n"
+             "  \"maxOutputBytes\": %d,\n"
              "  \"workspace\": \"%s\",\n"
              "  \"stdout\": \"%s\",\n"
              "  \"stderr\": \"%s\",\n"
@@ -247,7 +264,8 @@ static int runCodexAdapter(const WtConfig *config, const char *agentName, const 
              "  \"timedOut\": %s,\n"
              "  \"exitCode\": %d\n"
              "}\n",
-             task->taskId, config->gptCommand, workspace, stdoutPath, stderrPath, resultPath,
+             task->taskId, config->gptCommand, task->toolProfile, timeoutSeconds, maxOutputBytes,
+             workspace, stdoutPath, stderrPath, resultPath,
              timedOut ? "true" : "false", exitCode);
     writeTextFile(manifestPath, manifest);
 
@@ -270,6 +288,150 @@ static int runCodexAdapter(const WtConfig *config, const char *agentName, const 
     return exitCode == 0 ? 0 : 1;
 }
 
+static int runCliArtifactAdapter(const WtConfig *config, const char *agentName,
+                                 const WtTaskSummary *task, const char *adapterName,
+                                 const char *command) {
+    char workspace[512];
+    char promptPath[768];
+    char stdoutPath[768];
+    char stderrPath[768];
+    char resultPath[768];
+    char manifestPath[768];
+    snprintf(workspace, sizeof(workspace), "%s/%s", config->runtimeRootPath, task->taskId);
+    snprintf(promptPath, sizeof(promptPath), "%s/prompt.md", workspace);
+    snprintf(stdoutPath, sizeof(stdoutPath), "%s/stdout.log", workspace);
+    snprintf(stderrPath, sizeof(stderrPath), "%s/stderr.log", workspace);
+    snprintf(resultPath, sizeof(resultPath), "%s/result.md", workspace);
+    snprintf(manifestPath, sizeof(manifestPath), "%s/manifest.json", workspace);
+
+    char keepPath[768];
+    snprintf(keepPath, sizeof(keepPath), "%s/.keep", workspace);
+    if (wtRoomEnsureParentDirs(keepPath) != 0 || mkdir(workspace, 0755) != 0) {
+        if (errno != EEXIST) {
+            perror("create adapter workspace");
+            return 1;
+        }
+    }
+
+    char prompt[4096];
+    snprintf(prompt, sizeof(prompt),
+             "You are WovenTeam agent %s running the %s artifact adapter.\n\n"
+             "Task ID: %s\nRole: %s\nTool policy: %s\n\n"
+             "Task title: %s\n\nTask body:\n%s\n\n"
+             "Produce a concise result artifact. Do not modify the WovenTeam repository.",
+             agentName, adapterName, task->taskId, task->assignedRole, task->toolProfile,
+             task->title, task->body);
+    if (writeTextFile(promptPath, prompt) != 0) {
+        perror("write adapter prompt");
+        return 1;
+    }
+
+    int timeoutSeconds = task->timeoutSeconds > 0 ? task->timeoutSeconds : config->adapterTimeoutSeconds;
+    if (timeoutSeconds <= 0) timeoutSeconds = 1800;
+    int maxOutputBytes = task->maxOutputBytes > 0 ? task->maxOutputBytes : config->adapterMaxOutputBytes;
+    if (maxOutputBytes <= 0) maxOutputBytes = 1048576;
+
+    char actor[128];
+    snprintf(actor, sizeof(actor), "wt-agent@%s", agentName);
+    char runningMessage[512];
+    snprintf(runningMessage, sizeof(runningMessage), "%s adapter started for taskId=%s", adapterName, task->taskId);
+    wtTaskAppendStatusEvent(config->taskLedgerPath, task->taskId, "running", actor, runningMessage, config->fsyncEachMessage);
+    appendAgentTaskMessage(config, agentName, task, "task.status", "running", runningMessage);
+
+    pid_t child = fork();
+    if (child < 0) {
+        perror("fork cli artifact adapter");
+        return 1;
+    }
+    if (child == 0) {
+        int stdoutFd = open(stdoutPath, O_CREAT | O_TRUNC | O_WRONLY, 0644);
+        int stderrFd = open(stderrPath, O_CREAT | O_TRUNC | O_WRONLY, 0644);
+        if (stdoutFd >= 0) dup2(stdoutFd, STDOUT_FILENO);
+        if (stderrFd >= 0) dup2(stderrFd, STDERR_FILENO);
+        if (stdoutFd > 2) close(stdoutFd);
+        if (stderrFd > 2) close(stderrFd);
+        if (chdir(workspace) != 0) {
+            perror("chdir cli artifact workspace");
+            _exit(126);
+        }
+        if (strcmp(adapterName, "claude") == 0) {
+            execlp(command, command, "--bare", "--print", prompt, (char *)NULL);
+        } else if (strcmp(adapterName, "gemini") == 0) {
+            execlp(command, command, "--skip-trust", "--approval-mode", "plan",
+                   "--output-format", "text", "--prompt", prompt, (char *)NULL);
+        } else {
+            execlp(command, command, prompt, (char *)NULL);
+        }
+        perror("exec cli artifact adapter");
+        _exit(127);
+    }
+
+    int status = 0;
+    int timedOut = 0;
+    time_t start = time(NULL);
+    while (1) {
+        pid_t done = waitpid(child, &status, WNOHANG);
+        if (done == child) break;
+        if (done < 0) {
+            perror("wait cli artifact adapter");
+            return 1;
+        }
+        if ((int)(time(NULL) - start) >= timeoutSeconds) {
+            kill(child, SIGKILL);
+            waitpid(child, &status, 0);
+            timedOut = 1;
+            break;
+        }
+        sleep(1);
+    }
+
+    int exitCode = timedOut ? 124 : (WIFEXITED(status) ? WEXITSTATUS(status) : 125);
+    capFileSize(stdoutPath, maxOutputBytes);
+    capFileSize(stderrPath, maxOutputBytes);
+    char resultSnippet[2048];
+    readFileSnippet(stdoutPath, maxOutputBytes < 2000 ? maxOutputBytes : 2000, resultSnippet, sizeof(resultSnippet));
+    if (resultSnippet[0] == '\0') {
+        snprintf(resultSnippet, sizeof(resultSnippet), "%s adapter produced no stdout result.", adapterName);
+    }
+    writeTextFile(resultPath, resultSnippet);
+
+    char manifest[4096];
+    snprintf(manifest, sizeof(manifest),
+             "{\n"
+             "  \"schema\": \"woventeam.adapter_manifest.v0.1\",\n"
+             "  \"taskId\": \"%s\",\n"
+             "  \"adapter\": \"%s\",\n"
+             "  \"command\": \"%s\",\n"
+             "  \"toolProfile\": \"%s\",\n"
+             "  \"timeoutSeconds\": %d,\n"
+             "  \"maxOutputBytes\": %d,\n"
+             "  \"workspace\": \"%s\",\n"
+             "  \"prompt\": \"%s\",\n"
+             "  \"stdout\": \"%s\",\n"
+             "  \"stderr\": \"%s\",\n"
+             "  \"result\": \"%s\",\n"
+             "  \"timedOut\": %s,\n"
+             "  \"exitCode\": %d\n"
+             "}\n",
+             task->taskId, adapterName, command, task->toolProfile, timeoutSeconds, maxOutputBytes,
+             workspace, promptPath, stdoutPath, stderrPath, resultPath,
+             timedOut ? "true" : "false", exitCode);
+    writeTextFile(manifestPath, manifest);
+
+    char eventMessage[1024];
+    snprintf(eventMessage, sizeof(eventMessage), "%s adapter exitCode=%d timedOut=%s; see task workspace manifest.",
+             adapterName, exitCode, timedOut ? "true" : "false");
+    const char *finalStatus = exitCode == 0 ? "complete" : "failed";
+    wtTaskAppendStatusEvent(config->taskLedgerPath, task->taskId, finalStatus, actor, eventMessage, config->fsyncEachMessage);
+
+    char detail[1024];
+    snprintf(detail, sizeof(detail), "%s adapter exitCode=%d workspace=%s", adapterName, exitCode, workspace);
+    appendAgentTaskMessage(config, agentName, task, "task.result", finalStatus, detail);
+
+    printf("[adapter:%s] %s task=%s exit=%d workspace=%s\n", adapterName, finalStatus, task->taskId, exitCode, workspace);
+    return exitCode == 0 ? 0 : 1;
+}
+
 static int handleAssignedTask(const WtConfig *config, const char *agentName) {
     WtTaskSummary task;
     int found = wtTaskFindQueuedForAgent(config->taskLedgerPath, agentName, &task);
@@ -280,6 +442,12 @@ static int handleAssignedTask(const WtConfig *config, const char *agentName) {
     snprintf(actor, sizeof(actor), "wt-agent@%s", agentName);
     if (isCodexEligibleTask(config, agentName, &task)) {
         return runCodexAdapter(config, agentName, &task);
+    }
+    if (isCliArtifactEligibleTask(config, agentName, &task)) {
+        if (strcmp(agentName, "claude") == 0) {
+            return runCliArtifactAdapter(config, agentName, &task, "claude", config->claudeCommand);
+        }
+        return runCliArtifactAdapter(config, agentName, &task, "gemini", config->geminiCommand);
     }
     if (wtTaskAppendStatusEvent(config->taskLedgerPath, task.taskId, "running", actor,
                                 "Stub agent accepted assigned task.", config->fsyncEachMessage) != 0 ||
