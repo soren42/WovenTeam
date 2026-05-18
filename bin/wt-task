@@ -6,8 +6,8 @@ ROOM_URL="${WT_ROOM_URL:-http://127.0.0.1:8787}"
 usage() {
     cat <<'USAGE'
 Usage:
-  wt-task create --title TITLE --body BODY --role ROLE [--agent AGENT] [--initiative INIT] [--priority P] [--model MODEL] [--tool-profile PROFILE]
-  wt-task request --parent TASK_ID --by-role ROLE --role ROLE --title TITLE --body BODY [--by NAME] [--agent AGENT] [--initiative INIT] [--priority P] [--model MODEL] [--tool-profile PROFILE]
+  wt-task create --title TITLE --body BODY --role ROLE [--agent AGENT] [--initiative INIT] [--priority P] [--model MODEL] [--tool-profile PROFILE] [--max-tokens N]
+  wt-task request --parent TASK_ID --by-role ROLE --role ROLE --title TITLE --body BODY [--by NAME] [--agent AGENT] [--initiative INIT] [--priority P] [--model MODEL] [--tool-profile PROFILE] [--max-tokens N]
   wt-task list
   wt-task show TASK_ID
   wt-task assign TASK_ID --agent AGENT [--status assigned]
@@ -52,7 +52,7 @@ new_id() {
 }
 
 cmd_create() {
-    local title="" body="" role="" agent="" initiative="" priority="normal" model="openai/gpt-5.3-codex" tool_profile="observe"
+    local title="" body="" role="" agent="" initiative="" priority="normal" model="openai/gpt-5.3-codex" tool_profile="observe" max_tokens="2000000"
     while [[ $# -gt 0 ]]; do
         case "$1" in
             --title) title="${2:-}"; shift 2 ;;
@@ -63,6 +63,7 @@ cmd_create() {
             --priority) priority="${2:-}"; shift 2 ;;
             --model) model="${2:-}"; shift 2 ;;
             --tool-profile) tool_profile="${2:-}"; shift 2 ;;
+            --max-tokens) max_tokens="${2:-}"; shift 2 ;;
             *) echo "wt-task create: unknown argument: $1" >&2; usage >&2; exit 2 ;;
         esac
     done
@@ -88,6 +89,7 @@ cmd_create() {
         --arg title "$title" \
         --arg body "$body" \
         --argjson createdAtUnixMs "$created_at" \
+        --argjson maxTokens "$max_tokens" \
         '{
           schema:"woventeam.task_package.v0.1",
           taskId:$taskId,
@@ -110,7 +112,7 @@ cmd_create() {
             system:"none",
             git:(if $toolProfile == "repo_branch" or $toolProfile == "test_local" then "branch_only" else "none" end)
           },
-          budget:{timeoutSeconds:1800, maxOutputBytes:1048576, maxCostUsd:1.0},
+          budget:{timeoutSeconds:1800, maxOutputBytes:1048576, maxCostUsd:1.0, maxTokens:$maxTokens},
           dependencies:[],
           createdAtUnixMs:$createdAtUnixMs
         }')"
@@ -118,7 +120,7 @@ cmd_create() {
 }
 
 cmd_request() {
-    local parent="" by_role="" by="" role="" title="" body="" agent="" initiative="" priority="normal" model="openai/gpt-5.3-codex" tool_profile="observe"
+    local parent="" by_role="" by="" role="" title="" body="" agent="" initiative="" priority="normal" model="openai/gpt-5.3-codex" tool_profile="observe" max_tokens="2000000"
     while [[ $# -gt 0 ]]; do
         case "$1" in
             --parent) parent="${2:-}"; shift 2 ;;
@@ -132,6 +134,7 @@ cmd_request() {
             --priority) priority="${2:-}"; shift 2 ;;
             --model) model="${2:-}"; shift 2 ;;
             --tool-profile) tool_profile="${2:-}"; shift 2 ;;
+            --max-tokens) max_tokens="${2:-}"; shift 2 ;;
             *) echo "wt-task request: unknown argument: $1" >&2; usage >&2; exit 2 ;;
         esac
     done
@@ -159,6 +162,7 @@ cmd_request() {
         --arg title "$title" \
         --arg body "$body" \
         --argjson createdAtUnixMs "$created_at" \
+        --argjson maxTokens "$max_tokens" \
         '{
           schema:"woventeam.task_request.v0.1",
           taskId:$requestedTaskId,
@@ -173,6 +177,7 @@ cmd_request() {
           title:$title,
           body:$body,
           toolPolicy:{profile:$toolProfile},
+          budget:{maxTokens:$maxTokens},
           createdAtUnixMs:$createdAtUnixMs
         } + (if $assignedAgent == "" then {} else {assignedAgent:$assignedAgent} end)')"
     http_post_json "/api/task-request" "$json"

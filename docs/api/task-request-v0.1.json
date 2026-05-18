@@ -84,6 +84,19 @@
       },
       "default": {}
     },
+    "budget": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "maxTokens": {
+          "type": "integer",
+          "minimum": 0,
+          "default": 2000000,
+          "description": "Requested child package token allocation budget."
+        }
+      },
+      "default": {}
+    },
     "createdAtUnixMs": {
       "type": "integer",
       "minimum": 0

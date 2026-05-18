@@ -11,6 +11,8 @@ const clockEl = document.querySelector("#clock");
 const armButton = document.querySelector("#armButton");
 const sendButton = document.querySelector("#sendButton");
 const taskTableBody = document.querySelector("#taskTableBody");
+const settingsPanel = document.querySelector("#settingsPanel");
+const settingsForm = document.querySelector("#settingsForm");
 const seen = new Set();
 
 const roles = [
@@ -51,13 +53,25 @@ let state = {
   armed: false,
   armTimer: null,
   audit: [],
-  taskStats: {roleCounts: {}, requestCount: 0, blockedCount: 0, activeAgents: 3}
+  taskStats: {roleCounts: {}, requestCount: 0, blockedCount: 0, activeAgents: 3},
+  config: {
+    tokenTelemetryEnabled: true,
+    tokenDailyBudget: 2000000,
+    tokenMonthlyBudget: 50000000,
+    tokenWarningPercent: 80,
+    tokenCostPerMillionCents: 1000
+  }
 };
 
 function fmtTokens(value) {
+  value = Number(value || 0);
   if (value >= 1000000) return `${(value / 1000000).toFixed(1)}M`;
   if (value >= 1000) return `${(value / 1000).toFixed(1)}k`;
   return String(value);
+}
+
+function fmtMoneyFromCents(value) {
+  return `$${(Number(value || 0) / 100).toFixed(2)}`;
 }
 
 function setUplink(connected) {
@@ -123,6 +137,69 @@ async function loadTasks() {
   const rows = await response.json();
   const tasks = summarizeTasks(rows);
   renderTasks(tasks);
+}
+
+async function loadConfig() {
+  const response = await fetch("/api/config");
+  if (!response.ok) throw new Error("config load failed");
+  const config = await response.json();
+  state.config = {...state.config, ...config};
+  document.querySelector("#configTokenTelemetryEnabled").value = config.tokenTelemetryEnabled ? "1" : "0";
+  document.querySelector("#configTokenDailyBudget").value = config.tokenDailyBudget || 0;
+  document.querySelector("#configTokenMonthlyBudget").value = config.tokenMonthlyBudget || 0;
+  document.querySelector("#configTokenWarningPercent").value = config.tokenWarningPercent || 80;
+  document.querySelector("#configTokenCostPerMillionCents").value = config.tokenCostPerMillionCents || 0;
+  document.querySelector("#configContextMessages").textContent = config.contextMessageCount ?? "--";
+  document.querySelector("#configAgentPoll").textContent = config.agentPollMilliseconds ? `${config.agentPollMilliseconds}ms` : "--";
+  document.querySelector("#configAdapterTimeout").textContent = config.adapterTimeoutSeconds ? `${config.adapterTimeoutSeconds}s` : "--";
+  document.querySelector("#settingsStatus").textContent = config.configPath ? `Editing ${config.configPath}` : "Runtime started without a writable config path.";
+  updateReadouts();
+}
+
+async function saveConfig(event) {
+  event.preventDefault();
+  const payload = {
+    tokenTelemetryEnabled: Number(document.querySelector("#configTokenTelemetryEnabled").value),
+    tokenDailyBudget: Number(document.querySelector("#configTokenDailyBudget").value),
+    tokenMonthlyBudget: Number(document.querySelector("#configTokenMonthlyBudget").value),
+    tokenWarningPercent: Number(document.querySelector("#configTokenWarningPercent").value),
+    tokenCostPerMillionCents: Number(document.querySelector("#configTokenCostPerMillionCents").value)
+  };
+  const response = await fetch("/api/config", {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify(payload)
+  });
+  if (!response.ok) {
+    document.querySelector("#settingsStatus").textContent = "Config save failed.";
+    addAudit("ui", "config save failed");
+    return;
+  }
+  const config = await response.json();
+  state.config = {...state.config, ...config};
+  document.querySelector("#settingsStatus").textContent = "Config saved.";
+  addAudit("ui", "token configuration saved");
+  await loadTokens();
+  updateReadouts();
+}
+
+async function loadTokens() {
+  const response = await fetch("/api/tokens");
+  if (!response.ok) return;
+  const tokens = await response.json();
+  const dayBudget = tokens.tokenDailyBudget || 0;
+  const monthBudget = tokens.tokenMonthlyBudget || 0;
+  const dayPercent = dayBudget > 0 ? Math.min(999, Math.round((tokens.dayWindowAllocatedTokens || 0) * 100 / dayBudget)) : 0;
+  const monthPercent = monthBudget > 0 ? Math.min(999, Math.round((tokens.monthWindowAllocatedTokens || 0) * 100 / monthBudget)) : 0;
+  document.querySelector("#tokenMeta").textContent = tokens.enabled ? `${tokens.allTimePackages || 0} PACKAGES` : "DISABLED";
+  document.querySelector("#tokenHeadline").textContent = fmtTokens(tokens.dayWindowAllocatedTokens || 0);
+  document.querySelector("#tokenBudgetLabel").textContent = `/ ${fmtTokens(dayBudget)} 24h budget`;
+  document.querySelector("#tokenDay").textContent = `${fmtTokens(tokens.dayWindowAllocatedTokens || 0)} / ${fmtTokens(dayBudget)}`;
+  document.querySelector("#tokenMonth").textContent = `${fmtTokens(tokens.monthWindowAllocatedTokens || 0)} / ${fmtTokens(monthBudget)}`;
+  document.querySelector("#tokenCost").textContent = fmtMoneyFromCents(tokens.monthWindowCostCents || 0);
+  document.querySelector("#tokenMeter").style.width = `${Math.min(100, dayPercent)}%`;
+  document.querySelector("#tokenMeter").dataset.level = dayPercent >= (tokens.tokenWarningPercent || 80) ? "warn" : "ok";
+  drawSparkline(Math.max(dayPercent, monthPercent));
 }
 
 function summarizeTasks(rows) {
@@ -304,7 +381,7 @@ function updateReadouts() {
   document.querySelector("#tokenReadout").textContent = fmtTokens(tokens);
   document.querySelector("#agentReadout").textContent = String(agents);
   document.querySelector("#hoursReadout").textContent = `${hours}h`;
-  document.querySelector("#burnEstimate").textContent = `$${(tokens / 100000).toFixed(2)}`;
+  document.querySelector("#burnEstimate").textContent = fmtMoneyFromCents(tokens * (state.config.tokenCostPerMillionCents || 0) / 1000000);
   document.querySelector("#subAgentSummary").textContent = `0 / ${agents}`;
   document.querySelector("#prioritySummary").textContent = priority;
 }
@@ -332,10 +409,11 @@ function renderVendors() {
   document.querySelector("#vendorMeta").textContent = "● 4 LIVE · ● 1 DISABLED";
 }
 
-function drawSparkline() {
+function drawSparkline(percent = 0) {
   const svg = document.querySelector("#tokenSparkline");
+  const load = Math.max(0, Math.min(100, Number(percent) || 0)) / 100;
   const points = Array.from({length: 34}, (_, i) => {
-    const y = 28 - Math.sin(i / 3) * 7 - Math.cos(i / 5) * 5;
+    const y = 30 - load * 18 - Math.sin(i / 3) * (4 + load * 6) - Math.cos(i / 5) * 3;
     return `${(i / 33) * 310},${Math.max(5, Math.min(33, y))}`;
   }).join(" ");
   svg.innerHTML = `
@@ -426,6 +504,7 @@ function buildTaskPackage() {
   const name = initiativeNameEl.value.trim() || "Untitled initiative";
   const body = bodyEl.value.trim();
   const priority = document.querySelector("#priority").value;
+  const maxTokens = Number(document.querySelector("#tokenBudget").value);
   const taskId = newTaskId();
   return {
     schema: "woventeam.task_package.v0.1",
@@ -443,7 +522,7 @@ function buildTaskPackage() {
     contextRefs: [],
     acceptanceCriteria: ["Task result is recorded in the room and task ledger."],
     toolPolicy: toolPolicy("observe"),
-    budget: {timeoutSeconds: 1800, maxOutputBytes: 1048576, maxCostUsd: 1.0},
+    budget: {timeoutSeconds: 1800, maxOutputBytes: 1048576, maxCostUsd: 1.0, maxTokens},
     dependencies: [],
     createdAtUnixMs: nowMs()
   };
@@ -454,6 +533,7 @@ function buildTaskRequest() {
   const title = initiativeNameEl.value.trim() || "Untitled subtask";
   const body = bodyEl.value.trim();
   const priority = document.querySelector("#priority").value;
+  const maxTokens = Number(document.querySelector("#tokenBudget").value);
   const requestedTaskId = newTaskId();
   return {
     schema: "woventeam.task_request.v0.1",
@@ -470,6 +550,7 @@ function buildTaskRequest() {
     title,
     body,
     toolPolicy: {profile: "observe"},
+    budget: {maxTokens},
     createdAtUnixMs: nowMs()
   };
 }
@@ -557,6 +638,16 @@ function wireControls() {
     });
   });
 
+  document.querySelector("#settingsButton").addEventListener("click", () => {
+    settingsPanel.hidden = !settingsPanel.hidden;
+    document.querySelector("#settingsButton").classList.toggle("active", !settingsPanel.hidden);
+  });
+  document.querySelector("#settingsCloseButton").addEventListener("click", () => {
+    settingsPanel.hidden = true;
+    document.querySelector("#settingsButton").classList.remove("active");
+  });
+  settingsForm.addEventListener("submit", saveConfig);
+
   document.querySelectorAll(".mode-button").forEach(button => {
     button.addEventListener("click", () => setDispatchMode(button.dataset.mode));
   });
@@ -598,10 +689,13 @@ async function init() {
   updateReadouts();
   wireControls();
   try {
+    await loadConfig();
     await loadRecent();
     await loadTasks();
+    await loadTokens();
     connectEvents();
     setInterval(loadTasks, 5000);
+    setInterval(loadTokens, 5000);
   } catch (error) {
     setUplink(false);
     addAudit("system", "room API unavailable");

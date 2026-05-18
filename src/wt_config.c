@@ -30,6 +30,7 @@ static char *trimWhitespace(char *value) {
 }
 
 void wtConfigInitDefaults(WtConfig *config) {
+    copyString(config->configPath, sizeof(config->configPath), "");
     copyString(config->roomName, sizeof(config->roomName), "phase0");
     copyString(config->roomLogPath, sizeof(config->roomLogPath), "data/phase0-room.jsonl");
     copyString(config->taskLedgerPath, sizeof(config->taskLedgerPath), "data/task-packages.jsonl");
@@ -41,6 +42,11 @@ void wtConfigInitDefaults(WtConfig *config) {
     config->adapterMaxOutputBytes = 1048576;
     config->fsyncEachMessage = false;
     config->enableCodexAdapter = false;
+    config->tokenTelemetryEnabled = true;
+    config->tokenDailyBudget = 2000000;
+    config->tokenMonthlyBudget = 50000000;
+    config->tokenWarningPercent = 80;
+    config->tokenCostPerMillionCents = 1000;
     copyString(config->runtimeRootPath, sizeof(config->runtimeRootPath), "/woventeam/runtime/tasks");
     copyString(config->claudeMode, sizeof(config->claudeMode), "stub");
     copyString(config->chatgptMode, sizeof(config->chatgptMode), "stub");
@@ -73,6 +79,16 @@ int wtConfigSetValue(WtConfig *config, const char *key, const char *value) {
         config->fsyncEachMessage = atoi(value) != 0;
     } else if (strcmp(key, "enableCodexAdapter") == 0) {
         config->enableCodexAdapter = atoi(value) != 0;
+    } else if (strcmp(key, "tokenTelemetryEnabled") == 0) {
+        config->tokenTelemetryEnabled = atoi(value) != 0;
+    } else if (strcmp(key, "tokenDailyBudget") == 0) {
+        config->tokenDailyBudget = atol(value);
+    } else if (strcmp(key, "tokenMonthlyBudget") == 0) {
+        config->tokenMonthlyBudget = atol(value);
+    } else if (strcmp(key, "tokenWarningPercent") == 0) {
+        config->tokenWarningPercent = atoi(value);
+    } else if (strcmp(key, "tokenCostPerMillionCents") == 0) {
+        config->tokenCostPerMillionCents = atoi(value);
     } else if (strcmp(key, "runtimeRootPath") == 0) {
         copyString(config->runtimeRootPath, sizeof(config->runtimeRootPath), value);
     } else if (strcmp(key, "claudeMode") == 0) {
@@ -94,10 +110,13 @@ int wtConfigSetValue(WtConfig *config, const char *key, const char *value) {
 }
 
 int wtConfigLoadFile(WtConfig *config, const char *path) {
-    FILE *file = fopen(path, "r");
+    char pathCopy[WT_PATH_SIZE];
+    copyString(pathCopy, sizeof(pathCopy), path);
+    FILE *file = fopen(pathCopy, "r");
     if (!file) {
         return -1;
     }
+    copyString(config->configPath, sizeof(config->configPath), pathCopy);
     char line[512];
     while (fgets(line, sizeof(line), file)) {
         char *trimmed = trimWhitespace(line);
@@ -117,6 +136,61 @@ int wtConfigLoadFile(WtConfig *config, const char *path) {
     return 0;
 }
 
+int wtConfigWriteFile(const WtConfig *config, const char *path) {
+    FILE *file = fopen(path, "w");
+    if (!file) {
+        return -1;
+    }
+    int ok = fprintf(file,
+        "roomName=%s\n"
+        "roomLogPath=%s\n"
+        "taskLedgerPath=%s\n"
+        "httpBindAddress=%s\n"
+        "httpPort=%d\n"
+        "contextMessageCount=%d\n"
+        "agentPollMilliseconds=%d\n"
+        "adapterTimeoutSeconds=%d\n"
+        "adapterMaxOutputBytes=%d\n"
+        "fsyncEachMessage=%d\n"
+        "enableCodexAdapter=%d\n"
+        "tokenTelemetryEnabled=%d\n"
+        "tokenDailyBudget=%ld\n"
+        "tokenMonthlyBudget=%ld\n"
+        "tokenWarningPercent=%d\n"
+        "tokenCostPerMillionCents=%d\n"
+        "runtimeRootPath=%s\n"
+        "claudeMode=%s\n"
+        "chatgptMode=%s\n"
+        "geminiMode=%s\n"
+        "claudeCommand=%s\n"
+        "gptCommand=%s\n"
+        "geminiCommand=%s\n",
+        config->roomName,
+        config->roomLogPath,
+        config->taskLedgerPath,
+        config->httpBindAddress,
+        config->httpPort,
+        config->contextMessageCount,
+        config->agentPollMilliseconds,
+        config->adapterTimeoutSeconds,
+        config->adapterMaxOutputBytes,
+        config->fsyncEachMessage ? 1 : 0,
+        config->enableCodexAdapter ? 1 : 0,
+        config->tokenTelemetryEnabled ? 1 : 0,
+        config->tokenDailyBudget,
+        config->tokenMonthlyBudget,
+        config->tokenWarningPercent,
+        config->tokenCostPerMillionCents,
+        config->runtimeRootPath,
+        config->claudeMode,
+        config->chatgptMode,
+        config->geminiMode,
+        config->claudeCommand,
+        config->gptCommand,
+        config->geminiCommand) > 0;
+    return fclose(file) == 0 && ok ? 0 : -1;
+}
+
 void wtConfigApplyEnvironment(WtConfig *config) {
     const char *value = NULL;
     if ((value = getenv("WT_ROOM_NAME"))) wtConfigSetValue(config, "roomName", value);
@@ -130,6 +204,11 @@ void wtConfigApplyEnvironment(WtConfig *config) {
     if ((value = getenv("WT_ADAPTER_MAX_OUTPUT_BYTES"))) wtConfigSetValue(config, "adapterMaxOutputBytes", value);
     if ((value = getenv("WT_FSYNC_EACH_MESSAGE"))) wtConfigSetValue(config, "fsyncEachMessage", value);
     if ((value = getenv("WT_ENABLE_CODEX_ADAPTER"))) wtConfigSetValue(config, "enableCodexAdapter", value);
+    if ((value = getenv("WT_TOKEN_TELEMETRY_ENABLED"))) wtConfigSetValue(config, "tokenTelemetryEnabled", value);
+    if ((value = getenv("WT_TOKEN_DAILY_BUDGET"))) wtConfigSetValue(config, "tokenDailyBudget", value);
+    if ((value = getenv("WT_TOKEN_MONTHLY_BUDGET"))) wtConfigSetValue(config, "tokenMonthlyBudget", value);
+    if ((value = getenv("WT_TOKEN_WARNING_PERCENT"))) wtConfigSetValue(config, "tokenWarningPercent", value);
+    if ((value = getenv("WT_TOKEN_COST_PER_MILLION_CENTS"))) wtConfigSetValue(config, "tokenCostPerMillionCents", value);
     if ((value = getenv("WT_RUNTIME_ROOT_PATH"))) wtConfigSetValue(config, "runtimeRootPath", value);
     if ((value = getenv("WT_CLAUDE_COMMAND"))) wtConfigSetValue(config, "claudeCommand", value);
     if ((value = getenv("WT_GPT_COMMAND"))) wtConfigSetValue(config, "gptCommand", value);

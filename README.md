@@ -79,12 +79,17 @@ the append-only `data/task-packages.jsonl` ledger, described in
 Create and inspect Phase 0 task packages through the room daemon:
 
 ```sh
-./bin/wt-task create --title "Verify assignment path" --body "Claim and complete this stub task." --role backend_dev --agent chatgpt
+./bin/wt-task create --title "Verify assignment path" --body "Claim and complete this stub task." --role backend_dev --agent chatgpt --max-tokens 2000000
 ./bin/wt-task list
 ./bin/wt-task show task_example_001
 ./bin/wt-task assign task_example_001 --agent gemini
 ./bin/wt-task update-status task_example_001 --status blocked --message "Waiting on operator input."
 ```
+
+The web console token panel is backed by `GET /api/tokens`. Phase 0 reports
+allocated token budget from task packages, not adapter-measured usage. Token
+budgets and estimated cost settings live in `config/woventeam-phase0.conf` and
+can be edited from the console settings rail.
 
 Program and Project Manager roles can request subtasks through the same daemon.
 The daemon records a `task.request`, validates the role spawn policy, creates

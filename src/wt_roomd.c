@@ -198,6 +198,113 @@ static int roleMaySpawn(const char *requestingRole, const char *requestedRole) {
     return 0;
 }
 
+static int sendConfigJson(int clientFd, const WtConfig *config) {
+    char body[1024];
+    snprintf(body, sizeof(body),
+             "{\"ok\":true,\"configPath\":\"%s\","
+             "\"tokenTelemetryEnabled\":%s,"
+             "\"tokenDailyBudget\":%ld,"
+             "\"tokenMonthlyBudget\":%ld,"
+             "\"tokenWarningPercent\":%d,"
+             "\"tokenCostPerMillionCents\":%d,"
+             "\"contextMessageCount\":%d,"
+             "\"agentPollMilliseconds\":%d,"
+             "\"adapterTimeoutSeconds\":%d,"
+             "\"adapterMaxOutputBytes\":%d}\n",
+             config->configPath,
+             config->tokenTelemetryEnabled ? "true" : "false",
+             config->tokenDailyBudget,
+             config->tokenMonthlyBudget,
+             config->tokenWarningPercent,
+             config->tokenCostPerMillionCents,
+             config->contextMessageCount,
+             config->agentPollMilliseconds,
+             config->adapterTimeoutSeconds,
+             config->adapterMaxOutputBytes);
+    return wtHttpSendText(clientFd, 200, "OK", "application/json; charset=utf-8", body);
+}
+
+static int handlePostConfig(int clientFd, WtConfig *config, const char *request) {
+    const char *body = strstr(request, "\r\n\r\n");
+    if (!body) {
+        return wtHttpSendText(clientFd, 400, "Bad Request", "application/json", "{\"ok\":false}\n");
+    }
+    body += 4;
+    if (config->configPath[0] == '\0') {
+        return wtHttpSendText(clientFd, 409, "Conflict", "application/json",
+                              "{\"ok\":false,\"error\":\"config file path unavailable\"}\n");
+    }
+    long value = 0;
+    if (wtJsonReadLong(body, "tokenTelemetryEnabled", &value) == 0) {
+        config->tokenTelemetryEnabled = value != 0;
+    }
+    if (wtJsonReadLong(body, "tokenDailyBudget", &value) == 0) {
+        config->tokenDailyBudget = value < 0 ? 0 : value;
+    }
+    if (wtJsonReadLong(body, "tokenMonthlyBudget", &value) == 0) {
+        config->tokenMonthlyBudget = value < 0 ? 0 : value;
+    }
+    if (wtJsonReadLong(body, "tokenWarningPercent", &value) == 0) {
+        if (value < 1) value = 1;
+        if (value > 100) value = 100;
+        config->tokenWarningPercent = (int)value;
+    }
+    if (wtJsonReadLong(body, "tokenCostPerMillionCents", &value) == 0) {
+        config->tokenCostPerMillionCents = value < 0 ? 0 : (int)value;
+    }
+    if (wtConfigWriteFile(config, config->configPath) != 0) {
+        return wtHttpSendText(clientFd, 500, "Internal Server Error", "application/json",
+                              "{\"ok\":false,\"error\":\"config write failed\"}\n");
+    }
+    return sendConfigJson(clientFd, config);
+}
+
+static int sendTokenJson(int clientFd, const WtConfig *config) {
+    WtTokenSummary summary;
+    wtTaskSummarizeTokenBudgets(config->taskLedgerPath, wtNowUnixMilliseconds(), &summary);
+    long long dayCostCents = config->tokenCostPerMillionCents > 0 ?
+        (summary.dayWindowAllocatedTokens * (long long)config->tokenCostPerMillionCents) / 1000000LL : 0;
+    long long monthCostCents = config->tokenCostPerMillionCents > 0 ?
+        (summary.monthWindowAllocatedTokens * (long long)config->tokenCostPerMillionCents) / 1000000LL : 0;
+    int dayPercent = config->tokenDailyBudget > 0 ?
+        (int)((summary.dayWindowAllocatedTokens * 100LL) / config->tokenDailyBudget) : 0;
+    int monthPercent = config->tokenMonthlyBudget > 0 ?
+        (int)((summary.monthWindowAllocatedTokens * 100LL) / config->tokenMonthlyBudget) : 0;
+    char body[1024];
+    snprintf(body, sizeof(body),
+             "{\"ok\":true,\"enabled\":%s,"
+             "\"tokenDailyBudget\":%ld,"
+             "\"tokenMonthlyBudget\":%ld,"
+             "\"tokenWarningPercent\":%d,"
+             "\"tokenCostPerMillionCents\":%d,"
+             "\"dayWindowAllocatedTokens\":%lld,"
+             "\"monthWindowAllocatedTokens\":%lld,"
+             "\"allTimeAllocatedTokens\":%lld,"
+             "\"dayWindowPackages\":%d,"
+             "\"monthWindowPackages\":%d,"
+             "\"allTimePackages\":%d,"
+             "\"dayWindowCostCents\":%lld,"
+             "\"monthWindowCostCents\":%lld,"
+             "\"dayWindowBudgetPercent\":%d,"
+             "\"monthWindowBudgetPercent\":%d}\n",
+             config->tokenTelemetryEnabled ? "true" : "false",
+             config->tokenDailyBudget,
+             config->tokenMonthlyBudget,
+             config->tokenWarningPercent,
+             config->tokenCostPerMillionCents,
+             summary.dayWindowAllocatedTokens,
+             summary.monthWindowAllocatedTokens,
+             summary.allTimeAllocatedTokens,
+             summary.dayWindowPackages,
+             summary.monthWindowPackages,
+             summary.allTimePackages,
+             dayCostCents,
+             monthCostCents,
+             dayPercent,
+             monthPercent);
+    return wtHttpSendText(clientFd, 200, "OK", "application/json; charset=utf-8", body);
+}
+
 static void defaultAgentForRole(const char *role, char *agent, size_t agentSize) {
     if (strcmp(role, "backend_dev") == 0 || strcmp(role, "frontend_dev") == 0 ||
         strcmp(role, "database_engineer") == 0 || strcmp(role, "tester") == 0 ||
@@ -271,6 +378,7 @@ static int handlePostTaskRequest(int clientFd, const WtConfig *config, const cha
     char taskBody[WT_TASK_BODY_SIZE];
     char toolProfile[WT_TASK_POLICY_SIZE];
     char modelId[WT_TASK_MODEL_SIZE];
+    long maxTokens = 2000000;
     if (wtJsonReadString(body, "schema", schema, sizeof(schema)) != 0 ||
         strcmp(schema, "woventeam.task_request.v0.1") != 0 ||
         wtJsonReadString(body, "parentTaskId", parentTaskId, sizeof(parentTaskId)) != 0 ||
@@ -299,6 +407,10 @@ static int handlePostTaskRequest(int clientFd, const WtConfig *config, const cha
     }
     if (wtJsonReadString(body, "modelId", modelId, sizeof(modelId)) != 0) {
         snprintf(modelId, sizeof(modelId), "%s", "openai/gpt-5.3-codex");
+    }
+    wtJsonReadLong(body, "maxTokens", &maxTokens);
+    if (maxTokens < 0) {
+        maxTokens = 0;
     }
 
     char escapedTaskId[WT_TASK_ID_SIZE * 2];
@@ -351,7 +463,7 @@ static int handlePostTaskRequest(int clientFd, const WtConfig *config, const cha
              "\"task\":{\"title\":\"%s\",\"body\":\"%s\",\"deliverables\":[]},"
              "\"contextRefs\":[],\"acceptanceCriteria\":[\"Task result is recorded in the room and task ledger.\"],"
              "\"toolPolicy\":{\"profile\":\"%s\",\"filesystem\":\"%s\",\"network\":\"%s\",\"system\":\"none\",\"git\":\"%s\"},"
-             "\"budget\":{\"timeoutSeconds\":1800,\"maxOutputBytes\":1048576,\"maxCostUsd\":1.0},"
+             "\"budget\":{\"timeoutSeconds\":1800,\"maxOutputBytes\":1048576,\"maxCostUsd\":1.0,\"maxTokens\":%ld},"
              "\"dependencies\":[\"%s\"],\"createdAtUnixMs\":%lld}",
              escapedTaskId, escapedInitiative, escapedRequestedBy, escapedRole,
              escapedAgent, escapedModel, escapedPriority, escapedTitle, escapedBody,
@@ -359,6 +471,7 @@ static int handlePostTaskRequest(int clientFd, const WtConfig *config, const cha
              strcmp(toolProfile, "repo_branch") == 0 || strcmp(toolProfile, "test_local") == 0 ? "workspace_write" : "read_only",
              strcmp(toolProfile, "test_local") == 0 ? "loopback" : "none",
              strcmp(toolProfile, "repo_branch") == 0 || strcmp(toolProfile, "test_local") == 0 ? "branch_only" : "none",
+             maxTokens,
              escapedParent, createdAtUnixMs);
     if (wtTaskAppendRecord(config->taskLedgerPath, taskRequest, config->fsyncEachMessage) != 0 ||
         appendTaskRoomEvent(config, requestedTaskId, assignedAgent, "task.request", "requested", title) != 0 ||
@@ -458,7 +571,7 @@ static int handleEvents(int clientFd, const WtConfig *config) {
     return 0;
 }
 
-static void handleClient(int clientFd, const WtConfig *config) {
+static void handleClient(int clientFd, WtConfig *config) {
     char request[16384];
     size_t requestLength = 0;
     if (wtHttpReadRequest(clientFd, request, sizeof(request), &requestLength) != 0) {
@@ -469,6 +582,10 @@ static void handleClient(int clientFd, const WtConfig *config) {
     char method[16] = "";
     char path[256] = "";
     sscanf(request, "%15s %255s", method, path);
+    if (config->configPath[0] != '\0') {
+        wtConfigLoadFile(config, config->configPath);
+        wtConfigApplyEnvironment(config);
+    }
     if (strcmp(method, "GET") == 0 && strcmp(path, "/") == 0) {
         serveFile(clientFd, "web/index.html");
     } else if (strcmp(method, "GET") == 0 && strcmp(path, "/app.js") == 0) {
@@ -484,6 +601,10 @@ static void handleClient(int clientFd, const WtConfig *config) {
         sendMessagesJson(clientFd, config, limit);
     } else if (strcmp(method, "GET") == 0 && strcmp(path, "/api/tasks") == 0) {
         sendTasksJson(clientFd, config);
+    } else if (strcmp(method, "GET") == 0 && strcmp(path, "/api/tokens") == 0) {
+        sendTokenJson(clientFd, config);
+    } else if (strcmp(method, "GET") == 0 && strcmp(path, "/api/config") == 0) {
+        sendConfigJson(clientFd, config);
     } else if (strcmp(method, "POST") == 0 && strcmp(path, "/api/message") == 0) {
         handlePostMessage(clientFd, config, request);
     } else if (strcmp(method, "POST") == 0 && strcmp(path, "/api/task-package") == 0) {
@@ -492,6 +613,8 @@ static void handleClient(int clientFd, const WtConfig *config) {
         handlePostTaskRequest(clientFd, config, request);
     } else if (strcmp(method, "POST") == 0 && strcmp(path, "/api/task-event") == 0) {
         handlePostTaskEvent(clientFd, config, request);
+    } else if (strcmp(method, "POST") == 0 && strcmp(path, "/api/config") == 0) {
+        handlePostConfig(clientFd, config, request);
     } else if (strcmp(method, "GET") == 0 && strcmp(path, "/api/health") == 0) {
         char body[256];
         snprintf(body, sizeof(body), "{\"ok\":true,\"roomName\":\"%s\"}\n", config->roomName);

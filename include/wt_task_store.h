@@ -30,6 +30,15 @@ typedef struct {
     long long updatedAtUnixMs;
 } WtTaskSummary;
 
+typedef struct {
+    long long dayWindowAllocatedTokens;
+    long long monthWindowAllocatedTokens;
+    long long allTimeAllocatedTokens;
+    int dayWindowPackages;
+    int monthWindowPackages;
+    int allTimePackages;
+} WtTokenSummary;
+
 int wtTaskAppendRecord(const char *ledgerPath, const char *jsonLine, bool fsyncRecord);
 int wtTaskReadAllJsonArray(const char *ledgerPath, char *buffer, size_t bufferSize);
 int wtTaskFindQueuedForAgent(const char *ledgerPath, const char *agentName, WtTaskSummary *task);
@@ -37,5 +46,6 @@ int wtTaskAppendStatusEvent(const char *ledgerPath, const char *taskId, const ch
                             const char *createdBy, const char *message, bool fsyncRecord);
 int wtTaskAppendBlockedDependents(const char *ledgerPath, const char *blockedTaskId,
                                   const char *createdBy, bool fsyncRecord);
+int wtTaskSummarizeTokenBudgets(const char *ledgerPath, long long nowUnixMs, WtTokenSummary *summary);
 
 #endif

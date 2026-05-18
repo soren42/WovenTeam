@@ -37,7 +37,8 @@ validate against `docs/api/task-package-v0.1.json` and use:
   "budget": {
     "timeoutSeconds": 1800,
     "maxOutputBytes": 1048576,
-    "maxCostUsd": 1.0
+    "maxCostUsd": 1.0,
+    "maxTokens": 2000000
   },
   "dependencies": [],
   "timestamps": {
@@ -96,9 +97,19 @@ package, and emits `task.assign`. The child package includes `parentTaskId`,
 - `POST /api/task-request`
 - `POST /api/task-event`
 - `GET /api/tasks`
+- `GET /api/tokens`
+- `GET /api/config`
+- `POST /api/config`
 
 `bin/wt-task` wraps those endpoints for local operator use with `create`,
 `request`, `list`, `show`, `assign`, and `update-status` commands.
+
+`GET /api/tokens` reports token allocation from task package budgets in the
+ledger. Phase 0 does not yet claim adapter-reported token usage; it sums
+`budget.maxTokens` over rolling 24-hour and 30-day windows and compares that
+allocation against the configured budgets. `POST /api/config` currently limits
+web writes to token telemetry settings so the console can adjust budget display
+without exposing broader runtime controls.
 
 When a task is marked `blocked`, queued/running child tasks that list it in
 `dependencies` receive an appended `blocked` task event. Terminal dependents are
