@@ -60,7 +60,7 @@
     },
     "status": {
       "type": "string",
-      "enum": ["draft", "queued", "assigned", "running", "blocked", "complete", "failed", "cancelled"],
+      "enum": ["draft", "queued", "assigned", "running", "blocked", "complete", "failed", "cancelled", "closed"],
       "default": "queued"
     },
     "task": {

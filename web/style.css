@@ -637,7 +637,7 @@ kbd {
 .initiative-placeholder {
   height: 100%;
   display: grid;
-  grid-template-rows: auto 1fr;
+  grid-template-rows: auto minmax(0, 1fr) auto;
   overflow: hidden;
 }
 
@@ -692,6 +692,90 @@ kbd {
   background: var(--accent-soft);
 }
 
+.initiative-placeholder tbody tr {
+  cursor: pointer;
+}
+
+.task-detail {
+  border-top: 1px solid var(--edge);
+  background: var(--panel-alt);
+  padding: 10px 12px;
+}
+
+.task-detail-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+  align-items: flex-start;
+}
+
+.task-detail-head strong {
+  display: block;
+  color: var(--text);
+  margin-bottom: 3px;
+}
+
+.task-detail-head span,
+.task-detail p {
+  color: var(--text-dim);
+  font-size: 11px;
+}
+
+.task-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.task-actions button {
+  border: 1px solid var(--edge-bright);
+  background: var(--panel);
+  color: var(--text-dim);
+  padding: 4px 7px;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.task-actions button:hover {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.detail-events {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+  max-height: 92px;
+  overflow: auto;
+}
+
+.detail-event {
+  border: 1px solid var(--edge);
+  background: var(--panel);
+  padding: 6px 7px;
+  font-family: var(--mono);
+  font-size: 10px;
+}
+
+.detail-event b,
+.detail-event span {
+  display: block;
+}
+
+.detail-event b {
+  color: var(--accent);
+}
+
+.detail-event span {
+  color: var(--warn);
+  text-transform: uppercase;
+}
+
+.detail-event p {
+  margin: 4px 0 0;
+  overflow-wrap: anywhere;
+}
+
 .status-pill,
 .vendor-tag {
   display: inline-block;
@@ -718,6 +802,12 @@ kbd {
 .status-pill[data-status="complete"] {
   color: var(--ok);
   border-color: rgba(52, 211, 153, 0.6);
+}
+
+.status-pill[data-status="closed"],
+.status-pill[data-status="cancelled"] {
+  color: var(--text-dim);
+  border-color: var(--edge-bright);
 }
 
 .status-pill[data-status="failed"],

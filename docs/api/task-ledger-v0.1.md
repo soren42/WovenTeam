@@ -97,12 +97,23 @@ package, and emits `task.assign`. The child package includes `parentTaskId`,
 - `POST /api/task-request`
 - `POST /api/task-event`
 - `GET /api/tasks`
+- `GET /api/task-summaries`
+- `GET /api/task-detail?taskId=...`
 - `GET /api/tokens`
 - `GET /api/config`
 - `POST /api/config`
 
 `bin/wt-task` wraps those endpoints for local operator use with `create`,
-`request`, `list`, `show`, `assign`, and `update-status` commands.
+`request`, `list`, `show`, `assign`, `update-status`, `retry`, `cancel`,
+`close`, and `reopen` commands.
+
+Phase 1 keeps the JSONL ledger as the recovery source and adds a rebuildable
+SQLite projection configured by `taskProjectionDbPath`. `wt-roomd` rebuilds the
+projection at startup and before projected reads. `GET /api/task-summaries`
+returns the current task rows from that projection, and
+`GET /api/task-detail?taskId=...` returns one task plus its projected event
+timeline. If the SQLite file is lost, it can be deleted and regenerated from
+`data/task-packages.jsonl`.
 
 `GET /api/tokens` reports token allocation from task package budgets in the
 ledger. Phase 0 does not yet claim adapter-reported token usage; it sums
@@ -134,5 +145,5 @@ workspace. The manifest uses:
 ```
 
 This keeps the Phase 0 storage model consistent with the room transcript:
-append-only, inspectable, and easy to recover after process restarts. A later
-SQLite projection can index this ledger without changing the package contract.
+append-only, inspectable, and easy to recover after process restarts. The
+SQLite projection indexes this ledger without changing the package contract.

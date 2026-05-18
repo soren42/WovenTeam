@@ -11,14 +11,18 @@ The Phase 0 browser UI is `WovenTeam Console (Fullscreen)` served by
   - `GET /api/messages`
   - `GET /events`
   - `GET /api/tasks`
+  - `GET /api/task-summaries`
+  - `GET /api/task-detail?taskId=...`
   - `GET /api/tokens`
   - `GET /api/config`
   - `POST /api/task-package`
   - `POST /api/task-request`
   - `POST /api/config`
-- The task table reads the append-only task ledger and shows task status,
-  parent task IDs, requested-by role, dependencies, assigned role, and assigned
-  agent.
+- The task table reads the rebuildable SQLite task projection and shows task
+  status, parent task IDs, requested-by role, event count, assigned role, and
+  assigned agent.
+- Selecting a task row opens the Phase 1 task detail panel with task body,
+  event timeline, and retry/cancel/close lifecycle controls.
 - The program initiation composer can create CEO task packages or
   manager-driven subtasks. Subtask mode requires a parent task ID and uses the
   daemon-enforced Program Manager / Project Manager spawn policy.
@@ -42,14 +46,17 @@ backend tools exist:
 
 ## Backend Contract Needed Next
 
-The scaffold now binds to the Sprint 2-4 task package paths:
+The scaffold now binds to the task package and Phase 1 state paths:
 
 - `docs/api/task-package-v0.1.json`
 - `docs/api/task-request-v0.1.json`
 - `docs/api/task-ledger-v0.1.md`
 - `GET /api/tasks`
+- `GET /api/task-summaries`
+- `GET /api/task-detail?taskId=...`
 - `POST /api/task-package`
 - `POST /api/task-request`
 
-The next backend step is to expose richer initiative, gate, adapter usage, and
-agent state so the console can enable the remaining disabled controls.
+The next backend step is to expose richer initiative, gate, adapter artifact,
+usage, and agent state so the console can enable the remaining disabled
+controls.

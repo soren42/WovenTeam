@@ -1,6 +1,7 @@
 roomName=phase0
 roomLogPath=data/phase0-room.jsonl
 taskLedgerPath=data/task-packages.jsonl
+taskProjectionDbPath=data/task-projection.sqlite
 httpBindAddress=0.0.0.0
 httpPort=8787
 contextMessageCount=20

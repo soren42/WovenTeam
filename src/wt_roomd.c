@@ -11,6 +11,7 @@
 #include "wt_json.h"
 #include "wt_message.h"
 #include "wt_room_store.h"
+#include "wt_task_projection.h"
 #include "wt_task_store.h"
 #include "wt_time.h"
 
@@ -494,6 +495,54 @@ static int sendTasksJson(int clientFd, const WtConfig *config) {
     return wtHttpSendText(clientFd, 200, "OK", "application/json; charset=utf-8", body);
 }
 
+static int rebuildProjection(const WtConfig *config) {
+    return wtTaskProjectionRebuild(config->taskProjectionDbPath, config->taskLedgerPath);
+}
+
+static int sendTaskSummariesJson(int clientFd, const WtConfig *config) {
+    if (rebuildProjection(config) != 0) {
+        return wtHttpSendText(clientFd, 500, "Internal Server Error", "application/json",
+                              "{\"ok\":false,\"error\":\"projection rebuild failed\"}\n");
+    }
+    char *body = malloc(WT_TASK_LEDGER_LINE_SIZE * 16);
+    if (!body) {
+        return wtHttpSendText(clientFd, 500, "Internal Server Error", "application/json", "{\"ok\":false}\n");
+    }
+    if (wtTaskProjectionReadSummariesJson(config->taskProjectionDbPath, body, WT_TASK_LEDGER_LINE_SIZE * 16) != 0) {
+        free(body);
+        return wtHttpSendText(clientFd, 500, "Internal Server Error", "application/json",
+                              "{\"ok\":false,\"error\":\"projection read failed\"}\n");
+    }
+    int rc = wtHttpSendText(clientFd, 200, "OK", "application/json; charset=utf-8", body);
+    free(body);
+    return rc;
+}
+
+static int sendTaskDetailJson(int clientFd, const WtConfig *config, const char *taskId) {
+    if (!taskId || taskId[0] == '\0') {
+        return wtHttpSendText(clientFd, 400, "Bad Request", "application/json",
+                              "{\"ok\":false,\"error\":\"task id required\"}\n");
+    }
+    if (rebuildProjection(config) != 0) {
+        return wtHttpSendText(clientFd, 500, "Internal Server Error", "application/json",
+                              "{\"ok\":false,\"error\":\"projection rebuild failed\"}\n");
+    }
+    char *body = malloc(WT_TASK_LEDGER_LINE_SIZE * 16);
+    if (!body) {
+        return wtHttpSendText(clientFd, 500, "Internal Server Error", "application/json", "{\"ok\":false}\n");
+    }
+    int detailRc = wtTaskProjectionReadDetailJson(config->taskProjectionDbPath, taskId, body, WT_TASK_LEDGER_LINE_SIZE * 16);
+    if (detailRc < 0) {
+        free(body);
+        return wtHttpSendText(clientFd, 500, "Internal Server Error", "application/json",
+                              "{\"ok\":false,\"error\":\"projection read failed\"}\n");
+    }
+    int rc = wtHttpSendText(clientFd, detailRc == 1 ? 404 : 200, detailRc == 1 ? "Not Found" : "OK",
+                            "application/json; charset=utf-8", body);
+    free(body);
+    return rc;
+}
+
 static int handlePostTaskEvent(int clientFd, const WtConfig *config, const char *request) {
     const char *body = strstr(request, "\r\n\r\n");
     if (!body) {
@@ -519,7 +568,8 @@ static int handlePostTaskEvent(int clientFd, const WtConfig *config, const char 
     }
     char compact[WT_TASK_LEDGER_LINE_SIZE];
     compactJsonLine(body, compact, sizeof(compact));
-    const char *messageType = strcmp(status, "complete") == 0 || strcmp(status, "failed") == 0 ?
+    const char *messageType = strcmp(status, "complete") == 0 || strcmp(status, "failed") == 0 ||
+                              strcmp(status, "cancelled") == 0 || strcmp(status, "closed") == 0 ?
                               "task.result" : "task.status";
     if (wtTaskAppendRecord(config->taskLedgerPath, compact, config->fsyncEachMessage) != 0 ||
         appendTaskRoomEvent(config, taskId, "all", messageType, status, message) != 0) {
@@ -601,6 +651,17 @@ static void handleClient(int clientFd, WtConfig *config) {
         sendMessagesJson(clientFd, config, limit);
     } else if (strcmp(method, "GET") == 0 && strcmp(path, "/api/tasks") == 0) {
         sendTasksJson(clientFd, config);
+    } else if (strcmp(method, "GET") == 0 && strcmp(path, "/api/task-summaries") == 0) {
+        sendTaskSummariesJson(clientFd, config);
+    } else if (strcmp(method, "GET") == 0 && strncmp(path, "/api/task-detail", 16) == 0) {
+        char taskId[WT_TASK_ID_SIZE] = "";
+        char *taskIdText = strstr(path, "taskId=");
+        if (taskIdText) {
+            snprintf(taskId, sizeof(taskId), "%s", taskIdText + 7);
+            char *amp = strchr(taskId, '&');
+            if (amp) *amp = '\0';
+        }
+        sendTaskDetailJson(clientFd, config, taskId);
     } else if (strcmp(method, "GET") == 0 && strcmp(path, "/api/tokens") == 0) {
         sendTokenJson(clientFd, config);
     } else if (strcmp(method, "GET") == 0 && strcmp(path, "/api/config") == 0) {
@@ -664,6 +725,9 @@ int main(int argc, char **argv) {
         }
     }
     wtConfigApplyEnvironment(&config);
+    if (rebuildProjection(&config) != 0) {
+        fprintf(stderr, "warning: task projection rebuild failed; ledger APIs remain available\n");
+    }
     signal(SIGCHLD, SIG_IGN);
     signal(SIGPIPE, SIG_IGN);
     int serverFd = createServerSocket(&config);

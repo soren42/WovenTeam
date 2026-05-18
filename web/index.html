@@ -137,7 +137,7 @@
         <div class="initiative-placeholder">
           <div>
             <strong>Task package ledger</strong>
-            <p>Live Phase 0 view backed by <code>GET /api/tasks</code>. Manager subtasks, parent dependencies, and blocked propagation are active.</p>
+            <p>Live Phase 1 view backed by the rebuildable SQLite projection. Select a row to inspect task detail and lifecycle events.</p>
           </div>
           <table>
             <thead>
@@ -147,6 +147,21 @@
               <tr><td colspan="9">No task packages yet. Use the composer to create a live task or manager subtask.</td></tr>
             </tbody>
           </table>
+          <div id="taskDetail" class="task-detail" hidden>
+            <div class="task-detail-head">
+              <div>
+                <strong id="detailTitle">Task detail</strong>
+                <span id="detailMeta">No task selected</span>
+              </div>
+              <div class="task-actions">
+                <button type="button" data-task-action="retry">Retry</button>
+                <button type="button" data-task-action="cancel">Cancel</button>
+                <button type="button" data-task-action="close">Close</button>
+              </div>
+            </div>
+            <p id="detailBody"></p>
+            <div id="detailEvents" class="detail-events"></div>
+          </div>
         </div>
       </section>
 
