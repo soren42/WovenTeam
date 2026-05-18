@@ -12,6 +12,8 @@ build/
 
 data/*.jsonl
 data/*.state
+data/*.sqlite
+data/*.sqlite-*
 data/task-packages.jsonl
 config/woventeam-phase0.conf
 

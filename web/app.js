@@ -13,6 +13,7 @@ const sendButton = document.querySelector("#sendButton");
 const taskTableBody = document.querySelector("#taskTableBody");
 const settingsPanel = document.querySelector("#settingsPanel");
 const settingsForm = document.querySelector("#settingsForm");
+const taskDetail = document.querySelector("#taskDetail");
 const seen = new Set();
 
 const roles = [
@@ -54,6 +55,7 @@ let state = {
   armTimer: null,
   audit: [],
   taskStats: {roleCounts: {}, requestCount: 0, blockedCount: 0, activeAgents: 3},
+  selectedTaskId: "",
   config: {
     tokenTelemetryEnabled: true,
     tokenDailyBudget: 2000000,
@@ -132,11 +134,28 @@ async function loadRecent() {
 }
 
 async function loadTasks() {
-  const response = await fetch("/api/tasks");
+  const response = await fetch("/api/task-summaries");
   if (!response.ok) return;
-  const rows = await response.json();
-  const tasks = summarizeTasks(rows);
+  const tasks = await response.json();
+  summarizeProjectedTasks(tasks);
   renderTasks(tasks);
+}
+
+function summarizeProjectedTasks(tasks) {
+  const roleCounts = {};
+  let requestCount = 0;
+  let blockedCount = 0;
+  tasks.forEach(task => {
+    roleCounts[task.assignedRole || "unassigned"] = (roleCounts[task.assignedRole || "unassigned"] || 0) + 1;
+    if (task.requestedByRole) requestCount++;
+    if (task.status === "blocked") blockedCount++;
+  });
+  state.taskStats = {
+    roleCounts,
+    requestCount,
+    blockedCount,
+    activeAgents: new Set(tasks.map(task => task.assignedAgent).filter(Boolean)).size || 3
+  };
 }
 
 async function loadConfig() {
@@ -263,6 +282,7 @@ function renderTasks(tasks) {
   taskTableBody.innerHTML = "";
   tasks.slice(0, 12).forEach(task => {
     const row = document.createElement("tr");
+    row.dataset.taskId = task.taskId;
     row.innerHTML = `
       <td></td>
       <td><span class="status-pill"></span></td>
@@ -282,10 +302,66 @@ function renderTasks(tasks) {
     row.querySelector("td:nth-child(5)").textContent = task.assignedAgent || "all";
     row.querySelector(".mini-progress span").style.width = progressForStatus(task.status);
     row.querySelector("td:nth-child(7)").textContent = task.requestedByRole || "--";
-    row.querySelector("td:nth-child(8)").textContent = task.dependencies.length ? task.dependencies.join(", ") : "--";
+    row.querySelector("td:nth-child(8)").textContent = task.eventCount ? `${task.eventCount} events` : "--";
     row.querySelector("td:nth-child(9)").textContent = task.title;
+    row.addEventListener("click", () => loadTaskDetail(task.taskId));
     taskTableBody.appendChild(row);
   });
+}
+
+async function loadTaskDetail(taskId) {
+  state.selectedTaskId = taskId;
+  const response = await fetch(`/api/task-detail?taskId=${encodeURIComponent(taskId)}`);
+  if (!response.ok) {
+    addAudit("ui", `task detail failed for ${taskId}`);
+    return;
+  }
+  const detail = await response.json();
+  if (!detail.ok) return;
+  taskDetail.hidden = false;
+  document.querySelector("#detailTitle").textContent = detail.task.title || taskId;
+  document.querySelector("#detailMeta").textContent = `${detail.task.taskId} · ${detail.task.status} · ${detail.task.assignedAgent || "all"} · ${fmtTokens(detail.task.maxTokens || 0)} tokens`;
+  document.querySelector("#detailBody").textContent = detail.task.body || "";
+  const events = document.querySelector("#detailEvents");
+  events.innerHTML = "";
+  detail.events.forEach(event => {
+    const item = document.createElement("div");
+    item.className = "detail-event";
+    const stamp = event.createdAtUnixMs ? new Date(event.createdAtUnixMs).toISOString().slice(11, 19) : "--:--:--";
+    item.innerHTML = "<b></b><span></span><p></p>";
+    item.querySelector("b").textContent = `${stamp} ${event.eventType || event.schema}`;
+    item.querySelector("span").textContent = event.status || event.createdBy || "";
+    item.querySelector("p").textContent = event.message || "";
+    events.appendChild(item);
+  });
+}
+
+async function postTaskLifecycle(status, message) {
+  if (!state.selectedTaskId) {
+    addAudit("ui", "select a task before using lifecycle controls");
+    return;
+  }
+  const payload = {
+    schema: "woventeam.task_event.v0.1",
+    taskId: state.selectedTaskId,
+    eventType: "lifecycle",
+    status,
+    message,
+    createdBy: "ceo",
+    createdAtUnixMs: nowMs()
+  };
+  const response = await fetch("/api/task-event", {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify(payload)
+  });
+  if (!response.ok) {
+    addAudit("ui", `${status} failed for ${state.selectedTaskId}`);
+    return;
+  }
+  addAudit("ui", `${status} posted for ${state.selectedTaskId}`);
+  await loadTasks();
+  await loadTaskDetail(state.selectedTaskId);
 }
 
 function progressForStatus(status) {
@@ -647,6 +723,14 @@ function wireControls() {
     document.querySelector("#settingsButton").classList.remove("active");
   });
   settingsForm.addEventListener("submit", saveConfig);
+  document.querySelectorAll("[data-task-action]").forEach(button => {
+    button.addEventListener("click", () => {
+      const action = button.dataset.taskAction;
+      if (action === "retry") postTaskLifecycle("queued", "Task reopened for retry from the web console.");
+      if (action === "cancel") postTaskLifecycle("cancelled", "Task cancelled from the web console.");
+      if (action === "close") postTaskLifecycle("closed", "Task closed from the web console.");
+    });
+  });
 
   document.querySelectorAll(".mode-button").forEach(button => {
     button.addEventListener("click", () => setDispatchMode(button.dataset.mode));

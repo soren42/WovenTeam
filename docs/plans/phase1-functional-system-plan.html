@@ -1,0 +1,633 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>WovenTeam Phase 1 Functional System Plan</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f5f7f8;
+      --paper: #ffffff;
+      --ink: #1f2933;
+      --muted: #64717d;
+      --line: #d8dee4;
+      --line-strong: #b9c3cc;
+      --blue: #2563a8;
+      --green: #1f7a5a;
+      --amber: #a16207;
+      --red: #b42318;
+      --violet: #6d4aff;
+      --soft-blue: #e7f0fa;
+      --soft-green: #e7f5ee;
+      --soft-amber: #fff4db;
+      --soft-red: #fdeceb;
+      --shadow: 0 16px 40px rgba(31, 41, 51, 0.08);
+      --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      --sans: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: var(--sans);
+      line-height: 1.5;
+    }
+    a { color: var(--blue); }
+    code {
+      font-family: var(--mono);
+      font-size: 0.92em;
+      background: #eef2f5;
+      border: 1px solid var(--line);
+      border-radius: 5px;
+      padding: 1px 5px;
+    }
+    .shell {
+      max-width: 1180px;
+      margin: 0 auto;
+      padding: 28px 18px 64px;
+    }
+    .hero {
+      display: grid;
+      grid-template-columns: minmax(0, 1.1fr) minmax(330px, 0.9fr);
+      gap: 22px;
+      align-items: center;
+      padding: 28px;
+      background: var(--paper);
+      border: 1px solid var(--line);
+      box-shadow: var(--shadow);
+    }
+    .eyebrow {
+      margin: 0 0 8px;
+      color: var(--blue);
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+    }
+    h1, h2, h3 { line-height: 1.16; letter-spacing: 0; }
+    h1 {
+      margin: 0;
+      font-size: clamp(32px, 4vw, 52px);
+    }
+    h2 {
+      margin: 0 0 12px;
+      font-size: 25px;
+    }
+    h3 {
+      margin: 0 0 8px;
+      font-size: 17px;
+    }
+    p { margin: 8px 0; }
+    .subtitle {
+      max-width: 760px;
+      color: var(--muted);
+      font-size: 18px;
+    }
+    .meta-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 18px;
+    }
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: #f9fafb;
+      color: var(--muted);
+      padding: 6px 10px;
+      font-size: 12px;
+      font-weight: 700;
+    }
+    .pill.live { color: var(--green); background: var(--soft-green); border-color: #b7dfcd; }
+    .pill.next { color: var(--blue); background: var(--soft-blue); border-color: #b9d6f4; }
+    .pill.risk { color: var(--amber); background: var(--soft-amber); border-color: #f0d28c; }
+    .hero-card {
+      border: 1px solid var(--line);
+      background: #fbfcfd;
+      padding: 14px;
+    }
+    .hero-card svg {
+      width: 100%;
+      height: auto;
+      display: block;
+    }
+    .nav {
+      position: sticky;
+      top: 0;
+      z-index: 4;
+      display: flex;
+      gap: 8px;
+      overflow-x: auto;
+      margin: 14px 0 18px;
+      padding: 10px 0;
+      background: rgba(245, 247, 248, 0.92);
+      backdrop-filter: blur(10px);
+    }
+    .nav a, .filter button {
+      white-space: nowrap;
+      border: 1px solid var(--line);
+      background: var(--paper);
+      color: var(--ink);
+      text-decoration: none;
+      padding: 8px 10px;
+      font-weight: 700;
+      font-size: 13px;
+    }
+    .nav a:hover, .filter button:hover, .filter button.active {
+      border-color: var(--blue);
+      color: var(--blue);
+      background: var(--soft-blue);
+    }
+    section {
+      margin-top: 18px;
+      background: var(--paper);
+      border: 1px solid var(--line);
+      padding: 22px;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 12px;
+    }
+    .grid.two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .card {
+      border: 1px solid var(--line);
+      background: #fbfcfd;
+      padding: 14px;
+    }
+    .card strong {
+      display: block;
+      margin-bottom: 5px;
+      font-size: 15px;
+    }
+    .metric {
+      display: grid;
+      gap: 4px;
+    }
+    .metric b {
+      font-size: 30px;
+      line-height: 1;
+      color: var(--blue);
+      font-family: var(--mono);
+    }
+    .muted { color: var(--muted); }
+    .flow {
+      width: 100%;
+      min-height: 240px;
+      border: 1px solid var(--line);
+      background: #fbfcfd;
+      margin-top: 10px;
+    }
+    .workstreams {
+      display: grid;
+      gap: 10px;
+    }
+    .stream {
+      border: 1px solid var(--line);
+      background: #fbfcfd;
+      padding: 14px;
+    }
+    .stream header {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: start;
+      margin-bottom: 8px;
+    }
+    .stream h3 { margin: 0; }
+    .stream ul {
+      margin: 8px 0 0;
+      padding-left: 20px;
+    }
+    .tag {
+      display: inline-block;
+      border: 1px solid var(--line);
+      background: #f6f8fa;
+      color: var(--muted);
+      padding: 3px 7px;
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+    .tag.must { color: var(--red); background: var(--soft-red); border-color: #f2b8b5; }
+    .tag.core { color: var(--blue); background: var(--soft-blue); border-color: #b9d6f4; }
+    .tag.ops { color: var(--green); background: var(--soft-green); border-color: #b7dfcd; }
+    .timeline {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 12px;
+    }
+    .sprint {
+      border-top: 5px solid var(--blue);
+      background: #fbfcfd;
+      border-left: 1px solid var(--line);
+      border-right: 1px solid var(--line);
+      border-bottom: 1px solid var(--line);
+      padding: 14px;
+    }
+    .sprint:nth-child(2) { border-top-color: var(--green); }
+    .sprint:nth-child(3) { border-top-color: var(--amber); }
+    .sprint:nth-child(4) { border-top-color: var(--violet); }
+    .sprint ol {
+      padding-left: 20px;
+      margin: 8px 0 0;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 10px;
+      background: #fbfcfd;
+    }
+    th, td {
+      border: 1px solid var(--line);
+      padding: 9px 10px;
+      text-align: left;
+      vertical-align: top;
+    }
+    th {
+      background: #eef2f5;
+      font-size: 12px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+    .checklist {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px 14px;
+      margin-top: 8px;
+    }
+    .check {
+      display: grid;
+      grid-template-columns: 22px 1fr;
+      gap: 8px;
+      align-items: start;
+      color: var(--muted);
+    }
+    .box {
+      width: 18px;
+      height: 18px;
+      border: 2px solid var(--green);
+      margin-top: 2px;
+    }
+    .filter {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin: 8px 0 12px;
+    }
+    .hidden { display: none; }
+    footer {
+      margin-top: 18px;
+      color: var(--muted);
+      font-size: 13px;
+      text-align: center;
+    }
+    @media (max-width: 900px) {
+      .hero, .grid, .grid.two, .timeline, .checklist {
+        grid-template-columns: 1fr;
+      }
+      .shell { padding: 14px 10px 40px; }
+      section, .hero { padding: 18px; }
+    }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <header class="hero">
+      <div>
+        <p class="eyebrow">WovenTeam Phase 1</p>
+        <h1>Functional System Plan</h1>
+        <p class="subtitle">A launch-oriented plan to move from the Phase 0 native room into a minimally functional collaborative work system with durable task state, controlled agent execution, visible results, and operator control.</p>
+        <div class="meta-row">
+          <span class="pill live">Phase 0 launched</span>
+          <span class="pill next">Phase 1 target: functional system</span>
+          <span class="pill risk">Scope: controlled intranet operation</span>
+        </div>
+      </div>
+      <div class="hero-card">
+        <svg viewBox="0 0 520 300" role="img" aria-label="Phase 1 system flow diagram">
+          <defs>
+            <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+              <path d="M 0 0 L 10 5 L 0 10 z" fill="#2563a8"></path>
+            </marker>
+            <style>
+              .b { fill: #fff; stroke: #b9c3cc; stroke-width: 1.5; }
+              .t { fill: #1f2933; font: 700 14px system-ui, sans-serif; }
+              .s { fill: #64717d; font: 12px system-ui, sans-serif; }
+              .a { stroke: #2563a8; stroke-width: 2; fill: none; marker-end: url(#arrow); }
+              .g { fill: #e7f5ee; stroke: #1f7a5a; }
+              .y { fill: #fff4db; stroke: #a16207; }
+              .v { fill: #eeeafe; stroke: #6d4aff; }
+            </style>
+          </defs>
+          <rect class="b" x="20" y="24" width="120" height="58" rx="6"></rect>
+          <text class="t" x="80" y="48" text-anchor="middle">Operator</text>
+          <text class="s" x="80" y="66" text-anchor="middle">web or CLI</text>
+          <rect class="b" x="200" y="24" width="120" height="58" rx="6"></rect>
+          <text class="t" x="260" y="48" text-anchor="middle">Task API</text>
+          <text class="s" x="260" y="66" text-anchor="middle">daemon</text>
+          <rect class="g" x="380" y="24" width="120" height="58" rx="6"></rect>
+          <text class="t" x="440" y="48" text-anchor="middle">SQLite</text>
+          <text class="s" x="440" y="66" text-anchor="middle">projection</text>
+          <rect class="v" x="110" y="134" width="120" height="58" rx="6"></rect>
+          <text class="t" x="170" y="158" text-anchor="middle">Router</text>
+          <text class="s" x="170" y="176" text-anchor="middle">role + capability</text>
+          <rect class="b" x="290" y="134" width="120" height="58" rx="6"></rect>
+          <text class="t" x="350" y="158" text-anchor="middle">Adapters</text>
+          <text class="s" x="350" y="176" text-anchor="middle">Codex + second path</text>
+          <rect class="y" x="200" y="232" width="120" height="48" rx="6"></rect>
+          <text class="t" x="260" y="252" text-anchor="middle">Review Gate</text>
+          <text class="s" x="260" y="269" text-anchor="middle">approve or retry</text>
+          <path class="a" d="M140 53 H196"></path>
+          <path class="a" d="M320 53 H376"></path>
+          <path class="a" d="M260 82 V118 C260 132 238 134 230 150"></path>
+          <path class="a" d="M230 163 H286"></path>
+          <path class="a" d="M350 192 C350 220 318 230 300 238"></path>
+          <path class="a" d="M220 238 C150 212 98 124 80 86"></path>
+        </svg>
+      </div>
+    </header>
+
+    <nav class="nav" aria-label="Plan navigation">
+      <a href="#goal">Goal</a>
+      <a href="#done">Definition Of Done</a>
+      <a href="#streams">Workstreams</a>
+      <a href="#sprints">Sprints</a>
+      <a href="#architecture">Architecture</a>
+      <a href="#risks">Risks</a>
+      <a href="#demo">Demo Script</a>
+    </nav>
+
+    <section id="goal">
+      <h2>Phase 1 Goal</h2>
+      <p>Phase 1 should produce a system that functions at some level as a real collaborative work platform. A human operator can create an initiative, the system can route work to suitable model-backed agents, at least two primary model paths can produce useful artifacts through controlled adapters, and the web console can show status, outputs, and operator decisions.</p>
+      <div class="grid">
+        <div class="card metric"><span class="muted">Primary outcome</span><b>1</b><strong>Usable work loop</strong><p class="muted">Create, assign, execute, review, close.</p></div>
+        <div class="card metric"><span class="muted">Agent target</span><b>2+</b><strong>Work-capable model paths</strong><p class="muted">Codex plus Claude or Gemini.</p></div>
+        <div class="card metric"><span class="muted">Operational target</span><b>0</b><strong>Lost tasks after restart</strong><p class="muted">State survives daemon and host restart.</p></div>
+      </div>
+    </section>
+
+    <section id="done">
+      <h2>Definition Of Done</h2>
+      <p>Phase 1 is done when this operator flow works without hand-editing ledgers or reading raw logs:</p>
+      <div class="checklist">
+        <div class="check"><span class="box"></span><span>Open the web console and create an initiative or task package.</span></div>
+        <div class="check"><span class="box"></span><span>Route the task by role, agent availability, and declared tool policy.</span></div>
+        <div class="check"><span class="box"></span><span>Run a controlled adapter in a per-task workspace.</span></div>
+        <div class="check"><span class="box"></span><span>Record running, complete, failed, blocked, retry, and closed task states.</span></div>
+        <div class="check"><span class="box"></span><span>Open task detail in the web UI and inspect events, artifacts, and result text.</span></div>
+        <div class="check"><span class="box"></span><span>Approve, reject, retry, cancel, or close from the operator surface.</span></div>
+        <div class="check"><span class="box"></span><span>Display token allocation and actual usage where adapters report it.</span></div>
+        <div class="check"><span class="box"></span><span>Restart services and recover the same task state.</span></div>
+      </div>
+    </section>
+
+    <section id="streams">
+      <h2>Workstreams</h2>
+      <div class="filter" aria-label="Workstream filter">
+        <button type="button" class="active" data-filter="all">All</button>
+        <button type="button" data-filter="must">Launch Critical</button>
+        <button type="button" data-filter="core">Core System</button>
+        <button type="button" data-filter="ops">Operations</button>
+      </div>
+      <div class="workstreams">
+        <article class="stream" data-kind="must core">
+          <header><h3>1. Durable Task State</h3><span class="tag must">Launch Critical</span></header>
+          <p>Keep JSONL as the audit log, but add a queryable state projection so the UI, CLI, and daemon have one coherent task view.</p>
+          <ul>
+            <li>Add SQLite projection for tasks, events, artifacts, usage, and dependencies.</li>
+            <li>Rebuild projection from JSONL on daemon startup.</li>
+            <li>Add task detail, status, retry, cancel, close, and reopen APIs.</li>
+            <li>Preserve import/export and append-only recovery behavior.</li>
+          </ul>
+        </article>
+
+        <article class="stream" data-kind="must core">
+          <header><h3>2. Adapter Execution Plane</h3><span class="tag must">Launch Critical</span></header>
+          <p>Turn room participants into useful workers through explicit adapter contracts and controlled per-task workspaces.</p>
+          <ul>
+            <li>Formalize adapter input, timeout, workspace, artifact, and result event contracts.</li>
+            <li>Harden the Codex path for bounded repo and documentation work.</li>
+            <li>Add Claude or Gemini as the second useful work path.</li>
+            <li>Record adapter command metadata, output files, result summary, and failure class.</li>
+          </ul>
+        </article>
+
+        <article class="stream" data-kind="core">
+          <header><h3>3. Assignment And Routing</h3><span class="tag core">Core System</span></header>
+          <p>Move beyond manual agent choice with a small routing layer that respects role, availability, capability, policy, and blocked vendors.</p>
+          <ul>
+            <li>Add role-to-agent routing config and capability registry.</li>
+            <li>Route by task role, tool profile, model availability, and active workload.</li>
+            <li>Preserve manager subtask parentage and dependency blocking.</li>
+            <li>Add basic spawn caps per initiative, parent task, and agent.</li>
+          </ul>
+        </article>
+
+        <article class="stream" data-kind="must core">
+          <header><h3>4. Web UI Operator Controls</h3><span class="tag must">Launch Critical</span></header>
+          <p>Make the dashboard the primary control plane rather than a monitor that requires CLI fallback for ordinary work.</p>
+          <ul>
+            <li>Add task detail panel with event timeline and artifact viewer.</li>
+            <li>Add retry, cancel, close, approve, reject, and request revision controls.</li>
+            <li>Expand configuration UI for adapter enablement, routing, and health.</li>
+            <li>Keep unimplemented surfaces visibly disabled and honest.</li>
+          </ul>
+        </article>
+
+        <article class="stream" data-kind="core ops">
+          <header><h3>5. Token, Cost, And Quota Control</h3><span class="tag core">Core System</span></header>
+          <p>Build on current allocation telemetry and add real usage where adapters expose it.</p>
+          <ul>
+            <li>Distinguish allocated tokens from reported actual usage.</li>
+            <li>Record task usage events with provider, model, input, output, total tokens, and estimated cost.</li>
+            <li>Add warning and hard-stop behavior for task, initiative, daily, and monthly budgets.</li>
+            <li>Show budget pressure before task launch.</li>
+          </ul>
+        </article>
+
+        <article class="stream" data-kind="ops">
+          <header><h3>6. Launch Operations</h3><span class="tag ops">Operations</span></header>
+          <p>Make the system maintainable as a live intranet service.</p>
+          <ul>
+            <li>Expand health checks for daemon, ledger, projection, adapters, and service age.</li>
+            <li>Add backup and restore scripts for config, ledgers, database, and runtime artifacts.</li>
+            <li>Document log rotation, systemd recovery, and common failure diagnosis.</li>
+            <li>Run a launch rehearsal and record results.</li>
+          </ul>
+        </article>
+      </div>
+    </section>
+
+    <section id="sprints">
+      <h2>Proposed Sprints</h2>
+      <div class="timeline">
+        <article class="sprint">
+          <h3>Sprint 1: State And Detail</h3>
+          <p class="muted">Give every later feature a stable state model.</p>
+          <ol>
+            <li>SQLite projection from JSONL.</li>
+            <li>Startup reconciliation.</li>
+            <li>Task detail API.</li>
+            <li>Task detail panel.</li>
+            <li>Retry, cancel, close CLI/API skeleton.</li>
+          </ol>
+        </article>
+        <article class="sprint">
+          <h3>Sprint 2: Execution Plane</h3>
+          <p class="muted">Make useful work happen through adapters.</p>
+          <ol>
+            <li>Adapter contract.</li>
+            <li>Codex adapter hardening.</li>
+            <li>Claude or Gemini adapter path.</li>
+            <li>Artifact and result viewer.</li>
+            <li>Capability registry.</li>
+          </ol>
+        </article>
+        <article class="sprint">
+          <h3>Sprint 3: Routing And Gates</h3>
+          <p class="muted">Add managed collaboration controls.</p>
+          <ol>
+            <li>Role routing config.</li>
+            <li>Capability-aware assignment.</li>
+            <li>Review gate controls.</li>
+            <li>UI retry, cancel, close.</li>
+            <li>Spawn and capacity counters.</li>
+          </ol>
+        </article>
+        <article class="sprint">
+          <h3>Sprint 4: Quotas And Operations</h3>
+          <p class="muted">Prepare for regular use.</p>
+          <ol>
+            <li>Actual usage events where available.</li>
+            <li>Budget enforcement.</li>
+            <li>Health, backup, restore tooling.</li>
+            <li>Operator runbook.</li>
+            <li>Launch rehearsal.</li>
+          </ol>
+        </article>
+      </div>
+    </section>
+
+    <section id="architecture">
+      <h2>Target Architecture For Phase 1</h2>
+      <svg class="flow" viewBox="0 0 1040 320" role="img" aria-label="Detailed Phase 1 architecture diagram">
+        <defs>
+          <marker id="arrow2" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M 0 0 L 10 5 L 0 10 z" fill="#2563a8"></path>
+          </marker>
+          <style>
+            .node { fill: #fff; stroke: #b9c3cc; stroke-width: 1.5; }
+            .blue { fill: #e7f0fa; stroke: #2563a8; }
+            .green { fill: #e7f5ee; stroke: #1f7a5a; }
+            .amber { fill: #fff4db; stroke: #a16207; }
+            .label { fill: #1f2933; font: 700 15px system-ui, sans-serif; }
+            .small { fill: #64717d; font: 12px system-ui, sans-serif; }
+            .line { stroke: #2563a8; stroke-width: 2; fill: none; marker-end: url(#arrow2); }
+            .audit { stroke: #64717d; stroke-width: 2; fill: none; stroke-dasharray: 5 5; }
+          </style>
+        </defs>
+        <rect class="node blue" x="20" y="30" width="140" height="64" rx="6"></rect>
+        <text class="label" x="90" y="56" text-anchor="middle">Operator UI</text>
+        <text class="small" x="90" y="76" text-anchor="middle">web + CLI</text>
+
+        <rect class="node" x="210" y="30" width="150" height="64" rx="6"></rect>
+        <text class="label" x="285" y="56" text-anchor="middle">wt-roomd</text>
+        <text class="small" x="285" y="76" text-anchor="middle">API + SSE</text>
+
+        <rect class="node green" x="410" y="20" width="150" height="50" rx="6"></rect>
+        <text class="label" x="485" y="50" text-anchor="middle">JSONL Audit</text>
+        <rect class="node green" x="410" y="88" width="150" height="50" rx="6"></rect>
+        <text class="label" x="485" y="118" text-anchor="middle">SQLite State</text>
+
+        <rect class="node amber" x="610" y="30" width="150" height="64" rx="6"></rect>
+        <text class="label" x="685" y="56" text-anchor="middle">Router</text>
+        <text class="small" x="685" y="76" text-anchor="middle">role + capability</text>
+
+        <rect class="node" x="830" y="18" width="170" height="52" rx="6"></rect>
+        <text class="label" x="915" y="49" text-anchor="middle">Codex Adapter</text>
+        <rect class="node" x="830" y="88" width="170" height="52" rx="6"></rect>
+        <text class="label" x="915" y="119" text-anchor="middle">Claude Adapter</text>
+        <rect class="node" x="830" y="158" width="170" height="52" rx="6"></rect>
+        <text class="label" x="915" y="189" text-anchor="middle">Gemini Adapter</text>
+
+        <rect class="node blue" x="300" y="210" width="180" height="64" rx="6"></rect>
+        <text class="label" x="390" y="236" text-anchor="middle">Task Detail</text>
+        <text class="small" x="390" y="256" text-anchor="middle">events + artifacts</text>
+        <rect class="node amber" x="560" y="210" width="180" height="64" rx="6"></rect>
+        <text class="label" x="650" y="236" text-anchor="middle">Review Gate</text>
+        <text class="small" x="650" y="256" text-anchor="middle">approve + retry</text>
+
+        <path class="line" d="M160 62 H206"></path>
+        <path class="line" d="M360 62 H406"></path>
+        <path class="line" d="M560 62 H606"></path>
+        <path class="line" d="M760 62 C790 62 798 44 826 44"></path>
+        <path class="line" d="M760 70 C790 80 798 110 826 114"></path>
+        <path class="line" d="M760 80 C790 100 798 178 826 184"></path>
+        <path class="line" d="M485 138 C485 180 432 190 402 207"></path>
+        <path class="line" d="M480 242 H556"></path>
+        <path class="line" d="M650 210 C650 160 710 126 830 114"></path>
+        <path class="audit" d="M915 210 C915 285 500 300 285 96"></path>
+        <text class="small" x="690" y="298">adapter manifests, usage, and results append back to audit/state</text>
+      </svg>
+      <p class="muted">Phase 1 should keep the Phase 0 simplicity where it helps: append-only audit first, explicit adapters, and no hidden autonomous execution outside the task policy.</p>
+    </section>
+
+    <section id="risks">
+      <h2>Risks And Controls</h2>
+      <table>
+        <thead><tr><th>Risk</th><th>Control</th><th>Owner Bias</th></tr></thead>
+        <tbody>
+          <tr><td>Adapters become unsafe command runners.</td><td>Per-task workspaces, explicit tool profiles, timeouts, output limits, and command metadata in the ledger.</td><td>Backend/framework</td></tr>
+          <tr><td>UI appears more capable than the backend.</td><td>Only enable controls backed by APIs; keep future controls disabled and labeled.</td><td>Dashboard</td></tr>
+          <tr><td>Task state diverges between JSONL and SQLite.</td><td>Treat JSONL as audit source, projection as rebuildable query layer, and test reconciliation.</td><td>Runtime</td></tr>
+          <tr><td>Model routing picks unavailable harnesses.</td><td>Capability registry plus live harness checks before assignment.</td><td>Integration review</td></tr>
+          <tr><td>Token spend surprises the operator.</td><td>Separate allocation from actual usage, warn early, and enforce budget hard stops.</td><td>Operations</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section id="demo">
+      <h2>Phase 1 Demo Script</h2>
+      <p>Use this as the acceptance demonstration at the end of the phase.</p>
+      <table>
+        <thead><tr><th>Step</th><th>Expected Evidence</th></tr></thead>
+        <tbody>
+          <tr><td>Create initiative from web console.</td><td>Task package appears in task list and task detail.</td></tr>
+          <tr><td>Route task to manager or implementation role.</td><td>Router selects an available model-backed agent with matching capability.</td></tr>
+          <tr><td>Adapter runs in workspace.</td><td>Task event changes to running; artifact manifest records workspace and outputs.</td></tr>
+          <tr><td>Result returns.</td><td>Task detail shows result summary, files, logs, and usage where available.</td></tr>
+          <tr><td>Operator reviews result.</td><td>Approve closes task; reject creates revision or retry path.</td></tr>
+          <tr><td>Restart services.</td><td>Same task state reloads from audit/projection without manual repair.</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <footer>
+      Generated 2026-05-18 UTC. Keep this plan aligned with <code>docs/launch/phase0-launch-readiness-2026-05-18.md</code>, <code>docs/ui/phase0-console-scaffold.md</code>, and the active task schema docs.
+    </footer>
+  </main>
+  <script>
+    const buttons = document.querySelectorAll("[data-filter]");
+    const streams = document.querySelectorAll(".stream");
+    buttons.forEach(button => {
+      button.addEventListener("click", () => {
+        const filter = button.dataset.filter;
+        buttons.forEach(item => item.classList.toggle("active", item === button));
+        streams.forEach(stream => {
+          const visible = filter === "all" || stream.dataset.kind.split(" ").includes(filter);
+          stream.classList.toggle("hidden", !visible);
+        });
+      });
+    });
+  </script>
+</body>
+</html>

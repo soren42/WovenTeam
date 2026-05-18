@@ -227,6 +227,7 @@ int wtTaskAppendBlockedDependents(const char *ledgerPath, const char *blockedTas
         if (taskIndex < 0 || strcmp(tasks[taskIndex].status, "complete") == 0 ||
             strcmp(tasks[taskIndex].status, "failed") == 0 ||
             strcmp(tasks[taskIndex].status, "cancelled") == 0 ||
+            strcmp(tasks[taskIndex].status, "closed") == 0 ||
             strcmp(tasks[taskIndex].status, "blocked") == 0) {
             continue;
         }

@@ -10,9 +10,10 @@ Solarian WovenTeam Multi-Agentic AI Stack
 
 ## Phase 0 Native Room
 
-The current Phase 0 spike is a native GNU/Linux C communication room. It avoids
-Docker, Redis, SQLite, Node, Python, PHP, and framework runtimes in the core.
-The durable system of record is one append-only JSON Lines file:
+The current Phase 0/1 native room is a GNU/Linux C communication and task
+control plane. It avoids Docker, Redis, Node, Python, PHP, and framework
+runtimes in the core. The durable audit source remains one append-only JSON
+Lines file:
 
 ```text
 data/phase0-room.jsonl
@@ -74,7 +75,8 @@ Check host harness visibility against active model profiles:
 The first structured orchestration contract is documented as JSON Schema in
 `docs/api/task-package-v0.1.json`. Runtime task packages are expected to land in
 the append-only `data/task-packages.jsonl` ledger, described in
-`docs/api/task-ledger-v0.1.md`, until the project needs a queryable store.
+`docs/api/task-ledger-v0.1.md`. Phase 1 adds a rebuildable SQLite projection at
+`data/task-projection.sqlite` for task summaries and task detail queries.
 
 Create and inspect Phase 0 task packages through the room daemon:
 
@@ -84,6 +86,9 @@ Create and inspect Phase 0 task packages through the room daemon:
 ./bin/wt-task show task_example_001
 ./bin/wt-task assign task_example_001 --agent gemini
 ./bin/wt-task update-status task_example_001 --status blocked --message "Waiting on operator input."
+./bin/wt-task retry task_example_001
+./bin/wt-task cancel task_example_001
+./bin/wt-task close task_example_001
 ```
 
 The web console token panel is backed by `GET /api/tokens`. Phase 0 reports

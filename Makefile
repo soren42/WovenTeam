@@ -2,6 +2,8 @@ CC ?= cc
 CFLAGS ?= -std=c11 -O2 -Wall -Wextra -Wpedantic
 CFLAGS += -D_POSIX_C_SOURCE=200809L -Iinclude
 LDFLAGS ?=
+LDLIBS ?=
+SQLITE_LIBS ?= -lsqlite3
 
 ifeq ($(DEBUG),1)
   CFLAGS := $(filter-out -O2,$(CFLAGS))
@@ -18,7 +20,7 @@ COMMON_OBJS := \
 	$(BUILD_DIR)/wt_task_store.o \
 	$(BUILD_DIR)/wt_time.o
 
-.PHONY: all clean run-roomd run-demo harness-check test-smoke test-harness-check test-task-assignment test-codex-adapter test-manager-subtasks test-token-config test install-roomd-service install-agent-services
+.PHONY: all clean run-roomd run-demo harness-check test-smoke test-harness-check test-task-assignment test-codex-adapter test-manager-subtasks test-token-config test-task-projection test install-roomd-service install-agent-services
 
 all: $(BUILD_DIR)/wt-roomd $(BUILD_DIR)/wt-say $(BUILD_DIR)/wt-tail $(BUILD_DIR)/wt-agent
 
@@ -28,17 +30,17 @@ $(BUILD_DIR):
 $(BUILD_DIR)/%.o: src/%.c | $(BUILD_DIR)
 	$(CC) $(CFLAGS) -c -o $@ $<
 
-$(BUILD_DIR)/wt-roomd: $(COMMON_OBJS) $(BUILD_DIR)/wt_http.o $(BUILD_DIR)/wt_roomd.o
-	$(CC) $(LDFLAGS) -o $@ $^
+$(BUILD_DIR)/wt-roomd: $(COMMON_OBJS) $(BUILD_DIR)/wt_task_projection.o $(BUILD_DIR)/wt_http.o $(BUILD_DIR)/wt_roomd.o
+	$(CC) $(LDFLAGS) -o $@ $^ $(SQLITE_LIBS) $(LDLIBS)
 
 $(BUILD_DIR)/wt-say: $(COMMON_OBJS) $(BUILD_DIR)/wt_say.o
-	$(CC) $(LDFLAGS) -o $@ $^
+	$(CC) $(LDFLAGS) -o $@ $^ $(LDLIBS)
 
 $(BUILD_DIR)/wt-tail: $(COMMON_OBJS) $(BUILD_DIR)/wt_tail.o
-	$(CC) $(LDFLAGS) -o $@ $^
+	$(CC) $(LDFLAGS) -o $@ $^ $(LDLIBS)
 
 $(BUILD_DIR)/wt-agent: $(COMMON_OBJS) $(BUILD_DIR)/wt_agent.o
-	$(CC) $(LDFLAGS) -o $@ $^
+	$(CC) $(LDFLAGS) -o $@ $^ $(LDLIBS)
 
 run-roomd: $(BUILD_DIR)/wt-roomd
 	./$(BUILD_DIR)/wt-roomd --config config/woventeam-phase0.conf
@@ -72,7 +74,10 @@ test-manager-subtasks: all
 test-token-config: all
 	./tests/integration/wt-token-config.sh
 
-test: test-smoke test-harness-check test-task-assignment test-codex-adapter test-manager-subtasks test-token-config
+test-task-projection: all
+	./tests/integration/wt-task-projection.sh
+
+test: test-smoke test-harness-check test-task-assignment test-codex-adapter test-manager-subtasks test-token-config test-task-projection
 
 install-roomd-service: all
 	sudo install -m 0644 deploy/systemd/wt-roomd.service /etc/systemd/system/

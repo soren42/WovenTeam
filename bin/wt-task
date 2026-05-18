@@ -12,6 +12,10 @@ Usage:
   wt-task show TASK_ID
   wt-task assign TASK_ID --agent AGENT [--status assigned]
   wt-task update-status TASK_ID --status STATUS [--message TEXT]
+  wt-task retry TASK_ID [--message TEXT]
+  wt-task cancel TASK_ID [--message TEXT]
+  wt-task close TASK_ID [--message TEXT]
+  wt-task reopen TASK_ID [--message TEXT]
 
 Environment:
   WT_ROOM_URL  wt-roomd base URL, default http://127.0.0.1:8787
@@ -184,21 +188,8 @@ cmd_request() {
 }
 
 cmd_list() {
-    http_get "/api/tasks" | jq -r '
-      reduce .[] as $row ({};
-        if $row.schema == "woventeam.task_package.v0.1" then
-          .[$row.taskId] = {
-            taskId:$row.taskId,
-            status:($row.status // "queued"),
-            assignedAgent:($row.assignedAgent // "all"),
-            assignedRole:($row.assignedRole // ""),
-            title:($row.title // $row.task.title // "")
-          }
-        elif $row.schema == "woventeam.task_event.v0.1" and .[$row.taskId] then
-          .[$row.taskId].status = ($row.status // .[$row.taskId].status) |
-          .[$row.taskId].assignedAgent = ($row.assignedAgent // .[$row.taskId].assignedAgent)
-        else . end
-      ) | to_entries[] | [.value.taskId, .value.status, .value.assignedAgent, .value.assignedRole, .value.title] | @tsv'
+    http_get "/api/task-summaries" | jq -r '
+      .[] | [.taskId, .status, .assignedAgent, .assignedRole, .eventCount, .title] | @tsv'
 }
 
 cmd_show() {
@@ -207,7 +198,35 @@ cmd_show() {
         echo "wt-task show: TASK_ID is required" >&2
         exit 2
     fi
-    http_get "/api/tasks" | jq --arg taskId "$task_id" '[.[] | select(.taskId == $taskId)]'
+    http_get "/api/task-detail?taskId=$task_id" | jq .
+}
+
+cmd_lifecycle() {
+    local status="$1" default_message="$2" task_id="${3:-}" message=""
+    shift || true
+    shift || true
+    shift || true
+    message="$default_message"
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --message) message="${2:-}"; shift 2 ;;
+            *) echo "wt-task $status: unknown argument: $1" >&2; usage >&2; exit 2 ;;
+        esac
+    done
+    if [[ -z "$task_id" ]]; then
+        echo "wt-task $status: TASK_ID is required" >&2
+        exit 2
+    fi
+    local created_at json
+    created_at="$(now_ms)"
+    json="$(jq -cn \
+        --arg taskId "$task_id" \
+        --arg status "$status" \
+        --arg message "$message" \
+        --arg createdBy "ceo" \
+        --argjson createdAtUnixMs "$created_at" \
+        '{schema:"woventeam.task_event.v0.1",taskId:$taskId,eventType:"lifecycle",status:$status,message:$message,createdBy:$createdBy,createdAtUnixMs:$createdAtUnixMs}')"
+    http_post_json "/api/task-event" "$json"
 }
 
 cmd_assign() {
@@ -272,6 +291,10 @@ case "$cmd" in
     show) cmd_show "$@" ;;
     assign) cmd_assign "$@" ;;
     update-status) cmd_update_status "$@" ;;
+    retry) cmd_lifecycle queued "Task reopened for retry by wt-task." "$@" ;;
+    cancel) cmd_lifecycle cancelled "Task cancelled by wt-task." "$@" ;;
+    close) cmd_lifecycle closed "Task closed by wt-task." "$@" ;;
+    reopen) cmd_lifecycle queued "Task reopened by wt-task." "$@" ;;
     -h|--help|help|"") usage ;;
     *) echo "wt-task: unknown command: $cmd" >&2; usage >&2; exit 2 ;;
 esac
