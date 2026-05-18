@@ -622,6 +622,15 @@ kbd {
   color: var(--text);
 }
 
+.settings-divider {
+  border-top: 1px solid var(--edge);
+  padding-top: 10px;
+  color: var(--accent);
+  font-size: 10.5px;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
 .settings-status {
   min-height: 18px;
   margin: 0;

@@ -92,6 +92,54 @@
           <div><span>Agent poll</span><b id="configAgentPoll">--</b></div>
           <div><span>Adapter timeout</span><b id="configAdapterTimeout">--</b></div>
         </div>
+        <div class="settings-divider">Adapter execution</div>
+        <label>
+          <span>Codex adapter</span>
+          <select id="configEnableCodexAdapter">
+            <option value="0">disabled</option>
+            <option value="1">enabled</option>
+          </select>
+        </label>
+        <label>
+          <span>Claude adapter</span>
+          <select id="configEnableClaudeAdapter">
+            <option value="0">disabled</option>
+            <option value="1">enabled</option>
+          </select>
+        </label>
+        <label>
+          <span>Gemini adapter</span>
+          <select id="configEnableGeminiAdapter">
+            <option value="0">disabled</option>
+            <option value="1">enabled</option>
+          </select>
+        </label>
+        <label>
+          <span>Claude mode</span>
+          <select id="configClaudeMode">
+            <option value="stub">stub</option>
+            <option value="adapter">adapter</option>
+          </select>
+        </label>
+        <label>
+          <span>Gemini mode</span>
+          <select id="configGeminiMode">
+            <option value="stub">stub</option>
+            <option value="adapter">adapter</option>
+          </select>
+        </label>
+        <label>
+          <span>Codex command</span>
+          <input id="configGptCommand">
+        </label>
+        <label>
+          <span>Claude command</span>
+          <input id="configClaudeCommand">
+        </label>
+        <label>
+          <span>Gemini command</span>
+          <input id="configGeminiCommand">
+        </label>
         <button type="submit" class="execute-button">SAVE CONFIG</button>
         <p id="settingsStatus" class="settings-status">Config not loaded yet.</p>
       </form>

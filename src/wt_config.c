@@ -43,6 +43,8 @@ void wtConfigInitDefaults(WtConfig *config) {
     config->adapterMaxOutputBytes = 1048576;
     config->fsyncEachMessage = false;
     config->enableCodexAdapter = false;
+    config->enableClaudeAdapter = false;
+    config->enableGeminiAdapter = false;
     config->tokenTelemetryEnabled = true;
     config->tokenDailyBudget = 2000000;
     config->tokenMonthlyBudget = 50000000;
@@ -82,6 +84,10 @@ int wtConfigSetValue(WtConfig *config, const char *key, const char *value) {
         config->fsyncEachMessage = atoi(value) != 0;
     } else if (strcmp(key, "enableCodexAdapter") == 0) {
         config->enableCodexAdapter = atoi(value) != 0;
+    } else if (strcmp(key, "enableClaudeAdapter") == 0) {
+        config->enableClaudeAdapter = atoi(value) != 0;
+    } else if (strcmp(key, "enableGeminiAdapter") == 0) {
+        config->enableGeminiAdapter = atoi(value) != 0;
     } else if (strcmp(key, "tokenTelemetryEnabled") == 0) {
         config->tokenTelemetryEnabled = atoi(value) != 0;
     } else if (strcmp(key, "tokenDailyBudget") == 0) {
@@ -157,6 +163,8 @@ int wtConfigWriteFile(const WtConfig *config, const char *path) {
         "adapterMaxOutputBytes=%d\n"
         "fsyncEachMessage=%d\n"
         "enableCodexAdapter=%d\n"
+        "enableClaudeAdapter=%d\n"
+        "enableGeminiAdapter=%d\n"
         "tokenTelemetryEnabled=%d\n"
         "tokenDailyBudget=%ld\n"
         "tokenMonthlyBudget=%ld\n"
@@ -181,6 +189,8 @@ int wtConfigWriteFile(const WtConfig *config, const char *path) {
         config->adapterMaxOutputBytes,
         config->fsyncEachMessage ? 1 : 0,
         config->enableCodexAdapter ? 1 : 0,
+        config->enableClaudeAdapter ? 1 : 0,
+        config->enableGeminiAdapter ? 1 : 0,
         config->tokenTelemetryEnabled ? 1 : 0,
         config->tokenDailyBudget,
         config->tokenMonthlyBudget,
@@ -210,6 +220,8 @@ void wtConfigApplyEnvironment(WtConfig *config) {
     if ((value = getenv("WT_ADAPTER_MAX_OUTPUT_BYTES"))) wtConfigSetValue(config, "adapterMaxOutputBytes", value);
     if ((value = getenv("WT_FSYNC_EACH_MESSAGE"))) wtConfigSetValue(config, "fsyncEachMessage", value);
     if ((value = getenv("WT_ENABLE_CODEX_ADAPTER"))) wtConfigSetValue(config, "enableCodexAdapter", value);
+    if ((value = getenv("WT_ENABLE_CLAUDE_ADAPTER"))) wtConfigSetValue(config, "enableClaudeAdapter", value);
+    if ((value = getenv("WT_ENABLE_GEMINI_ADAPTER"))) wtConfigSetValue(config, "enableGeminiAdapter", value);
     if ((value = getenv("WT_TOKEN_TELEMETRY_ENABLED"))) wtConfigSetValue(config, "tokenTelemetryEnabled", value);
     if ((value = getenv("WT_TOKEN_DAILY_BUDGET"))) wtConfigSetValue(config, "tokenDailyBudget", value);
     if ((value = getenv("WT_TOKEN_MONTHLY_BUDGET"))) wtConfigSetValue(config, "tokenMonthlyBudget", value);
@@ -219,4 +231,7 @@ void wtConfigApplyEnvironment(WtConfig *config) {
     if ((value = getenv("WT_CLAUDE_COMMAND"))) wtConfigSetValue(config, "claudeCommand", value);
     if ((value = getenv("WT_GPT_COMMAND"))) wtConfigSetValue(config, "gptCommand", value);
     if ((value = getenv("WT_GEMINI_COMMAND"))) wtConfigSetValue(config, "geminiCommand", value);
+    if ((value = getenv("WT_CLAUDE_MODE"))) wtConfigSetValue(config, "claudeMode", value);
+    if ((value = getenv("WT_CHATGPT_MODE"))) wtConfigSetValue(config, "chatgptMode", value);
+    if ((value = getenv("WT_GEMINI_MODE"))) wtConfigSetValue(config, "geminiMode", value);
 }

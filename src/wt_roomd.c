@@ -200,7 +200,24 @@ static int roleMaySpawn(const char *requestingRole, const char *requestedRole) {
 }
 
 static int sendConfigJson(int clientFd, const WtConfig *config) {
-    char body[1024];
+    char body[4096];
+    char configPath[WT_PATH_SIZE * 2];
+    char claudeMode[WT_NAME_SIZE * 2];
+    char chatgptMode[WT_NAME_SIZE * 2];
+    char geminiMode[WT_NAME_SIZE * 2];
+    char claudeCommand[WT_PATH_SIZE * 2];
+    char gptCommand[WT_PATH_SIZE * 2];
+    char geminiCommand[WT_PATH_SIZE * 2];
+    if (wtJsonEscape(config->configPath, configPath, sizeof(configPath)) != 0 ||
+        wtJsonEscape(config->claudeMode, claudeMode, sizeof(claudeMode)) != 0 ||
+        wtJsonEscape(config->chatgptMode, chatgptMode, sizeof(chatgptMode)) != 0 ||
+        wtJsonEscape(config->geminiMode, geminiMode, sizeof(geminiMode)) != 0 ||
+        wtJsonEscape(config->claudeCommand, claudeCommand, sizeof(claudeCommand)) != 0 ||
+        wtJsonEscape(config->gptCommand, gptCommand, sizeof(gptCommand)) != 0 ||
+        wtJsonEscape(config->geminiCommand, geminiCommand, sizeof(geminiCommand)) != 0) {
+        return wtHttpSendText(clientFd, 500, "Internal Server Error", "application/json",
+                              "{\"ok\":false,\"error\":\"config serialization failed\"}\n");
+    }
     snprintf(body, sizeof(body),
              "{\"ok\":true,\"configPath\":\"%s\","
              "\"tokenTelemetryEnabled\":%s,"
@@ -211,8 +228,17 @@ static int sendConfigJson(int clientFd, const WtConfig *config) {
              "\"contextMessageCount\":%d,"
              "\"agentPollMilliseconds\":%d,"
              "\"adapterTimeoutSeconds\":%d,"
-             "\"adapterMaxOutputBytes\":%d}\n",
-             config->configPath,
+             "\"adapterMaxOutputBytes\":%d,"
+             "\"enableCodexAdapter\":%s,"
+             "\"enableClaudeAdapter\":%s,"
+             "\"enableGeminiAdapter\":%s,"
+             "\"claudeMode\":\"%s\","
+             "\"chatgptMode\":\"%s\","
+             "\"geminiMode\":\"%s\","
+             "\"claudeCommand\":\"%s\","
+             "\"gptCommand\":\"%s\","
+             "\"geminiCommand\":\"%s\"}\n",
+             configPath,
              config->tokenTelemetryEnabled ? "true" : "false",
              config->tokenDailyBudget,
              config->tokenMonthlyBudget,
@@ -221,7 +247,100 @@ static int sendConfigJson(int clientFd, const WtConfig *config) {
              config->contextMessageCount,
              config->agentPollMilliseconds,
              config->adapterTimeoutSeconds,
-             config->adapterMaxOutputBytes);
+             config->adapterMaxOutputBytes,
+             config->enableCodexAdapter ? "true" : "false",
+             config->enableClaudeAdapter ? "true" : "false",
+             config->enableGeminiAdapter ? "true" : "false",
+             claudeMode,
+             chatgptMode,
+             geminiMode,
+             claudeCommand,
+             gptCommand,
+             geminiCommand);
+    return wtHttpSendText(clientFd, 200, "OK", "application/json; charset=utf-8", body);
+}
+
+static int resolveCommandPath(const char *command, char *resolved, size_t resolvedSize) {
+    if (!command || command[0] == '\0') {
+        snprintf(resolved, resolvedSize, "%s", "");
+        return 0;
+    }
+    if (strchr(command, '/')) {
+        snprintf(resolved, resolvedSize, "%s", command);
+        return access(command, X_OK) == 0;
+    }
+    const char *path = getenv("PATH");
+    if (!path) {
+        path = "/usr/local/bin:/usr/bin:/bin";
+    }
+    char copy[1024];
+    snprintf(copy, sizeof(copy), "%s", path);
+    char *saveptr = NULL;
+    for (char *dir = strtok_r(copy, ":", &saveptr); dir; dir = strtok_r(NULL, ":", &saveptr)) {
+        char candidate[WT_PATH_SIZE];
+        snprintf(candidate, sizeof(candidate), "%s/%s", dir[0] ? dir : ".", command);
+        if (access(candidate, X_OK) == 0) {
+            snprintf(resolved, resolvedSize, "%s", candidate);
+            return 1;
+        }
+    }
+    snprintf(resolved, resolvedSize, "%s", "");
+    return 0;
+}
+
+static int sendAdaptersJson(int clientFd, const WtConfig *config) {
+    char body[8192];
+    char codexPath[WT_PATH_SIZE];
+    char claudePath[WT_PATH_SIZE];
+    char geminiPath[WT_PATH_SIZE];
+    int codexLaunchable = resolveCommandPath(config->gptCommand, codexPath, sizeof(codexPath));
+    int claudeLaunchable = resolveCommandPath(config->claudeCommand, claudePath, sizeof(claudePath));
+    int geminiLaunchable = resolveCommandPath(config->geminiCommand, geminiPath, sizeof(geminiPath));
+    char chatgptMode[WT_NAME_SIZE * 2];
+    char claudeMode[WT_NAME_SIZE * 2];
+    char geminiMode[WT_NAME_SIZE * 2];
+    char gptCommand[WT_PATH_SIZE * 2];
+    char claudeCommand[WT_PATH_SIZE * 2];
+    char geminiCommand[WT_PATH_SIZE * 2];
+    char codexCommandPath[WT_PATH_SIZE * 2];
+    char claudeCommandPath[WT_PATH_SIZE * 2];
+    char geminiCommandPath[WT_PATH_SIZE * 2];
+    if (wtJsonEscape(config->chatgptMode, chatgptMode, sizeof(chatgptMode)) != 0 ||
+        wtJsonEscape(config->claudeMode, claudeMode, sizeof(claudeMode)) != 0 ||
+        wtJsonEscape(config->geminiMode, geminiMode, sizeof(geminiMode)) != 0 ||
+        wtJsonEscape(config->gptCommand, gptCommand, sizeof(gptCommand)) != 0 ||
+        wtJsonEscape(config->claudeCommand, claudeCommand, sizeof(claudeCommand)) != 0 ||
+        wtJsonEscape(config->geminiCommand, geminiCommand, sizeof(geminiCommand)) != 0 ||
+        wtJsonEscape(codexPath, codexCommandPath, sizeof(codexCommandPath)) != 0 ||
+        wtJsonEscape(claudePath, claudeCommandPath, sizeof(claudeCommandPath)) != 0 ||
+        wtJsonEscape(geminiPath, geminiCommandPath, sizeof(geminiCommandPath)) != 0) {
+        return wtHttpSendText(clientFd, 500, "Internal Server Error", "application/json",
+                              "{\"ok\":false,\"error\":\"adapter serialization failed\"}\n");
+    }
+    snprintf(body, sizeof(body),
+             "{\"ok\":true,\"adapters\":["
+             "{\"agent\":\"chatgpt\",\"adapter\":\"codex\",\"enabled\":%s,\"mode\":\"%s\","
+             "\"command\":\"%s\",\"commandPath\":\"%s\",\"state\":\"%s\",\"profiles\":[\"repo_branch\",\"test_local\"]},"
+             "{\"agent\":\"claude\",\"adapter\":\"claude\",\"enabled\":%s,\"mode\":\"%s\","
+             "\"command\":\"%s\",\"commandPath\":\"%s\",\"state\":\"%s\",\"profiles\":[\"observe\",\"ops_read\"]},"
+             "{\"agent\":\"gemini\",\"adapter\":\"gemini\",\"enabled\":%s,\"mode\":\"%s\","
+             "\"command\":\"%s\",\"commandPath\":\"%s\",\"state\":\"%s\",\"profiles\":[\"observe\",\"ops_read\"]}"
+             "]}\n",
+             config->enableCodexAdapter ? "true" : "false",
+             chatgptMode,
+             gptCommand,
+             codexCommandPath,
+             codexLaunchable ? "launchable" : "missing",
+             config->enableClaudeAdapter ? "true" : "false",
+             claudeMode,
+             claudeCommand,
+             claudeCommandPath,
+             claudeLaunchable ? "launchable" : "missing",
+             config->enableGeminiAdapter ? "true" : "false",
+             geminiMode,
+             geminiCommand,
+             geminiCommandPath,
+             geminiLaunchable ? "launchable" : "missing");
     return wtHttpSendText(clientFd, 200, "OK", "application/json; charset=utf-8", body);
 }
 
@@ -253,6 +372,21 @@ static int handlePostConfig(int clientFd, WtConfig *config, const char *request)
     if (wtJsonReadLong(body, "tokenCostPerMillionCents", &value) == 0) {
         config->tokenCostPerMillionCents = value < 0 ? 0 : (int)value;
     }
+    if (wtJsonReadLong(body, "enableCodexAdapter", &value) == 0) {
+        config->enableCodexAdapter = value != 0;
+    }
+    if (wtJsonReadLong(body, "enableClaudeAdapter", &value) == 0) {
+        config->enableClaudeAdapter = value != 0;
+    }
+    if (wtJsonReadLong(body, "enableGeminiAdapter", &value) == 0) {
+        config->enableGeminiAdapter = value != 0;
+    }
+    wtJsonReadString(body, "claudeMode", config->claudeMode, sizeof(config->claudeMode));
+    wtJsonReadString(body, "chatgptMode", config->chatgptMode, sizeof(config->chatgptMode));
+    wtJsonReadString(body, "geminiMode", config->geminiMode, sizeof(config->geminiMode));
+    wtJsonReadString(body, "claudeCommand", config->claudeCommand, sizeof(config->claudeCommand));
+    wtJsonReadString(body, "gptCommand", config->gptCommand, sizeof(config->gptCommand));
+    wtJsonReadString(body, "geminiCommand", config->geminiCommand, sizeof(config->geminiCommand));
     if (wtConfigWriteFile(config, config->configPath) != 0) {
         return wtHttpSendText(clientFd, 500, "Internal Server Error", "application/json",
                               "{\"ok\":false,\"error\":\"config write failed\"}\n");
@@ -666,6 +800,8 @@ static void handleClient(int clientFd, WtConfig *config) {
         sendTokenJson(clientFd, config);
     } else if (strcmp(method, "GET") == 0 && strcmp(path, "/api/config") == 0) {
         sendConfigJson(clientFd, config);
+    } else if (strcmp(method, "GET") == 0 && strcmp(path, "/api/adapters") == 0) {
+        sendAdaptersJson(clientFd, config);
     } else if (strcmp(method, "POST") == 0 && strcmp(path, "/api/message") == 0) {
         handlePostMessage(clientFd, config, request);
     } else if (strcmp(method, "POST") == 0 && strcmp(path, "/api/task-package") == 0) {

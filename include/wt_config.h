@@ -27,6 +27,8 @@ typedef struct {
     int adapterMaxOutputBytes;
     bool fsyncEachMessage;
     bool enableCodexAdapter;
+    bool enableClaudeAdapter;
+    bool enableGeminiAdapter;
     bool tokenTelemetryEnabled;
     long tokenDailyBudget;
     long tokenMonthlyBudget;
