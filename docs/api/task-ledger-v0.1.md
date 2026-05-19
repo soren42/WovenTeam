@@ -99,6 +99,7 @@ package, and emits `task.assign`. The child package includes `parentTaskId`,
 - `GET /api/tasks`
 - `GET /api/task-summaries`
 - `GET /api/task-detail?taskId=...`
+- `GET /api/task-artifacts?taskId=...`
 - `GET /api/capacity`
 - `GET /api/tokens`
 - `GET /api/config`
@@ -115,8 +116,10 @@ SQLite projection configured by `taskProjectionDbPath`. `wt-roomd` rebuilds the
 projection at startup and before projected reads. `GET /api/task-summaries`
 returns the current task rows from that projection, and
 `GET /api/task-detail?taskId=...` returns one task plus its projected event
-timeline. If the SQLite file is lost, it can be deleted and regenerated from
-`data/task-packages.jsonl`.
+timeline. `GET /api/task-artifacts?taskId=...` exposes the adapter workspace
+file list and previews of `result.md`, `stdout.log`, `stderr.log`, and
+`manifest.json`. If the SQLite file is lost, it can be deleted and regenerated
+from `data/task-packages.jsonl`.
 
 `GET /api/tokens` reports token allocation from task package budgets and actual
 reported usage from `woventeam.task_usage.v0.1` records. Allocation sums

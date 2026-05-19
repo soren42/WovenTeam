@@ -396,6 +396,42 @@ async function loadTaskDetail(taskId) {
   const gateCount = detail.events.filter(event => event.eventType === "review_gate").length;
   document.querySelector("#gateBadge").textContent = String(gateCount);
   document.querySelector("#gateMeta").textContent = gateCount ? `${gateCount} gate event(s) on selected task` : "No gate decision recorded for selected task.";
+  await loadTaskArtifacts(taskId);
+}
+
+async function loadTaskArtifacts(taskId) {
+  const response = await fetch(`/api/task-artifacts?taskId=${encodeURIComponent(taskId)}`);
+  if (!response.ok) return;
+  const artifacts = await response.json();
+  renderArtifacts(artifacts);
+}
+
+function renderArtifacts(artifacts) {
+  const head = document.querySelector("#detailArtifacts .artifact-head span");
+  const files = document.querySelector("#artifactFiles");
+  const viewer = document.querySelector("#artifactViewer");
+  files.innerHTML = "";
+  viewer.innerHTML = "";
+  if (!artifacts.exists) {
+    head.textContent = "No task workspace yet";
+    viewer.textContent = "Artifacts appear here after an adapter run creates a workspace.";
+    return;
+  }
+  head.textContent = `${artifacts.files.length} file(s) · ${artifacts.workspace}`;
+  artifacts.files.forEach(file => {
+    const chip = document.createElement("button");
+    chip.type = "button";
+    chip.textContent = `${file.name} · ${file.bytes}b`;
+    chip.addEventListener("click", () => {
+      const key = file.kind === "result" ? "resultText" :
+        file.kind === "stdout" ? "stdoutText" :
+        file.kind === "stderr" ? "stderrText" :
+        file.kind === "manifest" ? "manifestText" : "";
+      viewer.textContent = key ? artifacts[key] || "" : "File preview is not available for this artifact.";
+    });
+    files.appendChild(chip);
+  });
+  viewer.textContent = artifacts.resultText || artifacts.manifestText || artifacts.stdoutText || "Workspace exists, but no previewable artifact has content yet.";
 }
 
 async function postTaskLifecycle(status, message) {
