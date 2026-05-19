@@ -41,7 +41,11 @@ void wtConfigInitDefaults(WtConfig *config) {
     config->agentPollMilliseconds = 1000;
     config->adapterTimeoutSeconds = 1800;
     config->adapterMaxOutputBytes = 1048576;
+    config->maxActiveTasksPerAgent = 4;
+    config->maxSubtasksPerParent = 8;
+    config->maxTasksPerInitiative = 32;
     config->fsyncEachMessage = false;
+    config->roleRoutingEnabled = true;
     config->enableCodexAdapter = false;
     config->enableClaudeAdapter = false;
     config->enableGeminiAdapter = false;
@@ -80,8 +84,16 @@ int wtConfigSetValue(WtConfig *config, const char *key, const char *value) {
         config->adapterTimeoutSeconds = atoi(value);
     } else if (strcmp(key, "adapterMaxOutputBytes") == 0) {
         config->adapterMaxOutputBytes = atoi(value);
+    } else if (strcmp(key, "maxActiveTasksPerAgent") == 0) {
+        config->maxActiveTasksPerAgent = atoi(value);
+    } else if (strcmp(key, "maxSubtasksPerParent") == 0) {
+        config->maxSubtasksPerParent = atoi(value);
+    } else if (strcmp(key, "maxTasksPerInitiative") == 0) {
+        config->maxTasksPerInitiative = atoi(value);
     } else if (strcmp(key, "fsyncEachMessage") == 0) {
         config->fsyncEachMessage = atoi(value) != 0;
+    } else if (strcmp(key, "roleRoutingEnabled") == 0) {
+        config->roleRoutingEnabled = atoi(value) != 0;
     } else if (strcmp(key, "enableCodexAdapter") == 0) {
         config->enableCodexAdapter = atoi(value) != 0;
     } else if (strcmp(key, "enableClaudeAdapter") == 0) {
@@ -161,7 +173,11 @@ int wtConfigWriteFile(const WtConfig *config, const char *path) {
         "agentPollMilliseconds=%d\n"
         "adapterTimeoutSeconds=%d\n"
         "adapterMaxOutputBytes=%d\n"
+        "maxActiveTasksPerAgent=%d\n"
+        "maxSubtasksPerParent=%d\n"
+        "maxTasksPerInitiative=%d\n"
         "fsyncEachMessage=%d\n"
+        "roleRoutingEnabled=%d\n"
         "enableCodexAdapter=%d\n"
         "enableClaudeAdapter=%d\n"
         "enableGeminiAdapter=%d\n"
@@ -187,7 +203,11 @@ int wtConfigWriteFile(const WtConfig *config, const char *path) {
         config->agentPollMilliseconds,
         config->adapterTimeoutSeconds,
         config->adapterMaxOutputBytes,
+        config->maxActiveTasksPerAgent,
+        config->maxSubtasksPerParent,
+        config->maxTasksPerInitiative,
         config->fsyncEachMessage ? 1 : 0,
+        config->roleRoutingEnabled ? 1 : 0,
         config->enableCodexAdapter ? 1 : 0,
         config->enableClaudeAdapter ? 1 : 0,
         config->enableGeminiAdapter ? 1 : 0,
@@ -218,7 +238,11 @@ void wtConfigApplyEnvironment(WtConfig *config) {
     if ((value = getenv("WT_AGENT_POLL_MILLISECONDS"))) wtConfigSetValue(config, "agentPollMilliseconds", value);
     if ((value = getenv("WT_ADAPTER_TIMEOUT_SECONDS"))) wtConfigSetValue(config, "adapterTimeoutSeconds", value);
     if ((value = getenv("WT_ADAPTER_MAX_OUTPUT_BYTES"))) wtConfigSetValue(config, "adapterMaxOutputBytes", value);
+    if ((value = getenv("WT_MAX_ACTIVE_TASKS_PER_AGENT"))) wtConfigSetValue(config, "maxActiveTasksPerAgent", value);
+    if ((value = getenv("WT_MAX_SUBTASKS_PER_PARENT"))) wtConfigSetValue(config, "maxSubtasksPerParent", value);
+    if ((value = getenv("WT_MAX_TASKS_PER_INITIATIVE"))) wtConfigSetValue(config, "maxTasksPerInitiative", value);
     if ((value = getenv("WT_FSYNC_EACH_MESSAGE"))) wtConfigSetValue(config, "fsyncEachMessage", value);
+    if ((value = getenv("WT_ROLE_ROUTING_ENABLED"))) wtConfigSetValue(config, "roleRoutingEnabled", value);
     if ((value = getenv("WT_ENABLE_CODEX_ADAPTER"))) wtConfigSetValue(config, "enableCodexAdapter", value);
     if ((value = getenv("WT_ENABLE_CLAUDE_ADAPTER"))) wtConfigSetValue(config, "enableClaudeAdapter", value);
     if ((value = getenv("WT_ENABLE_GEMINI_ADAPTER"))) wtConfigSetValue(config, "enableGeminiAdapter", value);

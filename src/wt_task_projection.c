@@ -375,3 +375,116 @@ int wtTaskProjectionReadDetailJson(const char *dbPath, const char *taskId, char 
     sqlite3_close(db);
     return 0;
 }
+
+static int countActiveWhere(const char *dbPath, const char *column, const char *value) {
+    sqlite3 *db = NULL;
+    if (sqlite3_open(dbPath, &db) != SQLITE_OK) {
+        sqlite3_close(db);
+        return -1;
+    }
+    char sql[256];
+    snprintf(sql, sizeof(sql),
+             "SELECT COUNT(*) FROM tasks WHERE %s=? "
+             "AND status NOT IN ('complete','failed','cancelled','closed')",
+             column);
+    sqlite3_stmt *stmt = NULL;
+    if (sqlite3_prepare_v2(db, sql, -1, &stmt, NULL) != SQLITE_OK) {
+        sqlite3_close(db);
+        return -1;
+    }
+    bindText(stmt, 1, value);
+    int count = sqlite3_step(stmt) == SQLITE_ROW ? sqlite3_column_int(stmt, 0) : -1;
+    sqlite3_finalize(stmt);
+    sqlite3_close(db);
+    return count;
+}
+
+int wtTaskProjectionCountActiveForAgent(const char *dbPath, const char *agent) {
+    return countActiveWhere(dbPath, "assigned_agent", agent);
+}
+
+int wtTaskProjectionCountActiveForParent(const char *dbPath, const char *parentTaskId) {
+    return countActiveWhere(dbPath, "parent_task_id", parentTaskId);
+}
+
+int wtTaskProjectionCountActiveForInitiative(const char *dbPath, const char *initiativeId) {
+    return countActiveWhere(dbPath, "initiative_id", initiativeId);
+}
+
+int wtTaskProjectionReadCapacityJson(const char *dbPath, char *buffer, size_t bufferSize) {
+    sqlite3 *db = NULL;
+    if (sqlite3_open(dbPath, &db) != SQLITE_OK) {
+        sqlite3_close(db);
+        return -1;
+    }
+    size_t used = 0;
+    char number[256];
+    if (appendRaw(buffer, bufferSize, &used, "{\"ok\":true,\"agents\":[") != 0) {
+        sqlite3_close(db);
+        return -1;
+    }
+    sqlite3_stmt *agents = NULL;
+    const char *agentSql =
+        "SELECT assigned_agent, COUNT(*) FROM tasks "
+        "WHERE assigned_agent != '' AND status NOT IN ('complete','failed','cancelled','closed') "
+        "GROUP BY assigned_agent ORDER BY assigned_agent";
+    if (sqlite3_prepare_v2(db, agentSql, -1, &agents, NULL) != SQLITE_OK) {
+        sqlite3_close(db);
+        return -1;
+    }
+    int first = 1;
+    while (sqlite3_step(agents) == SQLITE_ROW) {
+        if (!first) appendRaw(buffer, bufferSize, &used, ",");
+        first = 0;
+        appendRaw(buffer, bufferSize, &used, "{\"agent\":");
+        appendJsonString(buffer, bufferSize, &used, columnText(agents, 0));
+        snprintf(number, sizeof(number), ",\"activeTasks\":%d}", sqlite3_column_int(agents, 1));
+        appendRaw(buffer, bufferSize, &used, number);
+    }
+    sqlite3_finalize(agents);
+    appendRaw(buffer, bufferSize, &used, "],\"initiatives\":[");
+
+    sqlite3_stmt *initiatives = NULL;
+    const char *initiativeSql =
+        "SELECT initiative_id, COUNT(*) FROM tasks "
+        "WHERE initiative_id != '' AND status NOT IN ('complete','failed','cancelled','closed') "
+        "GROUP BY initiative_id ORDER BY COUNT(*) DESC, initiative_id LIMIT 50";
+    if (sqlite3_prepare_v2(db, initiativeSql, -1, &initiatives, NULL) != SQLITE_OK) {
+        sqlite3_close(db);
+        return -1;
+    }
+    first = 1;
+    while (sqlite3_step(initiatives) == SQLITE_ROW) {
+        if (!first) appendRaw(buffer, bufferSize, &used, ",");
+        first = 0;
+        appendRaw(buffer, bufferSize, &used, "{\"initiativeId\":");
+        appendJsonString(buffer, bufferSize, &used, columnText(initiatives, 0));
+        snprintf(number, sizeof(number), ",\"activeTasks\":%d}", sqlite3_column_int(initiatives, 1));
+        appendRaw(buffer, bufferSize, &used, number);
+    }
+    sqlite3_finalize(initiatives);
+    appendRaw(buffer, bufferSize, &used, "],\"parents\":[");
+
+    sqlite3_stmt *parents = NULL;
+    const char *parentSql =
+        "SELECT parent_task_id, COUNT(*) FROM tasks "
+        "WHERE parent_task_id != '' AND status NOT IN ('complete','failed','cancelled','closed') "
+        "GROUP BY parent_task_id ORDER BY COUNT(*) DESC, parent_task_id LIMIT 50";
+    if (sqlite3_prepare_v2(db, parentSql, -1, &parents, NULL) != SQLITE_OK) {
+        sqlite3_close(db);
+        return -1;
+    }
+    first = 1;
+    while (sqlite3_step(parents) == SQLITE_ROW) {
+        if (!first) appendRaw(buffer, bufferSize, &used, ",");
+        first = 0;
+        appendRaw(buffer, bufferSize, &used, "{\"parentTaskId\":");
+        appendJsonString(buffer, bufferSize, &used, columnText(parents, 0));
+        snprintf(number, sizeof(number), ",\"activeTasks\":%d}", sqlite3_column_int(parents, 1));
+        appendRaw(buffer, bufferSize, &used, number);
+    }
+    sqlite3_finalize(parents);
+    appendRaw(buffer, bufferSize, &used, "]}");
+    sqlite3_close(db);
+    return 0;
+}

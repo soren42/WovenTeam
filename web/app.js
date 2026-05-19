@@ -56,6 +56,8 @@ let state = {
   audit: [],
   taskStats: {roleCounts: {}, requestCount: 0, blockedCount: 0, activeAgents: 3},
   selectedTaskId: "",
+  selectedTaskStatus: "",
+  capacity: {agents: [], initiatives: [], parents: [], caps: {}},
   config: {
     tokenTelemetryEnabled: true,
     tokenDailyBudget: 2000000,
@@ -171,6 +173,10 @@ async function loadConfig() {
   document.querySelector("#configContextMessages").textContent = config.contextMessageCount ?? "--";
   document.querySelector("#configAgentPoll").textContent = config.agentPollMilliseconds ? `${config.agentPollMilliseconds}ms` : "--";
   document.querySelector("#configAdapterTimeout").textContent = config.adapterTimeoutSeconds ? `${config.adapterTimeoutSeconds}s` : "--";
+  document.querySelector("#configRoleRoutingEnabled").value = config.roleRoutingEnabled ? "1" : "0";
+  document.querySelector("#configMaxActiveTasksPerAgent").value = config.maxActiveTasksPerAgent || 4;
+  document.querySelector("#configMaxSubtasksPerParent").value = config.maxSubtasksPerParent || 8;
+  document.querySelector("#configMaxTasksPerInitiative").value = config.maxTasksPerInitiative || 32;
   document.querySelector("#configEnableCodexAdapter").value = config.enableCodexAdapter ? "1" : "0";
   document.querySelector("#configEnableClaudeAdapter").value = config.enableClaudeAdapter ? "1" : "0";
   document.querySelector("#configEnableGeminiAdapter").value = config.enableGeminiAdapter ? "1" : "0";
@@ -191,6 +197,10 @@ async function saveConfig(event) {
     tokenMonthlyBudget: Number(document.querySelector("#configTokenMonthlyBudget").value),
     tokenWarningPercent: Number(document.querySelector("#configTokenWarningPercent").value),
     tokenCostPerMillionCents: Number(document.querySelector("#configTokenCostPerMillionCents").value),
+    roleRoutingEnabled: Number(document.querySelector("#configRoleRoutingEnabled").value),
+    maxActiveTasksPerAgent: Number(document.querySelector("#configMaxActiveTasksPerAgent").value),
+    maxSubtasksPerParent: Number(document.querySelector("#configMaxSubtasksPerParent").value),
+    maxTasksPerInitiative: Number(document.querySelector("#configMaxTasksPerInitiative").value),
     enableCodexAdapter: Number(document.querySelector("#configEnableCodexAdapter").value),
     enableClaudeAdapter: Number(document.querySelector("#configEnableClaudeAdapter").value),
     enableGeminiAdapter: Number(document.querySelector("#configEnableGeminiAdapter").value),
@@ -216,6 +226,7 @@ async function saveConfig(event) {
   addAudit("ui", "token configuration saved");
   await loadTokens();
   await loadAdapters();
+  await loadCapacity();
   updateReadouts();
 }
 
@@ -250,6 +261,19 @@ async function loadAdapters() {
     quota: adapter.enabled ? 70 : 0,
     warn: !adapter.enabled
   })));
+}
+
+async function loadCapacity() {
+  const response = await fetch("/api/capacity");
+  if (!response.ok) return;
+  const payload = await response.json();
+  if (!payload.ok) return;
+  state.capacity = payload;
+  const active = (payload.agents || []).reduce((sum, item) => sum + Number(item.activeTasks || 0), 0);
+  const cap = payload.caps?.maxActiveTasksPerAgent || "--";
+  document.querySelector("#subAgentSummary").textContent = `${active} active`;
+  document.querySelector("#routingSummary").textContent = state.config.roleRoutingEnabled ? `router ${cap}/agent` : "manual";
+  document.querySelector("#agentMeta").textContent = `● ${state.taskStats.activeAgents} ACTIVE · ${state.taskStats.requestCount}R · ${active} CAPACITY`;
 }
 
 function summarizeTasks(rows) {
@@ -350,6 +374,7 @@ async function loadTaskDetail(taskId) {
   const detail = await response.json();
   if (!detail.ok) return;
   taskDetail.hidden = false;
+  state.selectedTaskStatus = detail.task.status || "";
   document.querySelector("#detailTitle").textContent = detail.task.title || taskId;
   document.querySelector("#detailMeta").textContent = `${detail.task.taskId} · ${detail.task.status} · ${detail.task.assignedAgent || "all"} · ${fmtTokens(detail.task.maxTokens || 0)} tokens`;
   document.querySelector("#detailBody").textContent = detail.task.body || "";
@@ -365,6 +390,9 @@ async function loadTaskDetail(taskId) {
     item.querySelector("p").textContent = event.message || "";
     events.appendChild(item);
   });
+  const gateCount = detail.events.filter(event => event.eventType === "review_gate").length;
+  document.querySelector("#gateBadge").textContent = String(gateCount);
+  document.querySelector("#gateMeta").textContent = gateCount ? `${gateCount} gate event(s) on selected task` : "No gate decision recorded for selected task.";
 }
 
 async function postTaskLifecycle(status, message) {
@@ -391,6 +419,30 @@ async function postTaskLifecycle(status, message) {
     return;
   }
   addAudit("ui", `${status} posted for ${state.selectedTaskId}`);
+  await loadTasks();
+  await loadTaskDetail(state.selectedTaskId);
+}
+
+async function postTaskGate(action) {
+  if (!state.selectedTaskId) {
+    addAudit("ui", "select a task before using review gates");
+    return;
+  }
+  const payload = {
+    taskId: state.selectedTaskId,
+    action,
+    createdBy: "ceo"
+  };
+  const response = await fetch("/api/task-gate", {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify(payload)
+  });
+  if (!response.ok) {
+    addAudit("ui", `${action} gate failed for ${state.selectedTaskId}`);
+    return;
+  }
+  addAudit("ui", `${action} gate posted for ${state.selectedTaskId}`);
   await loadTasks();
   await loadTaskDetail(state.selectedTaskId);
 }
@@ -572,7 +624,14 @@ function newInitiativeId() {
 }
 
 function roleAgent(role) {
-  return role.agent || "all";
+  return state.config.roleRoutingEnabled ? "router" : (role.agent || "all");
+}
+
+function roleModel(role) {
+  const agent = role.agent || "chatgpt";
+  if (agent === "claude") return "anthropic/claude-sonnet";
+  if (agent === "gemini") return "google/gemini-pro";
+  return "openai/gpt-5.3-codex";
 }
 
 function toolPolicy(profile = "observe") {
@@ -622,7 +681,7 @@ function buildTaskPackage() {
     createdBy: "ceo",
     assignedRole: role.roleId,
     assignedAgent: roleAgent(role),
-    modelId: "openai/gpt-5.3-codex",
+    modelId: roleModel(role),
     priority: priority === "critical" ? "urgent" : priority,
     status: "queued",
     title: name,
@@ -654,7 +713,7 @@ function buildTaskRequest() {
     requestedByRole: requestedByRoleEl.value,
     requestedRole: role.roleId,
     assignedAgent: roleAgent(role),
-    modelId: "openai/gpt-5.3-codex",
+    modelId: roleModel(role),
     priority: priority === "critical" ? "urgent" : priority,
     title,
     body,
@@ -764,6 +823,9 @@ function wireControls() {
       if (action === "close") postTaskLifecycle("closed", "Task closed from the web console.");
     });
   });
+  document.querySelectorAll("[data-gate-action]").forEach(button => {
+    button.addEventListener("click", () => postTaskGate(button.dataset.gateAction));
+  });
 
   document.querySelectorAll(".mode-button").forEach(button => {
     button.addEventListener("click", () => setDispatchMode(button.dataset.mode));
@@ -811,10 +873,12 @@ async function init() {
     await loadTasks();
     await loadTokens();
     await loadAdapters();
+    await loadCapacity();
     connectEvents();
     setInterval(loadTasks, 5000);
     setInterval(loadTokens, 5000);
     setInterval(loadAdapters, 15000);
+    setInterval(loadCapacity, 5000);
   } catch (error) {
     setUplink(false);
     addAudit("system", "room API unavailable");

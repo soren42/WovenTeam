@@ -27,6 +27,8 @@
 #include <time.h>
 #include <unistd.h>
 
+static int rebuildProjection(const WtConfig *config);
+
 static void usage(const char *programName) {
     fprintf(stderr, "Usage: %s [--config FILE] [--port N] [--bind ADDRESS]\n", programName);
 }
@@ -229,6 +231,10 @@ static int sendConfigJson(int clientFd, const WtConfig *config) {
              "\"agentPollMilliseconds\":%d,"
              "\"adapterTimeoutSeconds\":%d,"
              "\"adapterMaxOutputBytes\":%d,"
+             "\"maxActiveTasksPerAgent\":%d,"
+             "\"maxSubtasksPerParent\":%d,"
+             "\"maxTasksPerInitiative\":%d,"
+             "\"roleRoutingEnabled\":%s,"
              "\"enableCodexAdapter\":%s,"
              "\"enableClaudeAdapter\":%s,"
              "\"enableGeminiAdapter\":%s,"
@@ -248,6 +254,10 @@ static int sendConfigJson(int clientFd, const WtConfig *config) {
              config->agentPollMilliseconds,
              config->adapterTimeoutSeconds,
              config->adapterMaxOutputBytes,
+             config->maxActiveTasksPerAgent,
+             config->maxSubtasksPerParent,
+             config->maxTasksPerInitiative,
+             config->roleRoutingEnabled ? "true" : "false",
              config->enableCodexAdapter ? "true" : "false",
              config->enableClaudeAdapter ? "true" : "false",
              config->enableGeminiAdapter ? "true" : "false",
@@ -375,6 +385,18 @@ static int handlePostConfig(int clientFd, WtConfig *config, const char *request)
     if (wtJsonReadLong(body, "enableCodexAdapter", &value) == 0) {
         config->enableCodexAdapter = value != 0;
     }
+    if (wtJsonReadLong(body, "roleRoutingEnabled", &value) == 0) {
+        config->roleRoutingEnabled = value != 0;
+    }
+    if (wtJsonReadLong(body, "maxActiveTasksPerAgent", &value) == 0) {
+        config->maxActiveTasksPerAgent = value < 1 ? 1 : (int)value;
+    }
+    if (wtJsonReadLong(body, "maxSubtasksPerParent", &value) == 0) {
+        config->maxSubtasksPerParent = value < 1 ? 1 : (int)value;
+    }
+    if (wtJsonReadLong(body, "maxTasksPerInitiative", &value) == 0) {
+        config->maxTasksPerInitiative = value < 1 ? 1 : (int)value;
+    }
     if (wtJsonReadLong(body, "enableClaudeAdapter", &value) == 0) {
         config->enableClaudeAdapter = value != 0;
     }
@@ -455,6 +477,94 @@ static void defaultAgentForRole(const char *role, char *agent, size_t agentSize)
     }
 }
 
+static int agentSupportsProfile(const char *agent, const char *profile) {
+    if (strcmp(agent, "chatgpt") == 0) {
+        return strcmp(profile, "repo_branch") == 0 || strcmp(profile, "test_local") == 0 ||
+               strcmp(profile, "observe") == 0;
+    }
+    if (strcmp(agent, "claude") == 0 || strcmp(agent, "gemini") == 0) {
+        return strcmp(profile, "observe") == 0 || strcmp(profile, "ops_read") == 0;
+    }
+    return 0;
+}
+
+static int shouldRouteAgent(const char *agent) {
+    return agent[0] == '\0' || strcmp(agent, "all") == 0 || strcmp(agent, "router") == 0;
+}
+
+static void routeAgentForTask(const WtConfig *config, const char *role, const char *profile,
+                              char *agent, size_t agentSize) {
+    if (!config->roleRoutingEnabled || !shouldRouteAgent(agent)) {
+        return;
+    }
+    if (strcmp(profile, "repo_branch") == 0 || strcmp(profile, "test_local") == 0) {
+        snprintf(agent, agentSize, "%s", "chatgpt");
+        return;
+    }
+    defaultAgentForRole(role, agent, agentSize);
+    if (!agentSupportsProfile(agent, profile)) {
+        snprintf(agent, agentSize, "%s", strcmp(profile, "ops_read") == 0 ? "gemini" : "claude");
+    }
+}
+
+static void defaultModelForAgent(const char *agent, char *modelId, size_t modelSize) {
+    if (strcmp(agent, "claude") == 0) {
+        snprintf(modelId, modelSize, "%s", "anthropic/claude-sonnet");
+    } else if (strcmp(agent, "gemini") == 0) {
+        snprintf(modelId, modelSize, "%s", "google/gemini-pro");
+    } else if (strcmp(agent, "chatgpt") == 0) {
+        snprintf(modelId, modelSize, "%s", "openai/gpt-5.3-codex");
+    }
+}
+
+static int modelMatchesAgent(const char *agent, const char *modelId) {
+    if (!modelId || modelId[0] == '\0') return 0;
+    if (strcmp(agent, "claude") == 0) return strncmp(modelId, "anthropic/", 10) == 0;
+    if (strcmp(agent, "gemini") == 0) return strncmp(modelId, "google/", 7) == 0;
+    if (strcmp(agent, "chatgpt") == 0) return strncmp(modelId, "openai/", 7) == 0;
+    return 1;
+}
+
+static int enforceCapacity(const WtConfig *config, const char *agent, const char *initiativeId,
+                           const char *parentTaskId, char *error, size_t errorSize) {
+    if (rebuildProjection(config) != 0) {
+        snprintf(error, errorSize, "%s", "projection rebuild failed");
+        return -1;
+    }
+    int count = wtTaskProjectionCountActiveForAgent(config->taskProjectionDbPath, agent);
+    if (count < 0) {
+        snprintf(error, errorSize, "%s", "capacity read failed");
+        return -1;
+    }
+    if (config->maxActiveTasksPerAgent > 0 && count >= config->maxActiveTasksPerAgent) {
+        snprintf(error, errorSize, "agent capacity exceeded for %s", agent);
+        return 1;
+    }
+    if (initiativeId && initiativeId[0]) {
+        count = wtTaskProjectionCountActiveForInitiative(config->taskProjectionDbPath, initiativeId);
+        if (count < 0) {
+            snprintf(error, errorSize, "%s", "capacity read failed");
+            return -1;
+        }
+        if (config->maxTasksPerInitiative > 0 && count >= config->maxTasksPerInitiative) {
+            snprintf(error, errorSize, "initiative capacity exceeded for %s", initiativeId);
+            return 1;
+        }
+    }
+    if (parentTaskId && parentTaskId[0]) {
+        count = wtTaskProjectionCountActiveForParent(config->taskProjectionDbPath, parentTaskId);
+        if (count < 0) {
+            snprintf(error, errorSize, "%s", "capacity read failed");
+            return -1;
+        }
+        if (config->maxSubtasksPerParent > 0 && count >= config->maxSubtasksPerParent) {
+            snprintf(error, errorSize, "parent subtask capacity exceeded for %s", parentTaskId);
+            return 1;
+        }
+    }
+    return 0;
+}
+
 static int handlePostTaskPackage(int clientFd, const WtConfig *config, const char *request) {
     const char *body = strstr(request, "\r\n\r\n");
     if (!body) {
@@ -465,6 +575,8 @@ static int handlePostTaskPackage(int clientFd, const WtConfig *config, const cha
     char taskId[WT_TASK_ID_SIZE];
     char assignedRole[WT_TASK_AGENT_SIZE];
     char assignedAgent[WT_TASK_AGENT_SIZE];
+    char initiativeId[WT_TASK_ID_SIZE];
+    char toolProfile[WT_TASK_POLICY_SIZE];
     char status[WT_TASK_STATUS_SIZE];
     char title[WT_TASK_TITLE_SIZE];
     if (wtJsonReadString(body, "schema", schema, sizeof(schema)) != 0 ||
@@ -474,7 +586,13 @@ static int handlePostTaskPackage(int clientFd, const WtConfig *config, const cha
         return wtHttpSendText(clientFd, 400, "Bad Request", "application/json", "{\"ok\":false,\"error\":\"invalid task package\"}\n");
     }
     if (wtJsonReadString(body, "assignedAgent", assignedAgent, sizeof(assignedAgent)) != 0) {
-        snprintf(assignedAgent, sizeof(assignedAgent), "%s", "all");
+        snprintf(assignedAgent, sizeof(assignedAgent), "%s", "router");
+    }
+    if (wtJsonReadString(body, "initiativeId", initiativeId, sizeof(initiativeId)) != 0) {
+        snprintf(initiativeId, sizeof(initiativeId), "%s", "");
+    }
+    if (wtJsonReadString(body, "profile", toolProfile, sizeof(toolProfile)) != 0) {
+        snprintf(toolProfile, sizeof(toolProfile), "%s", "observe");
     }
     if (wtJsonReadString(body, "status", status, sizeof(status)) != 0) {
         snprintf(status, sizeof(status), "%s", "queued");
@@ -482,8 +600,49 @@ static int handlePostTaskPackage(int clientFd, const WtConfig *config, const cha
     if (wtJsonReadString(body, "title", title, sizeof(title)) != 0) {
         snprintf(title, sizeof(title), "%s", "Untitled task");
     }
+    routeAgentForTask(config, assignedRole, toolProfile, assignedAgent, sizeof(assignedAgent));
+    char capacityError[256];
+    int capacity = enforceCapacity(config, assignedAgent, initiativeId, "", capacityError, sizeof(capacityError));
+    if (capacity != 0) {
+        char response[512];
+        snprintf(response, sizeof(response), "{\"ok\":false,\"error\":\"%s\"}\n", capacityError);
+        return wtHttpSendText(clientFd, capacity > 0 ? 409 : 500,
+                              capacity > 0 ? "Conflict" : "Internal Server Error",
+                              "application/json", response);
+    }
     char compact[WT_TASK_LEDGER_LINE_SIZE];
-    compactJsonLine(body, compact, sizeof(compact));
+    if (shouldRouteAgent(assignedAgent)) {
+        compactJsonLine(body, compact, sizeof(compact));
+    } else {
+        char escapedTaskId[WT_TASK_ID_SIZE * 2];
+        char escapedRole[WT_TASK_AGENT_SIZE * 2];
+        char escapedAgent[WT_TASK_AGENT_SIZE * 2];
+        char escapedProfile[WT_TASK_POLICY_SIZE * 2];
+        if (wtJsonEscape(taskId, escapedTaskId, sizeof(escapedTaskId)) != 0 ||
+            wtJsonEscape(assignedRole, escapedRole, sizeof(escapedRole)) != 0 ||
+            wtJsonEscape(assignedAgent, escapedAgent, sizeof(escapedAgent)) != 0 ||
+            wtJsonEscape(toolProfile, escapedProfile, sizeof(escapedProfile)) != 0) {
+            return wtHttpSendText(clientFd, 400, "Bad Request", "application/json", "{\"ok\":false,\"error\":\"task too large\"}\n");
+        }
+        snprintf(compact, sizeof(compact),
+                 "{\"schema\":\"woventeam.task_event.v0.1\",\"taskId\":\"%s\","
+                 "\"eventType\":\"routing\",\"status\":\"assigned\","
+                 "\"assignedAgent\":\"%s\",\"message\":\"Routed %s task to %s for %s.\","
+                 "\"createdBy\":\"wt-roomd\",\"createdAtUnixMs\":%lld}",
+                 escapedTaskId, escapedAgent, escapedRole, escapedAgent,
+                 escapedProfile, wtNowUnixMilliseconds());
+        char original[WT_TASK_LEDGER_LINE_SIZE];
+        compactJsonLine(body, original, sizeof(original));
+        if (wtTaskAppendRecord(config->taskLedgerPath, original, config->fsyncEachMessage) != 0 ||
+            wtTaskAppendRecord(config->taskLedgerPath, compact, config->fsyncEachMessage) != 0 ||
+            appendTaskRoomEvent(config, taskId, assignedAgent, "task.assign", "assigned", title) != 0) {
+            return wtHttpSendText(clientFd, 500, "Internal Server Error", "application/json", "{\"ok\":false,\"error\":\"append failed\"}\n");
+        }
+        char response[512];
+        snprintf(response, sizeof(response), "{\"ok\":true,\"taskId\":\"%s\",\"assignedAgent\":\"%s\",\"status\":\"assigned\"}\n",
+                 taskId, assignedAgent);
+        return wtHttpSendText(clientFd, 200, "OK", "application/json; charset=utf-8", response);
+    }
     if (wtTaskAppendRecord(config->taskLedgerPath, compact, config->fsyncEachMessage) != 0 ||
         appendTaskRoomEvent(config, taskId, assignedAgent, "task.assign", status, title) != 0) {
         return wtHttpSendText(clientFd, 500, "Internal Server Error", "application/json", "{\"ok\":false,\"error\":\"append failed\"}\n");
@@ -532,7 +691,7 @@ static int handlePostTaskRequest(int clientFd, const WtConfig *config, const cha
         snprintf(requestedBy, sizeof(requestedBy), "%s", requestedByRole);
     }
     if (wtJsonReadString(body, "assignedAgent", assignedAgent, sizeof(assignedAgent)) != 0) {
-        defaultAgentForRole(requestedRole, assignedAgent, sizeof(assignedAgent));
+        snprintf(assignedAgent, sizeof(assignedAgent), "%s", "router");
     }
     if (wtJsonReadString(body, "priority", priority, sizeof(priority)) != 0) {
         snprintf(priority, sizeof(priority), "%s", "normal");
@@ -546,6 +705,19 @@ static int handlePostTaskRequest(int clientFd, const WtConfig *config, const cha
     wtJsonReadLong(body, "maxTokens", &maxTokens);
     if (maxTokens < 0) {
         maxTokens = 0;
+    }
+    routeAgentForTask(config, requestedRole, toolProfile, assignedAgent, sizeof(assignedAgent));
+    if (!modelMatchesAgent(assignedAgent, modelId)) {
+        defaultModelForAgent(assignedAgent, modelId, sizeof(modelId));
+    }
+    char capacityError[256];
+    int capacity = enforceCapacity(config, assignedAgent, initiativeId, parentTaskId, capacityError, sizeof(capacityError));
+    if (capacity != 0) {
+        char response[512];
+        snprintf(response, sizeof(response), "{\"ok\":false,\"error\":\"%s\"}\n", capacityError);
+        return wtHttpSendText(clientFd, capacity > 0 ? 409 : 500,
+                              capacity > 0 ? "Conflict" : "Internal Server Error",
+                              "application/json", response);
     }
 
     char escapedTaskId[WT_TASK_ID_SIZE * 2];
@@ -677,6 +849,34 @@ static int sendTaskDetailJson(int clientFd, const WtConfig *config, const char *
     return rc;
 }
 
+static int sendCapacityJson(int clientFd, const WtConfig *config) {
+    if (rebuildProjection(config) != 0) {
+        return wtHttpSendText(clientFd, 500, "Internal Server Error", "application/json",
+                              "{\"ok\":false,\"error\":\"projection rebuild failed\"}\n");
+    }
+    char *body = malloc(WT_TASK_LEDGER_LINE_SIZE * 8);
+    if (!body) {
+        return wtHttpSendText(clientFd, 500, "Internal Server Error", "application/json", "{\"ok\":false}\n");
+    }
+    if (wtTaskProjectionReadCapacityJson(config->taskProjectionDbPath, body, WT_TASK_LEDGER_LINE_SIZE * 8) != 0) {
+        free(body);
+        return wtHttpSendText(clientFd, 500, "Internal Server Error", "application/json",
+                              "{\"ok\":false,\"error\":\"capacity read failed\"}\n");
+    }
+    size_t length = strlen(body);
+    char caps[256];
+    snprintf(caps, sizeof(caps),
+             ",\"caps\":{\"maxActiveTasksPerAgent\":%d,\"maxSubtasksPerParent\":%d,\"maxTasksPerInitiative\":%d}}\n",
+             config->maxActiveTasksPerAgent, config->maxSubtasksPerParent, config->maxTasksPerInitiative);
+    if (length > 0 && body[length - 1] == '}') {
+        body[length - 1] = '\0';
+        strncat(body, caps, WT_TASK_LEDGER_LINE_SIZE * 8 - strlen(body) - 1);
+    }
+    int rc = wtHttpSendText(clientFd, 200, "OK", "application/json; charset=utf-8", body);
+    free(body);
+    return rc;
+}
+
 static int handlePostTaskEvent(int clientFd, const WtConfig *config, const char *request) {
     const char *body = strstr(request, "\r\n\r\n");
     if (!body) {
@@ -716,6 +916,60 @@ static int handlePostTaskEvent(int clientFd, const WtConfig *config, const char 
     char response[512];
     snprintf(response, sizeof(response), "{\"ok\":true,\"taskId\":\"%s\",\"status\":\"%s\",\"createdBy\":\"%s\"}\n",
              taskId, status, createdBy);
+    return wtHttpSendText(clientFd, 200, "OK", "application/json; charset=utf-8", response);
+}
+
+static int handlePostTaskGate(int clientFd, const WtConfig *config, const char *request) {
+    const char *body = strstr(request, "\r\n\r\n");
+    if (!body) {
+        return wtHttpSendText(clientFd, 400, "Bad Request", "application/json", "{\"ok\":false}\n");
+    }
+    body += 4;
+    char taskId[WT_TASK_ID_SIZE];
+    char action[32];
+    char message[WT_TASK_TITLE_SIZE];
+    char createdBy[WT_TASK_AGENT_SIZE];
+    if (wtJsonReadString(body, "taskId", taskId, sizeof(taskId)) != 0 ||
+        wtJsonReadString(body, "action", action, sizeof(action)) != 0) {
+        return wtHttpSendText(clientFd, 400, "Bad Request", "application/json", "{\"ok\":false,\"error\":\"invalid gate action\"}\n");
+    }
+    if (strcmp(action, "approve") != 0 && strcmp(action, "reject") != 0 &&
+        strcmp(action, "revision") != 0) {
+        return wtHttpSendText(clientFd, 400, "Bad Request", "application/json", "{\"ok\":false,\"error\":\"unsupported gate action\"}\n");
+    }
+    if (wtJsonReadString(body, "message", message, sizeof(message)) != 0) {
+        snprintf(message, sizeof(message), "%s",
+                 strcmp(action, "approve") == 0 ? "Task approved from review gate." :
+                 strcmp(action, "reject") == 0 ? "Task rejected from review gate." :
+                 "Revision requested from review gate.");
+    }
+    if (wtJsonReadString(body, "createdBy", createdBy, sizeof(createdBy)) != 0) {
+        snprintf(createdBy, sizeof(createdBy), "%s", "ceo");
+    }
+    const char *status = strcmp(action, "approve") == 0 ? "approved" :
+                         strcmp(action, "reject") == 0 ? "rejected" : "revision_requested";
+    char escapedTaskId[WT_TASK_ID_SIZE * 2];
+    char escapedStatus[WT_TASK_STATUS_SIZE * 2];
+    char escapedMessage[WT_TASK_TITLE_SIZE * 2];
+    char escapedBy[WT_TASK_AGENT_SIZE * 2];
+    if (wtJsonEscape(taskId, escapedTaskId, sizeof(escapedTaskId)) != 0 ||
+        wtJsonEscape(status, escapedStatus, sizeof(escapedStatus)) != 0 ||
+        wtJsonEscape(message, escapedMessage, sizeof(escapedMessage)) != 0 ||
+        wtJsonEscape(createdBy, escapedBy, sizeof(escapedBy)) != 0) {
+        return wtHttpSendText(clientFd, 400, "Bad Request", "application/json", "{\"ok\":false,\"error\":\"gate action too large\"}\n");
+    }
+    char record[WT_TASK_LEDGER_LINE_SIZE];
+    snprintf(record, sizeof(record),
+             "{\"schema\":\"woventeam.task_event.v0.1\",\"taskId\":\"%s\","
+             "\"eventType\":\"review_gate\",\"status\":\"%s\",\"message\":\"%s\","
+             "\"createdBy\":\"%s\",\"createdAtUnixMs\":%lld}",
+             escapedTaskId, escapedStatus, escapedMessage, escapedBy, wtNowUnixMilliseconds());
+    if (wtTaskAppendRecord(config->taskLedgerPath, record, config->fsyncEachMessage) != 0 ||
+        appendTaskRoomEvent(config, taskId, "all", "task.status", status, message) != 0) {
+        return wtHttpSendText(clientFd, 500, "Internal Server Error", "application/json", "{\"ok\":false,\"error\":\"append failed\"}\n");
+    }
+    char response[512];
+    snprintf(response, sizeof(response), "{\"ok\":true,\"taskId\":\"%s\",\"status\":\"%s\"}\n", taskId, status);
     return wtHttpSendText(clientFd, 200, "OK", "application/json; charset=utf-8", response);
 }
 
@@ -796,6 +1050,8 @@ static void handleClient(int clientFd, WtConfig *config) {
             if (amp) *amp = '\0';
         }
         sendTaskDetailJson(clientFd, config, taskId);
+    } else if (strcmp(method, "GET") == 0 && strcmp(path, "/api/capacity") == 0) {
+        sendCapacityJson(clientFd, config);
     } else if (strcmp(method, "GET") == 0 && strcmp(path, "/api/tokens") == 0) {
         sendTokenJson(clientFd, config);
     } else if (strcmp(method, "GET") == 0 && strcmp(path, "/api/config") == 0) {
@@ -810,6 +1066,8 @@ static void handleClient(int clientFd, WtConfig *config) {
         handlePostTaskRequest(clientFd, config, request);
     } else if (strcmp(method, "POST") == 0 && strcmp(path, "/api/task-event") == 0) {
         handlePostTaskEvent(clientFd, config, request);
+    } else if (strcmp(method, "POST") == 0 && strcmp(path, "/api/task-gate") == 0) {
+        handlePostTaskGate(clientFd, config, request);
     } else if (strcmp(method, "POST") == 0 && strcmp(path, "/api/config") == 0) {
         handlePostConfig(clientFd, config, request);
     } else if (strcmp(method, "GET") == 0 && strcmp(path, "/api/health") == 0) {
