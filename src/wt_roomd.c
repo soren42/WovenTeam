@@ -16,6 +16,8 @@
 #include "wt_time.h"
 
 #include <arpa/inet.h>
+#include <ctype.h>
+#include <dirent.h>
 #include <errno.h>
 #include <netinet/in.h>
 #include <signal.h>
@@ -23,6 +25,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/socket.h>
+#include <sys/stat.h>
 #include <sys/types.h>
 #include <time.h>
 #include <unistd.h>
@@ -151,6 +154,62 @@ static void compactJsonLine(const char *input, char *output, size_t outputSize) 
         output[used++] = value;
     }
     output[used] = '\0';
+}
+
+static int appendJsonRaw(char *buffer, size_t bufferSize, size_t *used, const char *text) {
+    size_t length = strlen(text);
+    if (*used + length + 1 >= bufferSize) {
+        return -1;
+    }
+    memcpy(buffer + *used, text, length);
+    *used += length;
+    buffer[*used] = '\0';
+    return 0;
+}
+
+static int appendJsonStringValue(char *buffer, size_t bufferSize, size_t *used, const char *text) {
+    size_t inputLength = strlen(text ? text : "");
+    size_t escapedSize = inputLength * 6 + 1;
+    if (escapedSize < 64) escapedSize = 64;
+    char *escaped = malloc(escapedSize);
+    if (!escaped) {
+        return -1;
+    }
+    int ok = wtJsonEscape(text ? text : "", escaped, escapedSize) == 0 &&
+             appendJsonRaw(buffer, bufferSize, used, "\"") == 0 &&
+             appendJsonRaw(buffer, bufferSize, used, escaped) == 0 &&
+             appendJsonRaw(buffer, bufferSize, used, "\"") == 0;
+    free(escaped);
+    return ok ? 0 : -1;
+}
+
+static int isSafeArtifactName(const char *value) {
+    if (!value || value[0] == '\0') return 0;
+    for (const unsigned char *cursor = (const unsigned char *)value; *cursor; cursor++) {
+        if (!(isalnum(*cursor) || *cursor == '_' || *cursor == '-' || *cursor == '.')) {
+            return 0;
+        }
+    }
+    return strstr(value, "..") == NULL;
+}
+
+static int readTextSnippet(const char *path, char *buffer, size_t bufferSize, long *fileSize) {
+    buffer[0] = '\0';
+    if (fileSize) *fileSize = 0;
+    struct stat st;
+    if (stat(path, &st) != 0 || !S_ISREG(st.st_mode)) {
+        return 1;
+    }
+    if (fileSize) *fileSize = (long)st.st_size;
+    FILE *file = fopen(path, "rb");
+    if (!file) {
+        return -1;
+    }
+    size_t limit = bufferSize > 0 ? bufferSize - 1 : 0;
+    size_t bytes = fread(buffer, 1, limit, file);
+    buffer[bytes] = '\0';
+    fclose(file);
+    return 0;
 }
 
 static int appendTaskRoomEvent(const WtConfig *config, const char *taskId, const char *targetName,
@@ -933,6 +992,91 @@ static int sendCapacityJson(int clientFd, const WtConfig *config) {
     return rc;
 }
 
+static const char *artifactKindForName(const char *name) {
+    if (strcmp(name, "result.md") == 0) return "result";
+    if (strcmp(name, "stdout.log") == 0) return "stdout";
+    if (strcmp(name, "stderr.log") == 0) return "stderr";
+    if (strcmp(name, "manifest.json") == 0) return "manifest";
+    return "file";
+}
+
+static int appendArtifactTextField(char *body, size_t bodySize, size_t *used,
+                                   const char *fieldName, const char *workspace,
+                                   const char *fileName) {
+    char path[WT_PATH_SIZE * 2];
+    char text[12001];
+    long size = 0;
+    snprintf(path, sizeof(path), "%s/%s", workspace, fileName);
+    readTextSnippet(path, text, sizeof(text), &size);
+    if (appendJsonRaw(body, bodySize, used, ",\"") != 0 ||
+        appendJsonRaw(body, bodySize, used, fieldName) != 0 ||
+        appendJsonRaw(body, bodySize, used, "\":") != 0 ||
+        appendJsonStringValue(body, bodySize, used, text) != 0) {
+        return -1;
+    }
+    char metaName[64];
+    snprintf(metaName, sizeof(metaName), "%sBytes", fieldName);
+    char number[128];
+    snprintf(number, sizeof(number), ",\"%s\":%ld", metaName, size);
+    return appendJsonRaw(body, bodySize, used, number);
+}
+
+static int sendTaskArtifactsJson(int clientFd, const WtConfig *config, const char *taskId) {
+    if (!isSafeArtifactName(taskId)) {
+        return wtHttpSendText(clientFd, 400, "Bad Request", "application/json",
+                              "{\"ok\":false,\"error\":\"invalid task id\"}\n");
+    }
+    char workspace[WT_PATH_SIZE * 2];
+    snprintf(workspace, sizeof(workspace), "%s/%s", config->runtimeRootPath, taskId);
+    char *body = malloc(WT_TASK_LEDGER_LINE_SIZE * 12);
+    if (!body) {
+        return wtHttpSendText(clientFd, 500, "Internal Server Error", "application/json", "{\"ok\":false}\n");
+    }
+    size_t bodySize = WT_TASK_LEDGER_LINE_SIZE * 12;
+    size_t used = 0;
+    struct stat st;
+    int exists = stat(workspace, &st) == 0 && S_ISDIR(st.st_mode);
+    appendJsonRaw(body, bodySize, &used, "{\"ok\":true,\"taskId\":");
+    appendJsonStringValue(body, bodySize, &used, taskId);
+    appendJsonRaw(body, bodySize, &used, ",\"workspace\":");
+    appendJsonStringValue(body, bodySize, &used, workspace);
+    appendJsonRaw(body, bodySize, &used, exists ? ",\"exists\":true,\"files\":[" : ",\"exists\":false,\"files\":[");
+    if (exists) {
+        DIR *dir = opendir(workspace);
+        int first = 1;
+        if (dir) {
+            struct dirent *entry;
+            while ((entry = readdir(dir)) != NULL) {
+                if (!isSafeArtifactName(entry->d_name)) continue;
+                if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) continue;
+                char path[WT_PATH_SIZE * 4];
+                snprintf(path, sizeof(path), "%s/%s", workspace, entry->d_name);
+                struct stat fileStat;
+                if (stat(path, &fileStat) != 0 || !S_ISREG(fileStat.st_mode)) continue;
+                if (!first) appendJsonRaw(body, bodySize, &used, ",");
+                first = 0;
+                appendJsonRaw(body, bodySize, &used, "{\"name\":");
+                appendJsonStringValue(body, bodySize, &used, entry->d_name);
+                appendJsonRaw(body, bodySize, &used, ",\"kind\":");
+                appendJsonStringValue(body, bodySize, &used, artifactKindForName(entry->d_name));
+                char number[128];
+                snprintf(number, sizeof(number), ",\"bytes\":%ld}", (long)fileStat.st_size);
+                appendJsonRaw(body, bodySize, &used, number);
+            }
+            closedir(dir);
+        }
+    }
+    appendJsonRaw(body, bodySize, &used, "]");
+    appendArtifactTextField(body, bodySize, &used, "resultText", workspace, "result.md");
+    appendArtifactTextField(body, bodySize, &used, "stdoutText", workspace, "stdout.log");
+    appendArtifactTextField(body, bodySize, &used, "stderrText", workspace, "stderr.log");
+    appendArtifactTextField(body, bodySize, &used, "manifestText", workspace, "manifest.json");
+    appendJsonRaw(body, bodySize, &used, "}\n");
+    int rc = wtHttpSendText(clientFd, 200, "OK", "application/json; charset=utf-8", body);
+    free(body);
+    return rc;
+}
+
 static int handlePostTaskEvent(int clientFd, const WtConfig *config, const char *request) {
     const char *body = strstr(request, "\r\n\r\n");
     if (!body) {
@@ -1169,6 +1313,15 @@ static void handleClient(int clientFd, WtConfig *config) {
             if (amp) *amp = '\0';
         }
         sendTaskDetailJson(clientFd, config, taskId);
+    } else if (strcmp(method, "GET") == 0 && strncmp(path, "/api/task-artifacts", 19) == 0) {
+        char taskId[WT_TASK_ID_SIZE] = "";
+        char *taskIdText = strstr(path, "taskId=");
+        if (taskIdText) {
+            snprintf(taskId, sizeof(taskId), "%s", taskIdText + 7);
+            char *amp = strchr(taskId, '&');
+            if (amp) *amp = '\0';
+        }
+        sendTaskArtifactsJson(clientFd, config, taskId);
     } else if (strcmp(method, "GET") == 0 && strcmp(path, "/api/capacity") == 0) {
         sendCapacityJson(clientFd, config);
     } else if (strcmp(method, "GET") == 0 && strcmp(path, "/api/tokens") == 0) {

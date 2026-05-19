@@ -13,6 +13,7 @@ The Phase 0 browser UI is `WovenTeam Console (Fullscreen)` served by
   - `GET /api/tasks`
   - `GET /api/task-summaries`
   - `GET /api/task-detail?taskId=...`
+  - `GET /api/task-artifacts?taskId=...`
   - `GET /api/capacity`
   - `GET /api/tokens`
   - `GET /api/config`
@@ -28,6 +29,9 @@ The Phase 0 browser UI is `WovenTeam Console (Fullscreen)` served by
 - Selecting a task row opens the Phase 1 task detail panel with task body,
   event timeline, retry/cancel/close lifecycle controls, and review gate
   approve/reject/revision controls.
+- The task detail panel loads adapter artifacts from `/api/task-artifacts`,
+  including workspace file metadata plus result, stdout, stderr, and manifest
+  previews.
 - The program initiation composer can create CEO task packages or
   manager-driven subtasks. Subtask mode requires a parent task ID and uses the
   daemon-enforced Program Manager / Project Manager spawn policy.
@@ -53,7 +57,6 @@ The following surfaces intentionally stay visible but disabled until their
 backend tools exist:
 
 - Agent topology
-- Adapter artifact links and detailed per-run output browsing
 - Command palette search/actions
 
 ## Backend Contract Needed Next
@@ -66,6 +69,7 @@ The scaffold now binds to the task package and Phase 1 state paths:
 - `GET /api/tasks`
 - `GET /api/task-summaries`
 - `GET /api/task-detail?taskId=...`
+- `GET /api/task-artifacts?taskId=...`
 - `GET /api/adapters`
 - `GET /api/capacity`
 - `POST /api/task-package`
@@ -73,6 +77,5 @@ The scaffold now binds to the task package and Phase 1 state paths:
 - `POST /api/task-gate`
 - `POST /api/task-usage`
 
-The next backend step is to expose richer initiative, gate, adapter artifact
-detail, usage, and agent state so the console can enable the remaining disabled
-controls.
+The next backend step is to expose richer initiative, gate history, usage, and
+agent state so the console can enable the remaining disabled controls.

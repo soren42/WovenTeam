@@ -780,6 +780,71 @@ kbd {
   text-transform: uppercase;
 }
 
+.detail-artifacts {
+  border: 1px solid var(--edge);
+  background: var(--panel);
+  margin: 8px 0;
+  padding: 8px;
+}
+
+.artifact-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+  margin-bottom: 6px;
+}
+
+.artifact-head strong {
+  color: var(--text);
+  font-size: 11px;
+  text-transform: uppercase;
+}
+
+.artifact-head span {
+  color: var(--text-dim);
+  font-family: var(--mono);
+  font-size: 10px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.artifact-files {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 7px;
+}
+
+.artifact-files button {
+  border: 1px solid var(--edge-bright);
+  background: var(--panel-alt);
+  color: var(--text-dim);
+  padding: 4px 7px;
+  font-family: var(--mono);
+  font-size: 10px;
+}
+
+.artifact-files button:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.artifact-viewer {
+  min-height: 72px;
+  max-height: 180px;
+  overflow: auto;
+  white-space: pre-wrap;
+  color: var(--text);
+  background: #030712;
+  border: 1px solid var(--edge);
+  padding: 8px;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  line-height: 1.45;
+}
+
 .detail-event p {
   margin: 4px 0 0;
   overflow-wrap: anywhere;
