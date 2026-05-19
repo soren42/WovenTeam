@@ -1,0 +1,55 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOM_URL="${WT_ROOM_URL:-http://127.0.0.1:8787}"
+FORMAT="table"
+
+usage() {
+    cat <<'USAGE'
+Usage:
+  wt-adapter-preflight [--json]
+
+Environment:
+  WT_ROOM_URL  wt-roomd base URL, default http://127.0.0.1:8787
+USAGE
+}
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --json) FORMAT="json"; shift ;;
+        -h|--help) usage; exit 0 ;;
+        *) echo "wt-adapter-preflight: unknown argument: $1" >&2; usage >&2; exit 2 ;;
+    esac
+done
+
+if ! command -v jq >/dev/null 2>&1; then
+    echo "wt-adapter-preflight: jq is required" >&2
+    exit 2
+fi
+
+payload="$(curl -fsS "$ROOM_URL/api/adapters")"
+if [[ "$FORMAT" == "json" ]]; then
+    printf '%s\n' "$payload" | jq .
+    exit 0
+fi
+
+printf '%s\n' "$payload" | jq -r '
+  .adapters[] |
+  [
+    .agent,
+    .adapter,
+    (if .enabled then "enabled" else "disabled" end),
+    .mode,
+    .state,
+    .preflight.state,
+    .preflight.reason,
+    (.preflight.lastFailure.class // "")
+  ] | @tsv' |
+while IFS=$'\t' read -r agent adapter enabled mode command_state preflight reason failure_class; do
+    printf '%-8s %-7s %-8s mode=%-7s command=%-10s preflight=%-9s reason=%s' \
+        "$agent" "$adapter" "$enabled" "$mode" "$command_state" "$preflight" "$reason"
+    if [[ -n "$failure_class" ]]; then
+        printf ' last_failure=%s' "$failure_class"
+    fi
+    printf '\n'
+done

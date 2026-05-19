@@ -260,9 +260,10 @@ async function loadAdapters() {
   renderVendors(payload.adapters.map(adapter => ({
     name: adapter.agent === "chatgpt" ? "Codex CLI" : adapter.agent === "claude" ? "Claude Code" : "Gemini CLI",
     cli: adapter.commandPath || adapter.command,
-    state: adapter.enabled ? adapter.state : "disabled",
-    quota: adapter.enabled ? 70 : 0,
-    warn: !adapter.enabled
+    state: adapter.preflight ? `${adapter.preflight.state} · ${adapter.preflight.reason}` : (adapter.enabled ? adapter.state : "disabled"),
+    quota: adapter.preflight?.ok ? 100 : adapter.enabled ? 45 : 0,
+    warn: !adapter.preflight?.ok,
+    lastFailure: adapter.preflight?.lastFailure?.class || ""
   })));
 }
 
@@ -609,6 +610,7 @@ function renderVendors(vendors = null) {
     card.innerHTML = `
       <div class="vendor-name"><span>${vendor.name}</span><i class="dot ${vendor.warn ? "warn" : ""}"></i></div>
       <p>${vendor.cli} · ${vendor.state}</p>
+      ${vendor.lastFailure ? `<p>last failure · ${vendor.lastFailure}</p>` : ""}
       <div class="quota"><span style="width:${vendor.quota}%"></span></div>
     `;
     grid.appendChild(card);

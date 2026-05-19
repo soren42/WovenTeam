@@ -92,6 +92,61 @@ Room-visible `task.status` and `task.result` messages mirror those task events.
 path, launchability, and supported tool profiles. It is a runtime capability
 report, not a security boundary.
 
+Phase 2 adds a stricter `preflight` object to each adapter entry. The top-level
+`state` field remains command launchability for backward compatibility, while
+`preflight.ok` is the launch-era readiness gate for real work. Preflight checks:
+
+- adapter enablement;
+- required adapter mode for Claude and Gemini;
+- command executable resolution;
+- runtime root or parent writability;
+- positive adapter timeout;
+- positive output cap.
+
+Example:
+
+```json
+{
+  "agent": "claude",
+  "adapter": "claude",
+  "enabled": true,
+  "mode": "adapter",
+  "command": "/usr/local/bin/claude",
+  "commandPath": "/usr/local/bin/claude",
+  "state": "launchable",
+  "profiles": ["observe", "ops_read"],
+  "preflight": {
+    "ok": true,
+    "state": "ready",
+    "reason": "ready",
+    "runtimeRootPath": "/woventeam/runtime/tasks",
+    "checks": {
+      "enabled": true,
+      "modeReady": true,
+      "commandExecutable": true,
+      "runtimeWritable": true,
+      "timeoutConfigured": true,
+      "outputCapConfigured": true
+    },
+    "lastFailure": {
+      "class": "",
+      "message": ""
+    }
+  }
+}
+```
+
+`lastFailure` is derived from recent failed task events created by the matching
+`wt-agent@...` adapter. Current classes are `missing_cli`, `timeout`,
+`nonzero_exit`, and `adapter_failed`.
+
+CLI operators can inspect the same report with:
+
+```sh
+./bin/wt-adapter-preflight
+./bin/wt-adapter-preflight --json
+```
+
 Service deployments should use absolute command paths when a CLI is installed
 outside systemd's default PATH. The capability report resolves commands from the
 daemon process environment, which may differ from an interactive shell.
