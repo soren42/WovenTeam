@@ -71,6 +71,8 @@ Check host harness visibility against active model profiles:
 ```sh
 ./bin/wt-harness-check
 ./bin/wt-harness-check --json --strict
+./bin/wt-adapter-preflight
+./bin/wt-adapter-preflight --json
 ```
 
 The first structured orchestration contract is documented as JSON Schema in

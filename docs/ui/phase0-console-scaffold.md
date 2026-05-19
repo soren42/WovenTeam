@@ -46,6 +46,9 @@ The Phase 0 browser UI is `WovenTeam Console (Fullscreen)` served by
 - The vendor panel reads live adapter capability state from `/api/adapters`,
   including enabled state, configured command, resolved command path, and
   launchability.
+- The vendor panel now displays the Phase 2 adapter preflight state and reason,
+  including the latest adapter failure class when a failed run has been recorded
+  in the task ledger.
 - The capacity readout uses `/api/capacity` to show active routing pressure and
   the settings panel exposes role routing and capacity caps.
 - The composer shows projected budget pressure and the daemon rejects packages

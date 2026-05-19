@@ -357,59 +357,178 @@ static int resolveCommandPath(const char *command, char *resolved, size_t resolv
     return 0;
 }
 
+static int pathParentWritable(const char *path) {
+    if (!path || path[0] == '\0') {
+        return 0;
+    }
+    if (access(path, W_OK | X_OK) == 0) {
+        return 1;
+    }
+    char copy[WT_PATH_SIZE];
+    snprintf(copy, sizeof(copy), "%s", path);
+    char *slash = strrchr(copy, '/');
+    if (!slash) {
+        snprintf(copy, sizeof(copy), ".");
+    } else if (slash == copy) {
+        slash[1] = '\0';
+    } else {
+        *slash = '\0';
+    }
+    return access(copy, W_OK | X_OK) == 0;
+}
+
+static int readLatestAdapterFailure(const WtConfig *config, const char *agentName,
+                                    char *failureClass, size_t failureClassSize,
+                                    char *message, size_t messageSize) {
+    FILE *file = fopen(config->taskLedgerPath, "r");
+    if (!file) {
+        snprintf(failureClass, failureClassSize, "%s", "");
+        snprintf(message, messageSize, "%s", "");
+        return 0;
+    }
+    char actor[WT_TASK_AGENT_SIZE];
+    snprintf(actor, sizeof(actor), "wt-agent@%s", agentName);
+    char line[WT_TASK_LEDGER_LINE_SIZE];
+    int found = 0;
+    while (fgets(line, sizeof(line), file)) {
+        char schema[128];
+        char status[WT_TASK_STATUS_SIZE];
+        char createdBy[WT_TASK_AGENT_SIZE];
+        char eventMessage[WT_TASK_TITLE_SIZE];
+        if (wtJsonReadString(line, "schema", schema, sizeof(schema)) != 0 ||
+            strcmp(schema, "woventeam.task_event.v0.1") != 0 ||
+            wtJsonReadString(line, "status", status, sizeof(status)) != 0 ||
+            strcmp(status, "failed") != 0 ||
+            wtJsonReadString(line, "createdBy", createdBy, sizeof(createdBy)) != 0 ||
+            strcmp(createdBy, actor) != 0) {
+            continue;
+        }
+        if (wtJsonReadString(line, "message", eventMessage, sizeof(eventMessage)) != 0) {
+            snprintf(eventMessage, sizeof(eventMessage), "%s", "adapter failed");
+        }
+        if (strstr(eventMessage, "timedOut=true")) {
+            snprintf(failureClass, failureClassSize, "%s", "timeout");
+        } else if (strstr(eventMessage, "exitCode=127")) {
+            snprintf(failureClass, failureClassSize, "%s", "missing_cli");
+        } else if (strstr(eventMessage, "exitCode=")) {
+            snprintf(failureClass, failureClassSize, "%s", "nonzero_exit");
+        } else {
+            snprintf(failureClass, failureClassSize, "%s", "adapter_failed");
+        }
+        snprintf(message, messageSize, "%s", eventMessage);
+        found = 1;
+    }
+    fclose(file);
+    if (!found) {
+        snprintf(failureClass, failureClassSize, "%s", "");
+        snprintf(message, messageSize, "%s", "");
+    }
+    return found;
+}
+
+static void appendAdapterJson(char *body, size_t bodySize, const WtConfig *config,
+                              const char *agentName, const char *adapterName,
+                              int enabled, const char *mode, const char *command,
+                              const char *profilesJson) {
+    char commandPath[WT_PATH_SIZE];
+    int commandLaunchable = resolveCommandPath(command, commandPath, sizeof(commandPath));
+    int modeOk = strcmp(adapterName, "codex") == 0 || strcmp(mode, "adapter") == 0;
+    int runtimeWritable = pathParentWritable(config->runtimeRootPath);
+    int timeoutOk = config->adapterTimeoutSeconds > 0;
+    int outputOk = config->adapterMaxOutputBytes > 0;
+    int preflightOk = enabled && modeOk && commandLaunchable && runtimeWritable && timeoutOk && outputOk;
+    const char *preflightState = !enabled ? "disabled" : preflightOk ? "ready" : "not_ready";
+    const char *reason = "ready";
+    if (!enabled) {
+        reason = "adapter disabled";
+    } else if (!modeOk) {
+        reason = "adapter mode must be adapter";
+    } else if (!commandLaunchable) {
+        reason = "command is missing or not executable";
+    } else if (!runtimeWritable) {
+        reason = "runtime root or parent is not writable";
+    } else if (!timeoutOk) {
+        reason = "adapter timeout must be greater than zero";
+    } else if (!outputOk) {
+        reason = "adapter output cap must be greater than zero";
+    }
+
+    char failureClass[64];
+    char failureMessage[WT_TASK_TITLE_SIZE];
+    readLatestAdapterFailure(config, agentName, failureClass, sizeof(failureClass),
+                             failureMessage, sizeof(failureMessage));
+
+    char escapedAgent[WT_NAME_SIZE * 2];
+    char escapedAdapter[WT_NAME_SIZE * 2];
+    char escapedMode[WT_NAME_SIZE * 2];
+    char escapedCommand[WT_PATH_SIZE * 2];
+    char escapedCommandPath[WT_PATH_SIZE * 2];
+    char escapedRuntime[WT_PATH_SIZE * 2];
+    char escapedState[64];
+    char escapedPreflightState[64];
+    char escapedReason[256];
+    char escapedFailureClass[128];
+    char escapedFailureMessage[WT_TASK_TITLE_SIZE * 2];
+    if (wtJsonEscape(agentName, escapedAgent, sizeof(escapedAgent)) != 0 ||
+        wtJsonEscape(adapterName, escapedAdapter, sizeof(escapedAdapter)) != 0 ||
+        wtJsonEscape(mode, escapedMode, sizeof(escapedMode)) != 0 ||
+        wtJsonEscape(command, escapedCommand, sizeof(escapedCommand)) != 0 ||
+        wtJsonEscape(commandPath, escapedCommandPath, sizeof(escapedCommandPath)) != 0 ||
+        wtJsonEscape(config->runtimeRootPath, escapedRuntime, sizeof(escapedRuntime)) != 0 ||
+        wtJsonEscape(commandLaunchable ? "launchable" : "missing", escapedState, sizeof(escapedState)) != 0 ||
+        wtJsonEscape(preflightState, escapedPreflightState, sizeof(escapedPreflightState)) != 0 ||
+        wtJsonEscape(reason, escapedReason, sizeof(escapedReason)) != 0 ||
+        wtJsonEscape(failureClass, escapedFailureClass, sizeof(escapedFailureClass)) != 0 ||
+        wtJsonEscape(failureMessage, escapedFailureMessage, sizeof(escapedFailureMessage)) != 0) {
+        return;
+    }
+
+    char item[4096];
+    snprintf(item, sizeof(item),
+             "{\"agent\":\"%s\",\"adapter\":\"%s\",\"enabled\":%s,\"mode\":\"%s\","
+             "\"command\":\"%s\",\"commandPath\":\"%s\",\"state\":\"%s\",\"profiles\":%s,"
+             "\"preflight\":{\"ok\":%s,\"state\":\"%s\",\"reason\":\"%s\","
+             "\"runtimeRootPath\":\"%s\",\"checks\":{\"enabled\":%s,\"modeReady\":%s,"
+             "\"commandExecutable\":%s,\"runtimeWritable\":%s,\"timeoutConfigured\":%s,"
+             "\"outputCapConfigured\":%s},\"lastFailure\":{\"class\":\"%s\",\"message\":\"%s\"}}}",
+             escapedAgent,
+             escapedAdapter,
+             enabled ? "true" : "false",
+             escapedMode,
+             escapedCommand,
+             escapedCommandPath,
+             escapedState,
+             profilesJson,
+             preflightOk ? "true" : "false",
+             escapedPreflightState,
+             escapedReason,
+             escapedRuntime,
+             enabled ? "true" : "false",
+             modeOk ? "true" : "false",
+             commandLaunchable ? "true" : "false",
+             runtimeWritable ? "true" : "false",
+             timeoutOk ? "true" : "false",
+             outputOk ? "true" : "false",
+             escapedFailureClass,
+             escapedFailureMessage);
+    strncat(body, item, bodySize - strlen(body) - 1);
+}
+
 static int sendAdaptersJson(int clientFd, const WtConfig *config) {
     char body[8192];
-    char codexPath[WT_PATH_SIZE];
-    char claudePath[WT_PATH_SIZE];
-    char geminiPath[WT_PATH_SIZE];
-    int codexLaunchable = resolveCommandPath(config->gptCommand, codexPath, sizeof(codexPath));
-    int claudeLaunchable = resolveCommandPath(config->claudeCommand, claudePath, sizeof(claudePath));
-    int geminiLaunchable = resolveCommandPath(config->geminiCommand, geminiPath, sizeof(geminiPath));
-    char chatgptMode[WT_NAME_SIZE * 2];
-    char claudeMode[WT_NAME_SIZE * 2];
-    char geminiMode[WT_NAME_SIZE * 2];
-    char gptCommand[WT_PATH_SIZE * 2];
-    char claudeCommand[WT_PATH_SIZE * 2];
-    char geminiCommand[WT_PATH_SIZE * 2];
-    char codexCommandPath[WT_PATH_SIZE * 2];
-    char claudeCommandPath[WT_PATH_SIZE * 2];
-    char geminiCommandPath[WT_PATH_SIZE * 2];
-    if (wtJsonEscape(config->chatgptMode, chatgptMode, sizeof(chatgptMode)) != 0 ||
-        wtJsonEscape(config->claudeMode, claudeMode, sizeof(claudeMode)) != 0 ||
-        wtJsonEscape(config->geminiMode, geminiMode, sizeof(geminiMode)) != 0 ||
-        wtJsonEscape(config->gptCommand, gptCommand, sizeof(gptCommand)) != 0 ||
-        wtJsonEscape(config->claudeCommand, claudeCommand, sizeof(claudeCommand)) != 0 ||
-        wtJsonEscape(config->geminiCommand, geminiCommand, sizeof(geminiCommand)) != 0 ||
-        wtJsonEscape(codexPath, codexCommandPath, sizeof(codexCommandPath)) != 0 ||
-        wtJsonEscape(claudePath, claudeCommandPath, sizeof(claudeCommandPath)) != 0 ||
-        wtJsonEscape(geminiPath, geminiCommandPath, sizeof(geminiCommandPath)) != 0) {
-        return wtHttpSendText(clientFd, 500, "Internal Server Error", "application/json",
-                              "{\"ok\":false,\"error\":\"adapter serialization failed\"}\n");
-    }
-    snprintf(body, sizeof(body),
-             "{\"ok\":true,\"adapters\":["
-             "{\"agent\":\"chatgpt\",\"adapter\":\"codex\",\"enabled\":%s,\"mode\":\"%s\","
-             "\"command\":\"%s\",\"commandPath\":\"%s\",\"state\":\"%s\",\"profiles\":[\"repo_branch\",\"test_local\"]},"
-             "{\"agent\":\"claude\",\"adapter\":\"claude\",\"enabled\":%s,\"mode\":\"%s\","
-             "\"command\":\"%s\",\"commandPath\":\"%s\",\"state\":\"%s\",\"profiles\":[\"observe\",\"ops_read\"]},"
-             "{\"agent\":\"gemini\",\"adapter\":\"gemini\",\"enabled\":%s,\"mode\":\"%s\","
-             "\"command\":\"%s\",\"commandPath\":\"%s\",\"state\":\"%s\",\"profiles\":[\"observe\",\"ops_read\"]}"
-             "]}\n",
-             config->enableCodexAdapter ? "true" : "false",
-             chatgptMode,
-             gptCommand,
-             codexCommandPath,
-             codexLaunchable ? "launchable" : "missing",
-             config->enableClaudeAdapter ? "true" : "false",
-             claudeMode,
-             claudeCommand,
-             claudeCommandPath,
-             claudeLaunchable ? "launchable" : "missing",
-             config->enableGeminiAdapter ? "true" : "false",
-             geminiMode,
-             geminiCommand,
-             geminiCommandPath,
-             geminiLaunchable ? "launchable" : "missing");
+    snprintf(body, sizeof(body), "%s", "{\"ok\":true,\"adapters\":[");
+    appendAdapterJson(body, sizeof(body), config, "chatgpt", "codex",
+                      config->enableCodexAdapter, config->chatgptMode, config->gptCommand,
+                      "[\"repo_branch\",\"test_local\"]");
+    strncat(body, ",", sizeof(body) - strlen(body) - 1);
+    appendAdapterJson(body, sizeof(body), config, "claude", "claude",
+                      config->enableClaudeAdapter, config->claudeMode, config->claudeCommand,
+                      "[\"observe\",\"ops_read\"]");
+    strncat(body, ",", sizeof(body) - strlen(body) - 1);
+    appendAdapterJson(body, sizeof(body), config, "gemini", "gemini",
+                      config->enableGeminiAdapter, config->geminiMode, config->geminiCommand,
+                      "[\"observe\",\"ops_read\"]");
+    strncat(body, "]}\n", sizeof(body) - strlen(body) - 1);
     return wtHttpSendText(clientFd, 200, "OK", "application/json; charset=utf-8", body);
 }
 

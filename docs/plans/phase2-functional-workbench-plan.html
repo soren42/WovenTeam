@@ -1,0 +1,676 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>WovenTeam Phase 2 Functional Workbench Plan</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f5f7f8;
+      --paper: #ffffff;
+      --ink: #1f2933;
+      --muted: #64717d;
+      --line: #d8dee4;
+      --line-strong: #b9c3cc;
+      --blue: #2563a8;
+      --green: #1f7a5a;
+      --amber: #a16207;
+      --red: #b42318;
+      --violet: #6d4aff;
+      --teal: #0f766e;
+      --soft-blue: #e7f0fa;
+      --soft-green: #e7f5ee;
+      --soft-amber: #fff4db;
+      --soft-red: #fdeceb;
+      --soft-violet: #eeeafe;
+      --soft-teal: #e4f5f2;
+      --shadow: 0 16px 40px rgba(31, 41, 51, 0.08);
+      --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      --sans: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: var(--sans);
+      line-height: 1.5;
+    }
+    a { color: var(--blue); }
+    code {
+      font-family: var(--mono);
+      font-size: 0.92em;
+      background: #eef2f5;
+      border: 1px solid var(--line);
+      border-radius: 5px;
+      padding: 1px 5px;
+    }
+    .shell {
+      max-width: 1180px;
+      margin: 0 auto;
+      padding: 28px 18px 64px;
+    }
+    .hero {
+      display: grid;
+      grid-template-columns: minmax(0, 1.1fr) minmax(330px, 0.9fr);
+      gap: 22px;
+      align-items: center;
+      padding: 28px;
+      background: var(--paper);
+      border: 1px solid var(--line);
+      box-shadow: var(--shadow);
+    }
+    .eyebrow {
+      margin: 0 0 8px;
+      color: var(--blue);
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+    }
+    h1, h2, h3 { line-height: 1.16; letter-spacing: 0; }
+    h1 {
+      margin: 0;
+      font-size: clamp(32px, 4vw, 52px);
+    }
+    h2 {
+      margin: 0 0 12px;
+      font-size: 25px;
+    }
+    h3 {
+      margin: 0 0 8px;
+      font-size: 17px;
+    }
+    p { margin: 8px 0; }
+    .subtitle {
+      max-width: 760px;
+      color: var(--muted);
+      font-size: 18px;
+    }
+    .meta-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 18px;
+    }
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: #f9fafb;
+      color: var(--muted);
+      padding: 6px 10px;
+      font-size: 12px;
+      font-weight: 700;
+    }
+    .pill.live { color: var(--green); background: var(--soft-green); border-color: #b7dfcd; }
+    .pill.next { color: var(--blue); background: var(--soft-blue); border-color: #b9d6f4; }
+    .pill.risk { color: var(--amber); background: var(--soft-amber); border-color: #f0d28c; }
+    .hero-card {
+      border: 1px solid var(--line);
+      background: #fbfcfd;
+      padding: 14px;
+    }
+    .hero-card svg {
+      width: 100%;
+      height: auto;
+      display: block;
+    }
+    .nav {
+      position: sticky;
+      top: 0;
+      z-index: 4;
+      display: flex;
+      gap: 8px;
+      overflow-x: auto;
+      margin: 14px 0 18px;
+      padding: 10px 0;
+      background: rgba(245, 247, 248, 0.92);
+      backdrop-filter: blur(10px);
+    }
+    .nav a, .filter button {
+      white-space: nowrap;
+      border: 1px solid var(--line);
+      background: var(--paper);
+      color: var(--ink);
+      text-decoration: none;
+      padding: 8px 10px;
+      font-weight: 700;
+      font-size: 13px;
+    }
+    .nav a:hover, .filter button:hover, .filter button.active {
+      border-color: var(--blue);
+      color: var(--blue);
+      background: var(--soft-blue);
+    }
+    section {
+      margin-top: 18px;
+      background: var(--paper);
+      border: 1px solid var(--line);
+      padding: 22px;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 12px;
+    }
+    .grid.two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .card {
+      border: 1px solid var(--line);
+      background: #fbfcfd;
+      padding: 14px;
+    }
+    .card strong {
+      display: block;
+      margin-bottom: 5px;
+      font-size: 15px;
+    }
+    .metric {
+      display: grid;
+      gap: 4px;
+    }
+    .metric b {
+      font-size: 30px;
+      line-height: 1;
+      color: var(--blue);
+      font-family: var(--mono);
+    }
+    .muted { color: var(--muted); }
+    .flow {
+      width: 100%;
+      min-height: 260px;
+      border: 1px solid var(--line);
+      background: #fbfcfd;
+      margin-top: 10px;
+    }
+    .workstreams {
+      display: grid;
+      gap: 10px;
+    }
+    .stream {
+      border: 1px solid var(--line);
+      background: #fbfcfd;
+      padding: 14px;
+    }
+    .stream header {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: start;
+      margin-bottom: 8px;
+    }
+    .stream h3 { margin: 0; }
+    .stream ul {
+      margin: 8px 0 0;
+      padding-left: 20px;
+    }
+    .tag {
+      display: inline-block;
+      border: 1px solid var(--line);
+      background: #f6f8fa;
+      color: var(--muted);
+      padding: 3px 7px;
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+    .tag.must { color: var(--red); background: var(--soft-red); border-color: #f2b8b5; }
+    .tag.core { color: var(--blue); background: var(--soft-blue); border-color: #b9d6f4; }
+    .tag.ops { color: var(--green); background: var(--soft-green); border-color: #b7dfcd; }
+    .tag.ui { color: var(--violet); background: var(--soft-violet); border-color: #cfc4ff; }
+    .tag.policy { color: var(--teal); background: var(--soft-teal); border-color: #a9d9d1; }
+    .timeline {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 12px;
+    }
+    .sprint {
+      border-top: 5px solid var(--blue);
+      background: #fbfcfd;
+      border-left: 1px solid var(--line);
+      border-right: 1px solid var(--line);
+      border-bottom: 1px solid var(--line);
+      padding: 14px;
+    }
+    .sprint:nth-child(2) { border-top-color: var(--green); }
+    .sprint:nth-child(3) { border-top-color: var(--amber); }
+    .sprint:nth-child(4) { border-top-color: var(--violet); }
+    .sprint:nth-child(5) { border-top-color: var(--teal); }
+    .sprint:nth-child(6) { border-top-color: var(--red); }
+    .sprint ol {
+      padding-left: 20px;
+      margin: 8px 0 0;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 10px;
+      background: #fbfcfd;
+    }
+    th, td {
+      border: 1px solid var(--line);
+      padding: 9px 10px;
+      text-align: left;
+      vertical-align: top;
+    }
+    th {
+      background: #eef2f5;
+      font-size: 12px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+    .checklist {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px 14px;
+      margin-top: 8px;
+    }
+    .check {
+      display: grid;
+      grid-template-columns: 22px 1fr;
+      gap: 8px;
+      align-items: start;
+      color: var(--muted);
+    }
+    .box {
+      width: 18px;
+      height: 18px;
+      border: 2px solid var(--green);
+      margin-top: 2px;
+    }
+    .filter {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin: 8px 0 12px;
+    }
+    .hidden { display: none; }
+    footer {
+      margin-top: 18px;
+      color: var(--muted);
+      font-size: 13px;
+      text-align: center;
+    }
+    @media (max-width: 900px) {
+      .hero, .grid, .grid.two, .timeline, .checklist {
+        grid-template-columns: 1fr;
+      }
+      .shell { padding: 14px 10px 40px; }
+      section, .hero { padding: 18px; }
+    }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <header class="hero">
+      <div>
+        <p class="eyebrow">WovenTeam Phase 2</p>
+        <h1>Functional Workbench Plan</h1>
+        <p class="subtitle">A launch-oriented plan to move from a validated Phase 1 work loop into a useful multi-agent workbench with real adapter execution, initiative-level control, workload safety, artifact promotion, and repeatable launch rehearsals.</p>
+        <div class="meta-row">
+          <span class="pill live">Phase 1 validated</span>
+          <span class="pill next">Phase 2 target: functional workbench</span>
+          <span class="pill risk">Scope: single-host intranet first</span>
+        </div>
+      </div>
+      <div class="hero-card">
+        <svg viewBox="0 0 520 300" role="img" aria-label="Phase 2 workbench flow diagram">
+          <defs>
+            <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+              <path d="M 0 0 L 10 5 L 0 10 z" fill="#2563a8"></path>
+            </marker>
+            <style>
+              .b { fill: #fff; stroke: #b9c3cc; stroke-width: 1.5; }
+              .t { fill: #1f2933; font: 700 14px system-ui, sans-serif; }
+              .s { fill: #64717d; font: 12px system-ui, sans-serif; }
+              .a { stroke: #2563a8; stroke-width: 2; fill: none; marker-end: url(#arrow); }
+              .g { fill: #e7f5ee; stroke: #1f7a5a; }
+              .y { fill: #fff4db; stroke: #a16207; }
+              .v { fill: #eeeafe; stroke: #6d4aff; }
+              .q { fill: #e4f5f2; stroke: #0f766e; }
+            </style>
+          </defs>
+          <rect class="b" x="20" y="24" width="120" height="58" rx="6"></rect>
+          <text class="t" x="80" y="48" text-anchor="middle">Operator</text>
+          <text class="s" x="80" y="66" text-anchor="middle">web + CLI</text>
+          <rect class="v" x="200" y="24" width="120" height="58" rx="6"></rect>
+          <text class="t" x="260" y="48" text-anchor="middle">Initiative</text>
+          <text class="s" x="260" y="66" text-anchor="middle">tasks + budget</text>
+          <rect class="g" x="380" y="24" width="120" height="58" rx="6"></rect>
+          <text class="t" x="440" y="48" text-anchor="middle">State</text>
+          <text class="s" x="440" y="66" text-anchor="middle">JSONL + SQLite</text>
+          <rect class="q" x="46" y="134" width="130" height="58" rx="6"></rect>
+          <text class="t" x="111" y="158" text-anchor="middle">Policy</text>
+          <text class="s" x="111" y="176" text-anchor="middle">model + budget</text>
+          <rect class="b" x="215" y="134" width="130" height="58" rx="6"></rect>
+          <text class="t" x="280" y="158" text-anchor="middle">Agents</text>
+          <text class="s" x="280" y="176" text-anchor="middle">lease + execute</text>
+          <rect class="y" x="384" y="134" width="110" height="58" rx="6"></rect>
+          <text class="t" x="439" y="158" text-anchor="middle">Artifacts</text>
+          <text class="s" x="439" y="176" text-anchor="middle">review + accept</text>
+          <rect class="b" x="200" y="232" width="120" height="48" rx="6"></rect>
+          <text class="t" x="260" y="252" text-anchor="middle">Rehearsal</text>
+          <text class="s" x="260" y="269" text-anchor="middle">prove launch path</text>
+          <path class="a" d="M140 53 H196"></path>
+          <path class="a" d="M320 53 H376"></path>
+          <path class="a" d="M260 82 C250 110 162 120 122 132"></path>
+          <path class="a" d="M176 163 H211"></path>
+          <path class="a" d="M345 163 H380"></path>
+          <path class="a" d="M439 192 C415 222 344 238 323 248"></path>
+          <path class="a" d="M220 248 C138 230 78 148 80 86"></path>
+        </svg>
+      </div>
+    </header>
+
+    <nav class="nav" aria-label="Plan navigation">
+      <a href="#goal">Goal</a>
+      <a href="#done">Definition Of Done</a>
+      <a href="#streams">Workstreams</a>
+      <a href="#sprints">Sprints</a>
+      <a href="#architecture">Architecture</a>
+      <a href="#risks">Risks</a>
+      <a href="#demo">Demo Script</a>
+    </nav>
+
+    <section id="goal">
+      <h2>Phase 2 Goal</h2>
+      <p>Phase 2 should produce a usable workbench for bounded real work. The operator can start an initiative, assign or route work to Claude, Codex, and Gemini paths where enabled, inspect live state and artifacts, enforce policy and budgets, and recover cleanly after daemon or agent restarts.</p>
+      <div class="grid">
+        <div class="card metric"><span class="muted">Primary outcome</span><b>1</b><strong>Functional workbench</strong><p class="muted">Initiative, tasks, agents, artifacts, review, and recovery in one operator loop.</p></div>
+        <div class="card metric"><span class="muted">Model target</span><b>3</b><strong>Primary model paths</strong><p class="muted">Claude, ChatGPT/Codex, and Gemini contribute where configured and launchable.</p></div>
+        <div class="card metric"><span class="muted">Safety target</span><b>0</b><strong>Silent failures</strong><p class="muted">Misconfigured adapters, blocked models, and budget stops fail closed with visible reasons.</p></div>
+      </div>
+    </section>
+
+    <section id="done">
+      <h2>Definition Of Done</h2>
+      <p>Phase 2 is done when this full workbench flow works without editing raw ledgers or manually chasing service logs:</p>
+      <div class="checklist">
+        <div class="check"><span class="box"></span><span>Create an initiative from the web UI or CLI and see initiative-level status, budget, and open gates.</span></div>
+        <div class="check"><span class="box"></span><span>Break the initiative into role-assigned tasks and manager-created subtasks.</span></div>
+        <div class="check"><span class="box"></span><span>Run real adapter preflights for Claude, Codex, and Gemini and block unsafe or unavailable paths.</span></div>
+        <div class="check"><span class="box"></span><span>Lease, pause, resume, retry, and recover agent work without double-claiming tasks.</span></div>
+        <div class="check"><span class="box"></span><span>Promote reviewed artifacts from raw output to accepted initiative assets.</span></div>
+        <div class="check"><span class="box"></span><span>Enforce model policy, blocked vendors, capacity caps, and token budgets across CLI and web paths.</span></div>
+        <div class="check"><span class="box"></span><span>Export an initiative audit report containing task history, gates, usage, artifacts, and decisions.</span></div>
+        <div class="check"><span class="box"></span><span>Run a Phase 2 launch rehearsal that survives daemon and agent restart.</span></div>
+      </div>
+    </section>
+
+    <section id="streams">
+      <h2>Workstreams</h2>
+      <div class="filter" aria-label="Workstream filter">
+        <button type="button" class="active" data-filter="all">All</button>
+        <button type="button" data-filter="must">Launch Critical</button>
+        <button type="button" data-filter="core">Core System</button>
+        <button type="button" data-filter="ui">Workbench UI</button>
+        <button type="button" data-filter="ops">Operations</button>
+        <button type="button" data-filter="policy">Policy</button>
+      </div>
+      <div class="workstreams">
+        <article class="stream" data-kind="must core">
+          <header><h3>1. Real Adapter Hardening</h3><span class="tag must">Launch Critical</span></header>
+          <p>Move from deterministic fake adapter proof to safe, observable real CLI execution.</p>
+          <ul>
+            <li>Add adapter preflight checks for command path, auth/session state, runtime root, timeout, and tool profile compatibility.</li>
+            <li>Define failure classes for missing CLI, auth failure, timeout, nonzero exit, empty result, and output truncation.</li>
+            <li>Add harmless real-CLI smoke tasks for enabled Claude, Codex, and Gemini paths.</li>
+            <li>Surface adapter readiness and last failure in the web UI.</li>
+          </ul>
+        </article>
+
+        <article class="stream" data-kind="must core ui">
+          <header><h3>2. Initiative And Workspace Model</h3><span class="tag must">Launch Critical</span></header>
+          <p>Promote initiative-level work from a loose task grouping into the operator's primary unit of control.</p>
+          <ul>
+            <li>Add initiative projection, summaries, and detail APIs derived from task packages and events.</li>
+            <li>Add CLI commands for initiative create, list, show, export, and close.</li>
+            <li>Separate initiative artifacts from per-task runtime artifacts while preserving append-only history.</li>
+            <li>Add initiative selector, status summary, budget summary, and open gate panel to the console.</li>
+          </ul>
+        </article>
+
+        <article class="stream" data-kind="must core ops">
+          <header><h3>3. Agent Workload Control</h3><span class="tag core">Core System</span></header>
+          <p>Give agents enough autonomy to do useful work while keeping operator control and crash recovery predictable.</p>
+          <ul>
+            <li>Add claim or lease semantics so tasks cannot be double-run after races or restarts.</li>
+            <li>Add per-agent pause, resume, concurrency, cooldown, max runtime, and stuck-task detection.</li>
+            <li>Record attempt counts, retry causes, and terminal failure reasons.</li>
+            <li>Expose agent operations from CLI and web without requiring systemd access for routine control.</li>
+          </ul>
+        </article>
+
+        <article class="stream" data-kind="core ui">
+          <header><h3>4. Review And Artifact Promotion</h3><span class="tag ui">Workbench UI</span></header>
+          <p>Turn raw adapter output into reviewed assets that can be accepted, rejected, superseded, exported, or used by later tasks.</p>
+          <ul>
+            <li>Add artifact states: draft, reviewed, accepted, rejected, superseded.</li>
+            <li>Record reviewer identity, notes, and decisions as task events.</li>
+            <li>Add artifact export and promotion commands for CLI users.</li>
+            <li>Improve the console artifact viewer for result, stdout, stderr, manifest, and promoted asset inspection.</li>
+          </ul>
+        </article>
+
+        <article class="stream" data-kind="must policy ops">
+          <header><h3>5. Policy, Audit, And Cost Controls</h3><span class="tag policy">Policy</span></header>
+          <p>Make longer runs safe by enforcing model policy, budget limits, and auditable decision history everywhere work can enter the system.</p>
+          <ul>
+            <li>Centralize model/vendor policy checks for routing, CLI, web config, and manager subtask creation.</li>
+            <li>Block removed vendors and incompatible model-agent combinations before task acceptance.</li>
+            <li>Enforce budget limits by initiative, agent, model family, day, and month.</li>
+            <li>Export a single initiative audit report with tasks, events, gates, usage, artifacts, and policy decisions.</li>
+          </ul>
+        </article>
+
+        <article class="stream" data-kind="must ops">
+          <header><h3>6. Launch Rehearsal And Documentation</h3><span class="tag ops">Operations</span></header>
+          <p>Close Phase 2 with repeatable evidence, not a narrative claim.</p>
+          <ul>
+            <li>Add a Phase 2 end-to-end test target covering initiatives, real-adapter preflight, leasing, promotion, policy, and recovery.</li>
+            <li>Run one harmless live adapter rehearsal against installed CLIs with operator-approved token budgets.</li>
+            <li>Update the operations runbook, user cheat sheet, API docs, and console status surfaces.</li>
+            <li>Produce a one-page Phase 2 launch report in the inline HTML/CSS/JS report format.</li>
+          </ul>
+        </article>
+      </div>
+    </section>
+
+    <section id="sprints">
+      <h2>Proposed Sprints</h2>
+      <div class="timeline">
+        <article class="sprint">
+          <h3>Sprint 1: Adapter Hardening</h3>
+          <p class="muted">Make real CLI execution safe enough to enable deliberately.</p>
+          <ol>
+            <li>Adapter preflight API and CLI.</li>
+            <li>Failure taxonomy and ledger events.</li>
+            <li>Harmless live smoke task templates.</li>
+            <li>Adapter readiness UI.</li>
+            <li>Tests for unavailable and failing adapters.</li>
+          </ol>
+        </article>
+        <article class="sprint">
+          <h3>Sprint 2: Initiatives</h3>
+          <p class="muted">Make initiative state the workbench's organizing layer.</p>
+          <ol>
+            <li>Initiative projection and APIs.</li>
+            <li><code>wt-task initiative</code> commands.</li>
+            <li>Initiative detail and selector UI.</li>
+            <li>Initiative artifact layout.</li>
+            <li>Initiative budget and gate summaries.</li>
+          </ol>
+        </article>
+        <article class="sprint">
+          <h3>Sprint 3: Workload Control</h3>
+          <p class="muted">Prevent duplicate work and expose operational control.</p>
+          <ol>
+            <li>Task claim or lease records.</li>
+            <li>Agent pause and resume.</li>
+            <li>Attempt counts and retry causes.</li>
+            <li>Stuck-task detection.</li>
+            <li>Agent operations panel.</li>
+          </ol>
+        </article>
+        <article class="sprint">
+          <h3>Sprint 4: Artifact Promotion</h3>
+          <p class="muted">Separate raw output from accepted work product.</p>
+          <ol>
+            <li>Artifact state events.</li>
+            <li>Promotion and export CLI.</li>
+            <li>Reviewer notes and decisions.</li>
+            <li>Accepted asset inventory.</li>
+            <li>Console artifact review improvements.</li>
+          </ol>
+        </article>
+        <article class="sprint">
+          <h3>Sprint 5: Policy And Audit</h3>
+          <p class="muted">Make model, budget, and compliance limits first-class.</p>
+          <ol>
+            <li>Central policy evaluator.</li>
+            <li>Blocked vendor enforcement.</li>
+            <li>Initiative and model-family budgets.</li>
+            <li>Audit export command.</li>
+            <li>Policy and budget UI warnings.</li>
+          </ol>
+        </article>
+        <article class="sprint">
+          <h3>Sprint 6: Launch Rehearsal</h3>
+          <p class="muted">Prove the system can run a bounded real project.</p>
+          <ol>
+            <li>Phase 2 E2E test target.</li>
+            <li>Harmless live adapter rehearsal.</li>
+            <li>Restart and recovery exercise.</li>
+            <li>Runbook and cheat sheet updates.</li>
+            <li>Phase 2 launch status report.</li>
+          </ol>
+        </article>
+      </div>
+    </section>
+
+    <section id="architecture">
+      <h2>Target Architecture For Phase 2</h2>
+      <svg class="flow" viewBox="0 0 1040 360" role="img" aria-label="Detailed Phase 2 workbench architecture diagram">
+        <defs>
+          <marker id="arrow2" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M 0 0 L 10 5 L 0 10 z" fill="#2563a8"></path>
+          </marker>
+          <style>
+            .node { fill: #fff; stroke: #b9c3cc; stroke-width: 1.5; }
+            .blue { fill: #e7f0fa; stroke: #2563a8; }
+            .green { fill: #e7f5ee; stroke: #1f7a5a; }
+            .amber { fill: #fff4db; stroke: #a16207; }
+            .violet { fill: #eeeafe; stroke: #6d4aff; }
+            .teal { fill: #e4f5f2; stroke: #0f766e; }
+            .label { fill: #1f2933; font: 700 15px system-ui, sans-serif; }
+            .small { fill: #64717d; font: 12px system-ui, sans-serif; }
+            .line { stroke: #2563a8; stroke-width: 2; fill: none; marker-end: url(#arrow2); }
+            .audit { stroke: #64717d; stroke-width: 2; fill: none; stroke-dasharray: 5 5; }
+          </style>
+        </defs>
+        <rect class="node blue" x="20" y="30" width="150" height="64" rx="6"></rect>
+        <text class="label" x="95" y="56" text-anchor="middle">Workbench UI</text>
+        <text class="small" x="95" y="76" text-anchor="middle">web console + CLI</text>
+
+        <rect class="node" x="215" y="30" width="150" height="64" rx="6"></rect>
+        <text class="label" x="290" y="56" text-anchor="middle">wt-roomd</text>
+        <text class="small" x="290" y="76" text-anchor="middle">API + SSE + policy</text>
+
+        <rect class="node violet" x="410" y="20" width="150" height="52" rx="6"></rect>
+        <text class="label" x="485" y="51" text-anchor="middle">Initiatives</text>
+        <rect class="node green" x="410" y="88" width="150" height="52" rx="6"></rect>
+        <text class="label" x="485" y="119" text-anchor="middle">Audit + State</text>
+
+        <rect class="node teal" x="610" y="30" width="150" height="64" rx="6"></rect>
+        <text class="label" x="685" y="56" text-anchor="middle">Policy Engine</text>
+        <text class="small" x="685" y="76" text-anchor="middle">vendor + budget</text>
+
+        <rect class="node amber" x="825" y="18" width="175" height="52" rx="6"></rect>
+        <text class="label" x="912" y="49" text-anchor="middle">Agent Leases</text>
+        <rect class="node" x="825" y="88" width="175" height="52" rx="6"></rect>
+        <text class="label" x="912" y="119" text-anchor="middle">Adapter Preflight</text>
+        <rect class="node" x="825" y="158" width="175" height="52" rx="6"></rect>
+        <text class="label" x="912" y="189" text-anchor="middle">Real CLI Adapters</text>
+
+        <rect class="node blue" x="230" y="230" width="170" height="64" rx="6"></rect>
+        <text class="label" x="315" y="256" text-anchor="middle">Task Detail</text>
+        <text class="small" x="315" y="276" text-anchor="middle">events + attempts</text>
+        <rect class="node amber" x="450" y="230" width="170" height="64" rx="6"></rect>
+        <text class="label" x="535" y="256" text-anchor="middle">Review Gates</text>
+        <text class="small" x="535" y="276" text-anchor="middle">approve + revise</text>
+        <rect class="node violet" x="670" y="230" width="170" height="64" rx="6"></rect>
+        <text class="label" x="755" y="256" text-anchor="middle">Promoted Assets</text>
+        <text class="small" x="755" y="276" text-anchor="middle">accepted outputs</text>
+
+        <path class="line" d="M170 62 H211"></path>
+        <path class="line" d="M365 62 H406"></path>
+        <path class="line" d="M560 62 H606"></path>
+        <path class="line" d="M760 62 H821"></path>
+        <path class="line" d="M912 70 V84"></path>
+        <path class="line" d="M912 140 V154"></path>
+        <path class="line" d="M485 140 C485 184 378 210 330 228"></path>
+        <path class="line" d="M400 262 H446"></path>
+        <path class="line" d="M620 262 H666"></path>
+        <path class="line" d="M825 184 C775 214 760 218 755 228"></path>
+        <path class="audit" d="M755 294 C610 338 330 332 290 96"></path>
+        <text class="small" x="414" y="336">leases, gates, policy decisions, usage, and promotions append back to the durable audit/state layer</text>
+      </svg>
+      <p class="muted">Phase 2 keeps the Phase 1 storage discipline: append-only JSONL remains the recovery source, SQLite remains rebuildable state, and real adapter execution remains opt-in through explicit policy and preflight checks.</p>
+    </section>
+
+    <section id="risks">
+      <h2>Risks And Controls</h2>
+      <table>
+        <thead><tr><th>Risk</th><th>Control</th><th>Owner Bias</th></tr></thead>
+        <tbody>
+          <tr><td>Real CLI adapters run without valid auth or safe mode.</td><td>Preflight every enabled adapter, fail closed, and record actionable readiness errors.</td><td>Backend/framework</td></tr>
+          <tr><td>Agents double-claim work after daemon or agent restart.</td><td>Add lease/claim records, attempt counts, and stuck-task recovery paths.</td><td>Runtime</td></tr>
+          <tr><td>The UI presents initiative features that the backend cannot support.</td><td>Enable only backed controls; keep future views disabled until API and tests exist.</td><td>Dashboard</td></tr>
+          <tr><td>Blocked or removed vendors re-enter through routing or config.</td><td>Central policy evaluator used by task package, subtask, routing, and config paths.</td><td>Policy/review</td></tr>
+          <tr><td>Raw adapter output is mistaken for accepted project output.</td><td>Add artifact promotion states, review notes, and accepted asset inventory.</td><td>Operator workflow</td></tr>
+          <tr><td>Longer runs exceed subscription or token budgets.</td><td>Initiative, agent, model-family, daily, and monthly budget checks with visible warnings and hard stops.</td><td>Operations</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section id="demo">
+      <h2>Phase 2 Demo Script</h2>
+      <p>Use this as the acceptance demonstration at the end of the phase.</p>
+      <table>
+        <thead><tr><th>Step</th><th>Expected Evidence</th></tr></thead>
+        <tbody>
+          <tr><td>Create initiative from the web console.</td><td>Initiative appears with budget, status summary, open gates, and task count.</td></tr>
+          <tr><td>Run adapter preflight.</td><td>Claude, Codex, and Gemini paths show launchable, blocked, or unavailable states with reasons.</td></tr>
+          <tr><td>Assign manager and implementation tasks.</td><td>Role routing respects capabilities, policy, capacity, and blocked vendor rules.</td></tr>
+          <tr><td>Run a bounded real adapter task.</td><td>Task shows leased, running, complete or failed; artifacts and manifest are visible.</td></tr>
+          <tr><td>Review and promote the artifact.</td><td>Accepted asset appears in initiative artifacts with reviewer notes and decision history.</td></tr>
+          <tr><td>Export audit and restart services.</td><td>Audit report contains the initiative history; state reloads after restart without manual repair.</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <footer>
+      Generated 2026-05-19 UTC. Keep this plan aligned with <code>docs/launch/phase1-spike6-e2e-2026-05-19.md</code>, <code>docs/ops/phase1-operations-runbook.md</code>, <code>docs/ui/phase0-console-scaffold.md</code>, and the active task schema docs.
+    </footer>
+  </main>
+  <script>
+    const buttons = document.querySelectorAll("[data-filter]");
+    const streams = document.querySelectorAll(".stream");
+    buttons.forEach(button => {
+      button.addEventListener("click", () => {
+        const filter = button.dataset.filter;
+        buttons.forEach(item => item.classList.toggle("active", item === button));
+        streams.forEach(stream => {
+          const visible = filter === "all" || stream.dataset.kind.split(" ").includes(filter);
+          stream.classList.toggle("hidden", !visible);
+        });
+      });
+    });
+  </script>
+</body>
+</html>
