@@ -13,6 +13,8 @@ The Phase 0 browser UI is `WovenTeam Console (Fullscreen)` served by
   - `GET /api/tasks`
   - `GET /api/task-summaries`
   - `GET /api/task-detail?taskId=...`
+  - `GET /api/initiatives`
+  - `GET /api/initiative-detail?initiativeId=...`
   - `GET /api/task-artifacts?taskId=...`
   - `GET /api/capacity`
   - `GET /api/tokens`
@@ -26,6 +28,9 @@ The Phase 0 browser UI is `WovenTeam Console (Fullscreen)` served by
 - The task table reads the rebuildable SQLite task projection and shows task
   status, parent task IDs, requested-by role, event count, assigned role, and
   assigned agent.
+- The initiative workbench summary reads `/api/initiatives` and lets operators
+  focus the task table by initiative without changing the underlying task
+  package contract.
 - Selecting a task row opens the Phase 1 task detail panel with task body,
   event timeline, retry/cancel/close lifecycle controls, and review gate
   approve/reject/revision controls.
@@ -75,6 +80,8 @@ The scaffold now binds to the task package and Phase 1 state paths:
 - `GET /api/tasks`
 - `GET /api/task-summaries`
 - `GET /api/task-detail?taskId=...`
+- `GET /api/initiatives`
+- `GET /api/initiative-detail?initiativeId=...`
 - `GET /api/task-artifacts?taskId=...`
 - `GET /api/adapters`
 - `GET /api/capacity`

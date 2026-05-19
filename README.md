@@ -85,6 +85,9 @@ Create and inspect Phase 0 task packages through the room daemon:
 
 ```sh
 ./bin/wt-task create --title "Verify assignment path" --body "Claim and complete this stub task." --role backend_dev --agent chatgpt --max-tokens 2000000
+./bin/wt-task initiative create --title "Launch a bounded initiative" --body "Create the manager charter task." --id init_example
+./bin/wt-task initiative list
+./bin/wt-task initiative show init_example
 ./bin/wt-task list
 ./bin/wt-task show task_example_001
 ./bin/wt-task assign task_example_001 --agent gemini
@@ -115,6 +118,8 @@ the child task package, and links it to the parent task as a dependency:
 
 Manager-driven subtasks are documented in
 `docs/orchestration/manager-driven-subtasks.md`.
+Initiative summary and detail APIs are documented in
+`docs/api/task-ledger-v0.1.md`.
 
 After starting `wt-agent` with `WT_ENABLE_CODEX_ADAPTER=1`, create a Codex-
 eligible task for an isolated task workspace:

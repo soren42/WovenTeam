@@ -376,6 +376,152 @@ int wtTaskProjectionReadDetailJson(const char *dbPath, const char *taskId, char 
     return 0;
 }
 
+int wtTaskProjectionReadInitiativesJson(const char *dbPath, char *buffer, size_t bufferSize) {
+    sqlite3 *db = NULL;
+    if (sqlite3_open(dbPath, &db) != SQLITE_OK) {
+        sqlite3_close(db);
+        return -1;
+    }
+    sqlite3_stmt *stmt = NULL;
+    const char *sql =
+        "SELECT initiative_id,"
+        "COUNT(*),"
+        "SUM(CASE WHEN status NOT IN ('complete','failed','cancelled','closed') THEN 1 ELSE 0 END),"
+        "SUM(CASE WHEN status='complete' THEN 1 ELSE 0 END),"
+        "SUM(CASE WHEN status='failed' THEN 1 ELSE 0 END),"
+        "SUM(CASE WHEN status='blocked' THEN 1 ELSE 0 END),"
+        "SUM(CASE WHEN status IN ('approved','rejected','revision_requested') THEN 1 ELSE 0 END),"
+        "SUM(max_tokens),MIN(created_at_ms),MAX(updated_at_ms),"
+        "(SELECT title FROM tasks t2 WHERE t2.initiative_id=t.initiative_id "
+        " ORDER BY created_at_ms ASC, task_id ASC LIMIT 1) "
+        "FROM tasks t WHERE initiative_id != '' "
+        "GROUP BY initiative_id ORDER BY MAX(updated_at_ms) DESC, initiative_id LIMIT 100";
+    if (sqlite3_prepare_v2(db, sql, -1, &stmt, NULL) != SQLITE_OK) {
+        sqlite3_close(db);
+        return -1;
+    }
+    size_t used = 0;
+    appendRaw(buffer, bufferSize, &used, "{\"ok\":true,\"initiatives\":[");
+    int first = 1;
+    while (sqlite3_step(stmt) == SQLITE_ROW) {
+        char number[512];
+        if (!first) appendRaw(buffer, bufferSize, &used, ",");
+        first = 0;
+        appendRaw(buffer, bufferSize, &used, "{\"initiativeId\":");
+        appendJsonString(buffer, bufferSize, &used, columnText(stmt, 0));
+        appendRaw(buffer, bufferSize, &used, ",\"title\":");
+        appendJsonString(buffer, bufferSize, &used, columnText(stmt, 10));
+        snprintf(number, sizeof(number),
+                 ",\"taskCount\":%d,\"activeTasks\":%d,\"completeTasks\":%d,"
+                 "\"failedTasks\":%d,\"blockedTasks\":%d,\"openGateTasks\":%d,"
+                 "\"maxTokens\":%lld,\"createdAtUnixMs\":%lld,\"updatedAtUnixMs\":%lld}",
+                 sqlite3_column_int(stmt, 1),
+                 sqlite3_column_int(stmt, 2),
+                 sqlite3_column_int(stmt, 3),
+                 sqlite3_column_int(stmt, 4),
+                 sqlite3_column_int(stmt, 5),
+                 sqlite3_column_int(stmt, 6),
+                 sqlite3_column_int64(stmt, 7),
+                 sqlite3_column_int64(stmt, 8),
+                 sqlite3_column_int64(stmt, 9));
+        appendRaw(buffer, bufferSize, &used, number);
+    }
+    appendRaw(buffer, bufferSize, &used, "]}\n");
+    sqlite3_finalize(stmt);
+    sqlite3_close(db);
+    return 0;
+}
+
+int wtTaskProjectionReadInitiativeDetailJson(const char *dbPath, const char *initiativeId,
+                                             char *buffer, size_t bufferSize) {
+    sqlite3 *db = NULL;
+    if (sqlite3_open(dbPath, &db) != SQLITE_OK) {
+        sqlite3_close(db);
+        return -1;
+    }
+    sqlite3_stmt *summary = NULL;
+    const char *summarySql =
+        "SELECT COUNT(*),"
+        "SUM(CASE WHEN status NOT IN ('complete','failed','cancelled','closed') THEN 1 ELSE 0 END),"
+        "SUM(CASE WHEN status='complete' THEN 1 ELSE 0 END),"
+        "SUM(CASE WHEN status='failed' THEN 1 ELSE 0 END),"
+        "SUM(CASE WHEN status='blocked' THEN 1 ELSE 0 END),"
+        "SUM(CASE WHEN status IN ('approved','rejected','revision_requested') THEN 1 ELSE 0 END),"
+        "SUM(max_tokens),MIN(created_at_ms),MAX(updated_at_ms),"
+        "(SELECT title FROM tasks WHERE initiative_id=? ORDER BY created_at_ms ASC, task_id ASC LIMIT 1) "
+        "FROM tasks WHERE initiative_id=?";
+    if (sqlite3_prepare_v2(db, summarySql, -1, &summary, NULL) != SQLITE_OK) {
+        sqlite3_close(db);
+        return -1;
+    }
+    bindText(summary, 1, initiativeId);
+    bindText(summary, 2, initiativeId);
+    if (sqlite3_step(summary) != SQLITE_ROW || sqlite3_column_int(summary, 0) == 0) {
+        sqlite3_finalize(summary);
+        sqlite3_close(db);
+        snprintf(buffer, bufferSize, "{\"ok\":false,\"error\":\"initiative not found\"}");
+        return 1;
+    }
+    size_t used = 0;
+    char number[512];
+    appendRaw(buffer, bufferSize, &used, "{\"ok\":true,\"initiative\":{\"initiativeId\":");
+    appendJsonString(buffer, bufferSize, &used, initiativeId);
+    appendRaw(buffer, bufferSize, &used, ",\"title\":");
+    appendJsonString(buffer, bufferSize, &used, columnText(summary, 9));
+    snprintf(number, sizeof(number),
+             ",\"taskCount\":%d,\"activeTasks\":%d,\"completeTasks\":%d,"
+             "\"failedTasks\":%d,\"blockedTasks\":%d,\"openGateTasks\":%d,"
+             "\"maxTokens\":%lld,\"createdAtUnixMs\":%lld,\"updatedAtUnixMs\":%lld},\"tasks\":[",
+             sqlite3_column_int(summary, 0),
+             sqlite3_column_int(summary, 1),
+             sqlite3_column_int(summary, 2),
+             sqlite3_column_int(summary, 3),
+             sqlite3_column_int(summary, 4),
+             sqlite3_column_int(summary, 5),
+             sqlite3_column_int64(summary, 6),
+             sqlite3_column_int64(summary, 7),
+             sqlite3_column_int64(summary, 8));
+    appendRaw(buffer, bufferSize, &used, number);
+    sqlite3_finalize(summary);
+
+    sqlite3_stmt *task = NULL;
+    const char *taskSql =
+        "SELECT task_id,parent_task_id,requested_by_role,assigned_role,assigned_agent,"
+        "model_id,priority,status,title,tool_profile,max_tokens,created_at_ms,updated_at_ms,event_count "
+        "FROM tasks WHERE initiative_id=? ORDER BY updated_at_ms DESC, created_at_ms DESC, task_id LIMIT 200";
+    if (sqlite3_prepare_v2(db, taskSql, -1, &task, NULL) != SQLITE_OK) {
+        sqlite3_close(db);
+        return -1;
+    }
+    bindText(task, 1, initiativeId);
+    int first = 1;
+    while (sqlite3_step(task) == SQLITE_ROW) {
+        if (!first) appendRaw(buffer, bufferSize, &used, ",");
+        first = 0;
+        appendRaw(buffer, bufferSize, &used, "{");
+        const char *keys[] = {"taskId","parentTaskId","requestedByRole","assignedRole",
+                              "assignedAgent","modelId","priority","status","title","toolProfile"};
+        for (int index = 0; index < 10; index++) {
+            if (index > 0) appendRaw(buffer, bufferSize, &used, ",");
+            appendRaw(buffer, bufferSize, &used, "\"");
+            appendRaw(buffer, bufferSize, &used, keys[index]);
+            appendRaw(buffer, bufferSize, &used, "\":");
+            appendJsonString(buffer, bufferSize, &used, columnText(task, index));
+        }
+        snprintf(number, sizeof(number),
+                 ",\"maxTokens\":%lld,\"createdAtUnixMs\":%lld,\"updatedAtUnixMs\":%lld,\"eventCount\":%d}",
+                 sqlite3_column_int64(task, 10),
+                 sqlite3_column_int64(task, 11),
+                 sqlite3_column_int64(task, 12),
+                 sqlite3_column_int(task, 13));
+        appendRaw(buffer, bufferSize, &used, number);
+    }
+    appendRaw(buffer, bufferSize, &used, "]}\n");
+    sqlite3_finalize(task);
+    sqlite3_close(db);
+    return 0;
+}
+
 static int countActiveWhere(const char *dbPath, const char *column, const char *value) {
     sqlite3 *db = NULL;
     if (sqlite3_open(dbPath, &db) != SQLITE_OK) {
