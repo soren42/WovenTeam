@@ -1083,6 +1083,50 @@ static int sendTaskDetailJson(int clientFd, const WtConfig *config, const char *
     return rc;
 }
 
+static int sendInitiativesJson(int clientFd, const WtConfig *config) {
+    if (rebuildProjection(config) != 0) {
+        return wtHttpSendText(clientFd, 500, "Internal Server Error", "application/json",
+                              "{\"ok\":false,\"error\":\"projection rebuild failed\"}\n");
+    }
+    char *body = malloc(WT_TASK_LEDGER_LINE_SIZE * 12);
+    if (!body) {
+        return wtHttpSendText(clientFd, 500, "Internal Server Error", "application/json", "{\"ok\":false}\n");
+    }
+    if (wtTaskProjectionReadInitiativesJson(config->taskProjectionDbPath, body, WT_TASK_LEDGER_LINE_SIZE * 12) != 0) {
+        free(body);
+        return wtHttpSendText(clientFd, 500, "Internal Server Error", "application/json",
+                              "{\"ok\":false,\"error\":\"initiative read failed\"}\n");
+    }
+    int rc = wtHttpSendText(clientFd, 200, "OK", "application/json; charset=utf-8", body);
+    free(body);
+    return rc;
+}
+
+static int sendInitiativeDetailJson(int clientFd, const WtConfig *config, const char *initiativeId) {
+    if (!initiativeId || initiativeId[0] == '\0') {
+        return wtHttpSendText(clientFd, 400, "Bad Request", "application/json",
+                              "{\"ok\":false,\"error\":\"initiative id required\"}\n");
+    }
+    if (rebuildProjection(config) != 0) {
+        return wtHttpSendText(clientFd, 500, "Internal Server Error", "application/json",
+                              "{\"ok\":false,\"error\":\"projection rebuild failed\"}\n");
+    }
+    char *body = malloc(WT_TASK_LEDGER_LINE_SIZE * 16);
+    if (!body) {
+        return wtHttpSendText(clientFd, 500, "Internal Server Error", "application/json", "{\"ok\":false}\n");
+    }
+    int detailRc = wtTaskProjectionReadInitiativeDetailJson(config->taskProjectionDbPath, initiativeId, body, WT_TASK_LEDGER_LINE_SIZE * 16);
+    if (detailRc < 0) {
+        free(body);
+        return wtHttpSendText(clientFd, 500, "Internal Server Error", "application/json",
+                              "{\"ok\":false,\"error\":\"initiative detail read failed\"}\n");
+    }
+    int rc = wtHttpSendText(clientFd, detailRc == 1 ? 404 : 200, detailRc == 1 ? "Not Found" : "OK",
+                            "application/json; charset=utf-8", body);
+    free(body);
+    return rc;
+}
+
 static int sendCapacityJson(int clientFd, const WtConfig *config) {
     if (rebuildProjection(config) != 0) {
         return wtHttpSendText(clientFd, 500, "Internal Server Error", "application/json",
@@ -1432,6 +1476,17 @@ static void handleClient(int clientFd, WtConfig *config) {
             if (amp) *amp = '\0';
         }
         sendTaskDetailJson(clientFd, config, taskId);
+    } else if (strcmp(method, "GET") == 0 && strcmp(path, "/api/initiatives") == 0) {
+        sendInitiativesJson(clientFd, config);
+    } else if (strcmp(method, "GET") == 0 && strncmp(path, "/api/initiative-detail", 22) == 0) {
+        char initiativeId[WT_TASK_ID_SIZE] = "";
+        char *idText = strstr(path, "initiativeId=");
+        if (idText) {
+            snprintf(initiativeId, sizeof(initiativeId), "%s", idText + 13);
+            char *amp = strchr(initiativeId, '&');
+            if (amp) *amp = '\0';
+        }
+        sendInitiativeDetailJson(clientFd, config, initiativeId);
     } else if (strcmp(method, "GET") == 0 && strncmp(path, "/api/task-artifacts", 19) == 0) {
         char taskId[WT_TASK_ID_SIZE] = "";
         char *taskIdText = strstr(path, "taskId=");

@@ -8,6 +8,11 @@ usage() {
 Usage:
   wt-task create --title TITLE --body BODY --role ROLE [--agent AGENT] [--initiative INIT] [--priority P] [--model MODEL] [--tool-profile PROFILE] [--max-tokens N]
   wt-task request --parent TASK_ID --by-role ROLE --role ROLE --title TITLE --body BODY [--by NAME] [--agent AGENT] [--initiative INIT] [--priority P] [--model MODEL] [--tool-profile PROFILE] [--max-tokens N]
+  wt-task initiative create --title TITLE --body BODY [--id INIT] [--role ROLE] [--agent AGENT] [--max-tokens N]
+  wt-task initiative list
+  wt-task initiative show INIT
+  wt-task initiative export INIT
+  wt-task initiative close INIT [--message TEXT]
   wt-task list
   wt-task show TASK_ID
   wt-task assign TASK_ID --agent AGENT [--status assigned]
@@ -201,6 +206,83 @@ cmd_show() {
     http_get "/api/task-detail?taskId=$task_id" | jq .
 }
 
+cmd_initiative() {
+    local subcmd="${1:-}"
+    shift || true
+    case "$subcmd" in
+        create)
+            local title="" body="" initiative="" role="project_manager" agent="router" max_tokens="2000000"
+            while [[ $# -gt 0 ]]; do
+                case "$1" in
+                    --title) title="${2:-}"; shift 2 ;;
+                    --body) body="${2:-}"; shift 2 ;;
+                    --id) initiative="${2:-}"; shift 2 ;;
+                    --role) role="${2:-}"; shift 2 ;;
+                    --agent) agent="${2:-}"; shift 2 ;;
+                    --max-tokens) max_tokens="${2:-}"; shift 2 ;;
+                    *) echo "wt-task initiative create: unknown argument: $1" >&2; usage >&2; exit 2 ;;
+                esac
+            done
+            if [[ -z "$title" || -z "$body" ]]; then
+                echo "wt-task initiative create: --title and --body are required" >&2
+                exit 2
+            fi
+            [[ -n "$initiative" ]] || initiative="$(new_id init)"
+            cmd_create --title "$title" --body "$body" --role "$role" --agent "$agent" \
+                --initiative "$initiative" --tool-profile observe --max-tokens "$max_tokens"
+            ;;
+        list)
+            http_get "/api/initiatives" | jq -r '
+              .initiatives[] | [.initiativeId, .activeTasks, .taskCount, .blockedTasks, .openGateTasks, .maxTokens, .title] | @tsv'
+            ;;
+        show)
+            local initiative="${1:-}"
+            if [[ -z "$initiative" ]]; then
+                echo "wt-task initiative show: INIT is required" >&2
+                exit 2
+            fi
+            http_get "/api/initiative-detail?initiativeId=$initiative" | jq .
+            ;;
+        export)
+            local initiative="${1:-}"
+            if [[ -z "$initiative" ]]; then
+                echo "wt-task initiative export: INIT is required" >&2
+                exit 2
+            fi
+            http_get "/api/initiative-detail?initiativeId=$initiative" | jq .
+            ;;
+        close)
+            local initiative="${1:-}" message="Initiative closed by wt-task."
+            shift || true
+            while [[ $# -gt 0 ]]; do
+                case "$1" in
+                    --message) message="${2:-}"; shift 2 ;;
+                    *) echo "wt-task initiative close: unknown argument: $1" >&2; usage >&2; exit 2 ;;
+                esac
+            done
+            if [[ -z "$initiative" ]]; then
+                echo "wt-task initiative close: INIT is required" >&2
+                exit 2
+            fi
+            http_get "/api/initiative-detail?initiativeId=$initiative" |
+              jq -r '.tasks[] | select(.status as $s | ["complete","failed","cancelled","closed"] | index($s) | not) | .taskId' |
+              while read -r task_id; do
+                  [[ -n "$task_id" ]] || continue
+                  cmd_lifecycle closed "$message" "$task_id" >/dev/null
+              done
+            http_get "/api/initiative-detail?initiativeId=$initiative" | jq .
+            ;;
+        -h|--help|help|"")
+            usage
+            ;;
+        *)
+            echo "wt-task initiative: unknown command: $subcmd" >&2
+            usage >&2
+            exit 2
+            ;;
+    esac
+}
+
 cmd_lifecycle() {
     local status="$1" default_message="$2" task_id="${3:-}" message=""
     shift || true
@@ -287,6 +369,7 @@ shift || true
 case "$cmd" in
     create) cmd_create "$@" ;;
     request) cmd_request "$@" ;;
+    initiative) cmd_initiative "$@" ;;
     list) cmd_list "$@" ;;
     show) cmd_show "$@" ;;
     assign) cmd_assign "$@" ;;

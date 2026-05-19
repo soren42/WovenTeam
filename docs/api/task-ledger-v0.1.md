@@ -99,6 +99,8 @@ package, and emits `task.assign`. The child package includes `parentTaskId`,
 - `GET /api/tasks`
 - `GET /api/task-summaries`
 - `GET /api/task-detail?taskId=...`
+- `GET /api/initiatives`
+- `GET /api/initiative-detail?initiativeId=...`
 - `GET /api/task-artifacts?taskId=...`
 - `GET /api/capacity`
 - `GET /api/tokens`
@@ -109,7 +111,7 @@ package, and emits `task.assign`. The child package includes `parentTaskId`,
 
 `bin/wt-task` wraps those endpoints for local operator use with `create`,
 `request`, `list`, `show`, `assign`, `update-status`, `retry`, `cancel`,
-`close`, and `reopen` commands.
+`close`, `reopen`, and `initiative create/list/show/export/close` commands.
 
 Phase 1 keeps the JSONL ledger as the recovery source and adds a rebuildable
 SQLite projection configured by `taskProjectionDbPath`. `wt-roomd` rebuilds the
@@ -120,6 +122,13 @@ timeline. `GET /api/task-artifacts?taskId=...` exposes the adapter workspace
 file list and previews of `result.md`, `stdout.log`, `stderr.log`, and
 `manifest.json`. If the SQLite file is lost, it can be deleted and regenerated
 from `data/task-packages.jsonl`.
+
+Phase 2 derives initiatives from task package `initiativeId` values. `GET
+/api/initiatives` returns initiative summaries with task counts, active task
+counts, blocked/open-gate counts, token allocation, and timestamps. `GET
+/api/initiative-detail?initiativeId=...` returns the same summary plus the
+projected task rows for that initiative. There is no separate durable
+initiative table yet; the task ledger remains authoritative.
 
 `GET /api/tokens` reports token allocation from task package budgets and actual
 reported usage from `woventeam.task_usage.v0.1` records. Allocation sums

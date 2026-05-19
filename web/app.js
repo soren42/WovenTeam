@@ -57,6 +57,7 @@ let state = {
   taskStats: {roleCounts: {}, requestCount: 0, blockedCount: 0, activeAgents: 3},
   selectedTaskId: "",
   selectedTaskStatus: "",
+  selectedInitiativeId: "",
   capacity: {agents: [], initiatives: [], parents: [], caps: {}},
   tokens: {},
   config: {
@@ -142,6 +143,14 @@ async function loadTasks() {
   const tasks = await response.json();
   summarizeProjectedTasks(tasks);
   renderTasks(tasks);
+}
+
+async function loadInitiatives() {
+  const response = await fetch("/api/initiatives");
+  if (!response.ok) return;
+  const payload = await response.json();
+  if (!payload.ok || !Array.isArray(payload.initiatives)) return;
+  renderInitiatives(payload.initiatives);
 }
 
 function summarizeProjectedTasks(tasks) {
@@ -326,20 +335,19 @@ function summarizeTasks(rows) {
 }
 
 function renderTasks(tasks) {
-  document.querySelector("#initiativeCount").textContent = String(tasks.length);
-  document.querySelector("#initiativeBadge").textContent = String(tasks.length);
+  const filtered = state.selectedInitiativeId ? tasks.filter(task => task.initiativeId === state.selectedInitiativeId) : tasks;
   document.querySelector("#requestCount").textContent = String(state.taskStats.requestCount);
   document.querySelector("#blockedCount").textContent = String(state.taskStats.blockedCount);
   document.querySelector("#agentCount").textContent = String(state.taskStats.activeAgents);
   document.querySelector("#agentBadge").textContent = String(state.taskStats.activeAgents);
   document.querySelector("#agentMeta").textContent = `● ${state.taskStats.activeAgents} ACTIVE · ${state.taskStats.requestCount}R · ${state.taskStats.blockedCount} BLOCKED`;
   renderRoles();
-  if (!tasks.length) {
+  if (!filtered.length) {
     taskTableBody.innerHTML = '<tr><td colspan="9">No task packages yet. Use the composer or wt-task to create one.</td></tr>';
     return;
   }
   taskTableBody.innerHTML = "";
-  tasks.slice(0, 12).forEach(task => {
+  filtered.slice(0, 12).forEach(task => {
     const row = document.createElement("tr");
     row.dataset.taskId = task.taskId;
     row.innerHTML = `
@@ -365,6 +373,36 @@ function renderTasks(tasks) {
     row.querySelector("td:nth-child(9)").textContent = task.title;
     row.addEventListener("click", () => loadTaskDetail(task.taskId));
     taskTableBody.appendChild(row);
+  });
+}
+
+function renderInitiatives(initiatives) {
+  const summary = document.querySelector("#initiativeSummary");
+  document.querySelector("#initiativeCount").textContent = String(initiatives.length);
+  document.querySelector("#initiativeBadge").textContent = String(initiatives.length);
+  if (!initiatives.length) {
+    summary.innerHTML = '<button type="button" class="initiative-card"><strong>No initiatives</strong><span>Create a task package to start.</span></button>';
+    return;
+  }
+  if (state.selectedInitiativeId && !initiatives.some(item => item.initiativeId === state.selectedInitiativeId)) {
+    state.selectedInitiativeId = "";
+  }
+  summary.innerHTML = "";
+  initiatives.slice(0, 8).forEach(initiative => {
+    const card = document.createElement("button");
+    card.type = "button";
+    card.className = `initiative-card ${initiative.initiativeId === state.selectedInitiativeId ? "active" : ""}`;
+    card.innerHTML = "<strong></strong><span></span><span></span>";
+    card.querySelector("strong").textContent = initiative.title || initiative.initiativeId;
+    card.querySelector("span:nth-child(2)").textContent = initiative.initiativeId;
+    card.querySelector("span:nth-child(3)").textContent = `${initiative.activeTasks || 0} active · ${initiative.taskCount || 0} tasks · ${fmtTokens(initiative.maxTokens || 0)}`;
+    card.addEventListener("click", async () => {
+      state.selectedInitiativeId = state.selectedInitiativeId === initiative.initiativeId ? "" : initiative.initiativeId;
+      await loadTasks();
+      renderInitiatives(initiatives);
+      addAudit("ui", state.selectedInitiativeId ? `focused ${state.selectedInitiativeId}` : "cleared initiative focus");
+    });
+    summary.appendChild(card);
   });
 }
 
@@ -921,11 +959,13 @@ async function init() {
   try {
     await loadConfig();
     await loadRecent();
+    await loadInitiatives();
     await loadTasks();
     await loadTokens();
     await loadAdapters();
     await loadCapacity();
     connectEvents();
+    setInterval(loadInitiatives, 5000);
     setInterval(loadTasks, 5000);
     setInterval(loadTokens, 5000);
     setInterval(loadAdapters, 15000);
