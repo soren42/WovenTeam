@@ -1,0 +1,70 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="${WT_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+BACKUP_ROOT="${WT_BACKUP_ROOT:-$ROOT/backups}"
+STAMP="${WT_BACKUP_STAMP:-$(date -u +%Y%m%dT%H%M%SZ)}"
+DEST="$BACKUP_ROOT/woventeam-$STAMP"
+
+usage() {
+  cat <<'USAGE'
+Usage:
+  wt-ops-backup [--dry-run]
+
+Environment:
+  WT_ROOT         repository/runtime root, default parent of this script
+  WT_BACKUP_ROOT backup destination root, default $WT_ROOT/backups
+  WT_BACKUP_STAMP override timestamp for repeatable tests
+USAGE
+}
+
+dry_run=0
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --dry-run) dry_run=1; shift ;;
+    -h|--help) usage; exit 0 ;;
+    *) echo "wt-ops-backup: unknown argument: $1" >&2; usage >&2; exit 2 ;;
+  esac
+done
+
+items=(
+  "config/woventeam-phase0.conf"
+  "data/phase0-room.jsonl"
+  "data/task-packages.jsonl"
+  "data/task-projection.sqlite"
+  "data/claude.state"
+  "data/chatgpt.state"
+  "data/gemini.state"
+)
+
+echo "backup destination: $DEST"
+for item in "${items[@]}"; do
+  if [[ -e "$ROOT/$item" ]]; then
+    echo "include $item"
+  else
+    echo "skip missing $item"
+  fi
+done
+if [[ -d "$ROOT/runtime" ]]; then
+  echo "include runtime/"
+else
+  echo "skip missing runtime/"
+fi
+
+if [[ "$dry_run" -eq 1 ]]; then
+  exit 0
+fi
+
+mkdir -p "$DEST"
+for item in "${items[@]}"; do
+  if [[ -e "$ROOT/$item" ]]; then
+    mkdir -p "$DEST/$(dirname "$item")"
+    cp -a "$ROOT/$item" "$DEST/$item"
+  fi
+done
+if [[ -d "$ROOT/runtime" ]]; then
+  mkdir -p "$DEST/runtime"
+  cp -a "$ROOT/runtime/." "$DEST/runtime/"
+fi
+printf '%s\n' "$DEST" > "$BACKUP_ROOT/latest"
+echo "backup complete: $DEST"

@@ -437,11 +437,20 @@ static int sendTokenJson(int clientFd, const WtConfig *config) {
              "\"dayWindowAllocatedTokens\":%lld,"
              "\"monthWindowAllocatedTokens\":%lld,"
              "\"allTimeAllocatedTokens\":%lld,"
+             "\"dayWindowActualTokens\":%lld,"
+             "\"monthWindowActualTokens\":%lld,"
+             "\"allTimeActualTokens\":%lld,"
              "\"dayWindowPackages\":%d,"
              "\"monthWindowPackages\":%d,"
              "\"allTimePackages\":%d,"
+             "\"dayWindowUsageEvents\":%d,"
+             "\"monthWindowUsageEvents\":%d,"
+             "\"allTimeUsageEvents\":%d,"
              "\"dayWindowCostCents\":%lld,"
              "\"monthWindowCostCents\":%lld,"
+             "\"dayWindowActualCostCents\":%lld,"
+             "\"monthWindowActualCostCents\":%lld,"
+             "\"allTimeActualCostCents\":%lld,"
              "\"dayWindowBudgetPercent\":%d,"
              "\"monthWindowBudgetPercent\":%d}\n",
              config->tokenTelemetryEnabled ? "true" : "false",
@@ -452,11 +461,20 @@ static int sendTokenJson(int clientFd, const WtConfig *config) {
              summary.dayWindowAllocatedTokens,
              summary.monthWindowAllocatedTokens,
              summary.allTimeAllocatedTokens,
+             summary.dayWindowActualTokens,
+             summary.monthWindowActualTokens,
+             summary.allTimeActualTokens,
              summary.dayWindowPackages,
              summary.monthWindowPackages,
              summary.allTimePackages,
+             summary.dayWindowUsageEvents,
+             summary.monthWindowUsageEvents,
+             summary.allTimeUsageEvents,
              dayCostCents,
              monthCostCents,
+             summary.dayWindowActualCostCents,
+             summary.monthWindowActualCostCents,
+             summary.allTimeActualCostCents,
              dayPercent,
              monthPercent);
     return wtHttpSendText(clientFd, 200, "OK", "application/json; charset=utf-8", body);
@@ -475,6 +493,25 @@ static void defaultAgentForRole(const char *role, char *agent, size_t agentSize)
     } else {
         snprintf(agent, agentSize, "%s", "all");
     }
+}
+
+static int enforceTokenBudget(const WtConfig *config, long maxTokens, char *error, size_t errorSize) {
+    if (!config->tokenTelemetryEnabled || maxTokens <= 0) {
+        return 0;
+    }
+    WtTokenSummary summary;
+    wtTaskSummarizeTokenBudgets(config->taskLedgerPath, wtNowUnixMilliseconds(), &summary);
+    if (config->tokenDailyBudget > 0 &&
+        summary.dayWindowAllocatedTokens + maxTokens > config->tokenDailyBudget) {
+        snprintf(error, errorSize, "daily token budget exceeded");
+        return 1;
+    }
+    if (config->tokenMonthlyBudget > 0 &&
+        summary.monthWindowAllocatedTokens + maxTokens > config->tokenMonthlyBudget) {
+        snprintf(error, errorSize, "monthly token budget exceeded");
+        return 1;
+    }
+    return 0;
 }
 
 static int agentSupportsProfile(const char *agent, const char *profile) {
@@ -579,6 +616,7 @@ static int handlePostTaskPackage(int clientFd, const WtConfig *config, const cha
     char toolProfile[WT_TASK_POLICY_SIZE];
     char status[WT_TASK_STATUS_SIZE];
     char title[WT_TASK_TITLE_SIZE];
+    long maxTokens = 0;
     if (wtJsonReadString(body, "schema", schema, sizeof(schema)) != 0 ||
         strcmp(schema, "woventeam.task_package.v0.1") != 0 ||
         wtJsonReadString(body, "taskId", taskId, sizeof(taskId)) != 0 ||
@@ -600,7 +638,18 @@ static int handlePostTaskPackage(int clientFd, const WtConfig *config, const cha
     if (wtJsonReadString(body, "title", title, sizeof(title)) != 0) {
         snprintf(title, sizeof(title), "%s", "Untitled task");
     }
+    wtJsonReadLong(body, "maxTokens", &maxTokens);
+    if (maxTokens < 0) {
+        maxTokens = 0;
+    }
     routeAgentForTask(config, assignedRole, toolProfile, assignedAgent, sizeof(assignedAgent));
+    char budgetError[256];
+    int budget = enforceTokenBudget(config, maxTokens, budgetError, sizeof(budgetError));
+    if (budget != 0) {
+        char response[512];
+        snprintf(response, sizeof(response), "{\"ok\":false,\"error\":\"%s\"}\n", budgetError);
+        return wtHttpSendText(clientFd, 409, "Conflict", "application/json", response);
+    }
     char capacityError[256];
     int capacity = enforceCapacity(config, assignedAgent, initiativeId, "", capacityError, sizeof(capacityError));
     if (capacity != 0) {
@@ -705,6 +754,13 @@ static int handlePostTaskRequest(int clientFd, const WtConfig *config, const cha
     wtJsonReadLong(body, "maxTokens", &maxTokens);
     if (maxTokens < 0) {
         maxTokens = 0;
+    }
+    char budgetError[256];
+    int budget = enforceTokenBudget(config, maxTokens, budgetError, sizeof(budgetError));
+    if (budget != 0) {
+        char response[512];
+        snprintf(response, sizeof(response), "{\"ok\":false,\"error\":\"%s\"}\n", budgetError);
+        return wtHttpSendText(clientFd, 409, "Conflict", "application/json", response);
     }
     routeAgentForTask(config, requestedRole, toolProfile, assignedAgent, sizeof(assignedAgent));
     if (!modelMatchesAgent(assignedAgent, modelId)) {
@@ -973,6 +1029,69 @@ static int handlePostTaskGate(int clientFd, const WtConfig *config, const char *
     return wtHttpSendText(clientFd, 200, "OK", "application/json; charset=utf-8", response);
 }
 
+static int handlePostTaskUsage(int clientFd, const WtConfig *config, const char *request) {
+    const char *body = strstr(request, "\r\n\r\n");
+    if (!body) {
+        return wtHttpSendText(clientFd, 400, "Bad Request", "application/json", "{\"ok\":false}\n");
+    }
+    body += 4;
+    char taskId[WT_TASK_ID_SIZE];
+    char provider[WT_NAME_SIZE];
+    char modelId[WT_TASK_MODEL_SIZE];
+    char createdBy[WT_TASK_AGENT_SIZE];
+    long inputTokens = 0;
+    long outputTokens = 0;
+    long totalTokens = 0;
+    long estimatedCostCents = 0;
+    if (wtJsonReadString(body, "taskId", taskId, sizeof(taskId)) != 0) {
+        return wtHttpSendText(clientFd, 400, "Bad Request", "application/json", "{\"ok\":false,\"error\":\"task id required\"}\n");
+    }
+    if (wtJsonReadString(body, "provider", provider, sizeof(provider)) != 0) {
+        snprintf(provider, sizeof(provider), "%s", "unknown");
+    }
+    if (wtJsonReadString(body, "modelId", modelId, sizeof(modelId)) != 0) {
+        snprintf(modelId, sizeof(modelId), "%s", "");
+    }
+    if (wtJsonReadString(body, "createdBy", createdBy, sizeof(createdBy)) != 0) {
+        snprintf(createdBy, sizeof(createdBy), "%s", "adapter");
+    }
+    wtJsonReadLong(body, "inputTokens", &inputTokens);
+    wtJsonReadLong(body, "outputTokens", &outputTokens);
+    wtJsonReadLong(body, "totalTokens", &totalTokens);
+    wtJsonReadLong(body, "estimatedCostCents", &estimatedCostCents);
+    if (inputTokens < 0) inputTokens = 0;
+    if (outputTokens < 0) outputTokens = 0;
+    if (totalTokens < 0) totalTokens = 0;
+    if (estimatedCostCents < 0) estimatedCostCents = 0;
+    if (totalTokens == 0) totalTokens = inputTokens + outputTokens;
+
+    char escapedTaskId[WT_TASK_ID_SIZE * 2];
+    char escapedProvider[WT_NAME_SIZE * 2];
+    char escapedModel[WT_TASK_MODEL_SIZE * 2];
+    char escapedBy[WT_TASK_AGENT_SIZE * 2];
+    if (wtJsonEscape(taskId, escapedTaskId, sizeof(escapedTaskId)) != 0 ||
+        wtJsonEscape(provider, escapedProvider, sizeof(escapedProvider)) != 0 ||
+        wtJsonEscape(modelId, escapedModel, sizeof(escapedModel)) != 0 ||
+        wtJsonEscape(createdBy, escapedBy, sizeof(escapedBy)) != 0) {
+        return wtHttpSendText(clientFd, 400, "Bad Request", "application/json", "{\"ok\":false,\"error\":\"usage too large\"}\n");
+    }
+    char record[WT_TASK_LEDGER_LINE_SIZE];
+    snprintf(record, sizeof(record),
+             "{\"schema\":\"woventeam.task_usage.v0.1\",\"taskId\":\"%s\","
+             "\"provider\":\"%s\",\"modelId\":\"%s\",\"inputTokens\":%ld,"
+             "\"outputTokens\":%ld,\"totalTokens\":%ld,\"estimatedCostCents\":%ld,"
+             "\"createdBy\":\"%s\",\"createdAtUnixMs\":%lld}",
+             escapedTaskId, escapedProvider, escapedModel, inputTokens, outputTokens,
+             totalTokens, estimatedCostCents, escapedBy, wtNowUnixMilliseconds());
+    if (wtTaskAppendRecord(config->taskLedgerPath, record, config->fsyncEachMessage) != 0) {
+        return wtHttpSendText(clientFd, 500, "Internal Server Error", "application/json", "{\"ok\":false,\"error\":\"append failed\"}\n");
+    }
+    char response[512];
+    snprintf(response, sizeof(response), "{\"ok\":true,\"taskId\":\"%s\",\"totalTokens\":%ld,\"estimatedCostCents\":%ld}\n",
+             taskId, totalTokens, estimatedCostCents);
+    return wtHttpSendText(clientFd, 200, "OK", "application/json; charset=utf-8", response);
+}
+
 static void sendSseEvent(int clientFd, const WtMessage *message) {
     char json[WT_MESSAGE_JSON_SIZE];
     char frame[WT_MESSAGE_JSON_SIZE + 64];
@@ -1068,11 +1187,28 @@ static void handleClient(int clientFd, WtConfig *config) {
         handlePostTaskEvent(clientFd, config, request);
     } else if (strcmp(method, "POST") == 0 && strcmp(path, "/api/task-gate") == 0) {
         handlePostTaskGate(clientFd, config, request);
+    } else if (strcmp(method, "POST") == 0 && strcmp(path, "/api/task-usage") == 0) {
+        handlePostTaskUsage(clientFd, config, request);
     } else if (strcmp(method, "POST") == 0 && strcmp(path, "/api/config") == 0) {
         handlePostConfig(clientFd, config, request);
     } else if (strcmp(method, "GET") == 0 && strcmp(path, "/api/health") == 0) {
-        char body[256];
-        snprintf(body, sizeof(body), "{\"ok\":true,\"roomName\":\"%s\"}\n", config->roomName);
+        int projectionOk = rebuildProjection(config) == 0;
+        int ledgerOk = access(config->taskLedgerPath, F_OK) == 0;
+        int roomLogOk = access(config->roomLogPath, F_OK) == 0;
+        char body[2048];
+        snprintf(body, sizeof(body),
+                 "{\"ok\":%s,\"roomName\":\"%s\",\"ledger\":{\"path\":\"%s\",\"exists\":%s},"
+                 "\"roomLog\":{\"path\":\"%s\",\"exists\":%s},"
+                 "\"projection\":{\"path\":\"%s\",\"ok\":%s},"
+                 "\"adapters\":{\"codexEnabled\":%s,\"claudeEnabled\":%s,\"geminiEnabled\":%s}}\n",
+                 projectionOk ? "true" : "false",
+                 config->roomName,
+                 config->taskLedgerPath, ledgerOk ? "true" : "false",
+                 config->roomLogPath, roomLogOk ? "true" : "false",
+                 config->taskProjectionDbPath, projectionOk ? "true" : "false",
+                 config->enableCodexAdapter ? "true" : "false",
+                 config->enableClaudeAdapter ? "true" : "false",
+                 config->enableGeminiAdapter ? "true" : "false");
         wtHttpSendText(clientFd, 200, "OK", "application/json; charset=utf-8", body);
     } else {
         wtHttpSendText(clientFd, 404, "Not Found", "text/plain; charset=utf-8", "not found\n");

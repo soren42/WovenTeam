@@ -1,0 +1,79 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+ROOT="${WT_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+BACKUP_ROOT="${WT_BACKUP_ROOT:-$ROOT/backups}"
+SOURCE=""
+dry_run=0
+confirm=0
+
+usage() {
+  cat <<'USAGE'
+Usage:
+  wt-ops-restore --from BACKUP_DIR [--dry-run] [--yes]
+  wt-ops-restore --latest [--dry-run] [--yes]
+
+Restore is intentionally gated. Without --yes it only reports the planned
+operation and exits.
+USAGE
+}
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --from) SOURCE="${2:-}"; shift 2 ;;
+    --latest) SOURCE="$(cat "$BACKUP_ROOT/latest" 2>/dev/null || true)"; shift ;;
+    --dry-run) dry_run=1; shift ;;
+    --yes) confirm=1; shift ;;
+    -h|--help) usage; exit 0 ;;
+    *) echo "wt-ops-restore: unknown argument: $1" >&2; usage >&2; exit 2 ;;
+  esac
+done
+
+if [[ -z "$SOURCE" || ! -d "$SOURCE" ]]; then
+  echo "wt-ops-restore: valid --from BACKUP_DIR or --latest is required" >&2
+  exit 2
+fi
+
+items=(
+  "config/woventeam-phase0.conf"
+  "data/phase0-room.jsonl"
+  "data/task-packages.jsonl"
+  "data/task-projection.sqlite"
+  "data/claude.state"
+  "data/chatgpt.state"
+  "data/gemini.state"
+)
+
+echo "restore source: $SOURCE"
+for item in "${items[@]}"; do
+  if [[ -e "$SOURCE/$item" ]]; then
+    echo "restore $item"
+  else
+    echo "skip missing $item"
+  fi
+done
+if [[ -d "$SOURCE/runtime" ]]; then
+  echo "restore runtime/"
+else
+  echo "skip missing runtime/"
+fi
+
+if [[ "$dry_run" -eq 1 ]]; then
+  exit 0
+fi
+if [[ "$confirm" -ne 1 ]]; then
+  echo "wt-ops-restore: refusing to restore without --yes" >&2
+  exit 3
+fi
+
+for item in "${items[@]}"; do
+  if [[ -e "$SOURCE/$item" ]]; then
+    mkdir -p "$ROOT/$(dirname "$item")"
+    cp -a "$SOURCE/$item" "$ROOT/$item"
+  fi
+done
+if [[ -d "$SOURCE/runtime" ]]; then
+  mkdir -p "$ROOT/runtime"
+  cp -a "$SOURCE/runtime/." "$ROOT/runtime/"
+fi
+echo "restore complete: $SOURCE"

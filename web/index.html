@@ -176,11 +176,11 @@
         </article>
 
         <article class="panel token-panel">
-          <header><span>Token allocation · 24h / 30d</span><small id="tokenMeta">LOADING</small></header>
+          <header><span>Token allocation + usage · 24h / 30d</span><small id="tokenMeta">LOADING</small></header>
           <div class="token-headline"><strong id="tokenHeadline">--</strong><span id="tokenBudgetLabel">/ budget pending</span></div>
           <svg id="tokenSparkline" class="sparkline" viewBox="0 0 310 36" aria-hidden="true"></svg>
           <div class="meter"><span id="tokenMeter" style="width: 0%"></span></div>
-          <footer><span>24h <b id="tokenDay">--</b></span><span>30d <b id="tokenMonth">--</b></span><span>Est. cost <b id="tokenCost">--</b></span></footer>
+          <footer><span>24h alloc <b id="tokenDay">--</b></span><span>30d actual <b id="tokenMonth">--</b></span><span>Actual cost <b id="tokenCost">--</b></span></footer>
         </article>
 
         <article class="panel vendor-panel">
@@ -311,7 +311,7 @@
               <button id="armButton" type="button" class="arm-button">ARM</button>
               <button id="sendButton" type="submit" class="execute-button" disabled>EXECUTE</button>
             </div>
-            <p class="composer-note">EXECUTE writes live task packages or manager subtask requests to the Phase 0 ledger. Token budgets are recorded for allocation telemetry; gate enforcement is still disabled.</p>
+            <p id="budgetPressureNote" class="composer-note">EXECUTE writes live task packages or manager subtask requests to the Phase 0 ledger. Token budgets are enforced against configured 24h/30d allocation budgets.</p>
           </form>
         </article>
       </section>

@@ -252,24 +252,45 @@ int wtTaskSummarizeTokenBudgets(const char *ledgerPath, long long nowUnixMs, WtT
     const long long monthWindowMs = 30LL * dayWindowMs;
     char line[WT_TASK_LEDGER_LINE_SIZE];
     while (fgets(line, sizeof(line), file)) {
-        if (!lineHasSchema(line, "woventeam.task_package.v0.1")) {
-            continue;
-        }
-        long maxTokens = 0;
         long long createdAtUnixMs = 0;
-        if (wtJsonReadLong(line, "maxTokens", &maxTokens) != 0 || maxTokens < 0) {
-            maxTokens = 0;
-        }
         wtJsonReadLongLong(line, "createdAtUnixMs", &createdAtUnixMs);
-        summary->allTimeAllocatedTokens += maxTokens;
-        summary->allTimePackages++;
-        if (createdAtUnixMs > 0 && createdAtUnixMs >= nowUnixMs - monthWindowMs) {
-            summary->monthWindowAllocatedTokens += maxTokens;
-            summary->monthWindowPackages++;
-        }
-        if (createdAtUnixMs > 0 && createdAtUnixMs >= nowUnixMs - dayWindowMs) {
-            summary->dayWindowAllocatedTokens += maxTokens;
-            summary->dayWindowPackages++;
+        if (lineHasSchema(line, "woventeam.task_package.v0.1")) {
+            long maxTokens = 0;
+            if (wtJsonReadLong(line, "maxTokens", &maxTokens) != 0 || maxTokens < 0) {
+                maxTokens = 0;
+            }
+            summary->allTimeAllocatedTokens += maxTokens;
+            summary->allTimePackages++;
+            if (createdAtUnixMs > 0 && createdAtUnixMs >= nowUnixMs - monthWindowMs) {
+                summary->monthWindowAllocatedTokens += maxTokens;
+                summary->monthWindowPackages++;
+            }
+            if (createdAtUnixMs > 0 && createdAtUnixMs >= nowUnixMs - dayWindowMs) {
+                summary->dayWindowAllocatedTokens += maxTokens;
+                summary->dayWindowPackages++;
+            }
+        } else if (lineHasSchema(line, "woventeam.task_usage.v0.1")) {
+            long totalTokens = 0;
+            long estimatedCostCents = 0;
+            if (wtJsonReadLong(line, "totalTokens", &totalTokens) != 0 || totalTokens < 0) {
+                totalTokens = 0;
+            }
+            if (wtJsonReadLong(line, "estimatedCostCents", &estimatedCostCents) != 0 || estimatedCostCents < 0) {
+                estimatedCostCents = 0;
+            }
+            summary->allTimeActualTokens += totalTokens;
+            summary->allTimeActualCostCents += estimatedCostCents;
+            summary->allTimeUsageEvents++;
+            if (createdAtUnixMs > 0 && createdAtUnixMs >= nowUnixMs - monthWindowMs) {
+                summary->monthWindowActualTokens += totalTokens;
+                summary->monthWindowActualCostCents += estimatedCostCents;
+                summary->monthWindowUsageEvents++;
+            }
+            if (createdAtUnixMs > 0 && createdAtUnixMs >= nowUnixMs - dayWindowMs) {
+                summary->dayWindowActualTokens += totalTokens;
+                summary->dayWindowActualCostCents += estimatedCostCents;
+                summary->dayWindowUsageEvents++;
+            }
         }
     }
     fclose(file);

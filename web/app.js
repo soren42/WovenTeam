@@ -58,6 +58,7 @@ let state = {
   selectedTaskId: "",
   selectedTaskStatus: "",
   capacity: {agents: [], initiatives: [], parents: [], caps: {}},
+  tokens: {},
   config: {
     tokenTelemetryEnabled: true,
     tokenDailyBudget: 2000000,
@@ -234,19 +235,21 @@ async function loadTokens() {
   const response = await fetch("/api/tokens");
   if (!response.ok) return;
   const tokens = await response.json();
+  state.tokens = tokens;
   const dayBudget = tokens.tokenDailyBudget || 0;
   const monthBudget = tokens.tokenMonthlyBudget || 0;
   const dayPercent = dayBudget > 0 ? Math.min(999, Math.round((tokens.dayWindowAllocatedTokens || 0) * 100 / dayBudget)) : 0;
   const monthPercent = monthBudget > 0 ? Math.min(999, Math.round((tokens.monthWindowAllocatedTokens || 0) * 100 / monthBudget)) : 0;
-  document.querySelector("#tokenMeta").textContent = tokens.enabled ? `${tokens.allTimePackages || 0} PACKAGES` : "DISABLED";
+  document.querySelector("#tokenMeta").textContent = tokens.enabled ? `${tokens.allTimePackages || 0} PKG · ${tokens.allTimeUsageEvents || 0} USAGE` : "DISABLED";
   document.querySelector("#tokenHeadline").textContent = fmtTokens(tokens.dayWindowAllocatedTokens || 0);
   document.querySelector("#tokenBudgetLabel").textContent = `/ ${fmtTokens(dayBudget)} 24h budget`;
   document.querySelector("#tokenDay").textContent = `${fmtTokens(tokens.dayWindowAllocatedTokens || 0)} / ${fmtTokens(dayBudget)}`;
-  document.querySelector("#tokenMonth").textContent = `${fmtTokens(tokens.monthWindowAllocatedTokens || 0)} / ${fmtTokens(monthBudget)}`;
-  document.querySelector("#tokenCost").textContent = fmtMoneyFromCents(tokens.monthWindowCostCents || 0);
+  document.querySelector("#tokenMonth").textContent = `${fmtTokens(tokens.monthWindowActualTokens || 0)} / ${fmtTokens(monthBudget)}`;
+  document.querySelector("#tokenCost").textContent = fmtMoneyFromCents(tokens.monthWindowActualCostCents || 0);
   document.querySelector("#tokenMeter").style.width = `${Math.min(100, dayPercent)}%`;
   document.querySelector("#tokenMeter").dataset.level = dayPercent >= (tokens.tokenWarningPercent || 80) ? "warn" : "ok";
   drawSparkline(Math.max(dayPercent, monthPercent));
+  updateReadouts();
 }
 
 async function loadAdapters() {
@@ -537,12 +540,21 @@ function updateReadouts() {
   const agents = Number(document.querySelector("#maxAgents").value);
   const hours = Number(document.querySelector("#timeframeHours").value);
   const priority = document.querySelector("#priority").value;
+  const projectedDay = (state.tokens.dayWindowAllocatedTokens || 0) + tokens;
+  const projectedMonth = (state.tokens.monthWindowAllocatedTokens || 0) + tokens;
+  const dayBudget = state.tokens.tokenDailyBudget || state.config.tokenDailyBudget || 0;
+  const monthBudget = state.tokens.tokenMonthlyBudget || state.config.tokenMonthlyBudget || 0;
+  const overBudget = (dayBudget > 0 && projectedDay > dayBudget) || (monthBudget > 0 && projectedMonth > monthBudget);
   document.querySelector("#tokenReadout").textContent = fmtTokens(tokens);
   document.querySelector("#agentReadout").textContent = String(agents);
   document.querySelector("#hoursReadout").textContent = `${hours}h`;
   document.querySelector("#burnEstimate").textContent = fmtMoneyFromCents(tokens * (state.config.tokenCostPerMillionCents || 0) / 1000000);
   document.querySelector("#subAgentSummary").textContent = `0 / ${agents}`;
   document.querySelector("#prioritySummary").textContent = priority;
+  document.querySelector("#budgetPressureNote").textContent = overBudget ?
+    "Budget hard stop: this package would exceed the configured 24h or 30d allocation budget." :
+    `Budget pressure: ${fmtTokens(projectedDay)} projected in 24h, ${fmtTokens(projectedMonth)} projected in 30d.`;
+  sendButton.disabled = !state.armed || overBudget;
 }
 
 function renderVendors(vendors = null) {
@@ -595,6 +607,7 @@ function armComposer() {
   armButton.textContent = "ARMED";
   armButton.classList.add("armed");
   sendButton.disabled = false;
+  updateReadouts();
   clearTimeout(state.armTimer);
   state.armTimer = setTimeout(disarmComposer, 5000);
 }
