@@ -20,6 +20,7 @@ The Phase 0 browser UI is `WovenTeam Console (Fullscreen)` served by
   - `POST /api/task-package`
   - `POST /api/task-request`
   - `POST /api/task-gate`
+  - `POST /api/task-usage`
   - `POST /api/config`
 - The task table reads the rebuildable SQLite task projection and shows task
   status, parent task IDs, requested-by role, event count, assigned role, and
@@ -32,9 +33,9 @@ The Phase 0 browser UI is `WovenTeam Console (Fullscreen)` served by
   daemon-enforced Program Manager / Project Manager spawn policy.
 - The previous placeholder modal has been removed. Unimplemented surfaces are
   greyed out and disabled in place.
-- The token sub-panel is live allocation telemetry. It sums package
-  `budget.maxTokens` values over rolling 24-hour and 30-day windows, displays
-  estimated cost from config, and does not yet claim adapter-reported usage.
+- The token sub-panel separates allocation telemetry from actual reported usage.
+  Allocation sums package `budget.maxTokens` values over rolling 24-hour and
+  30-day windows; actual usage comes from task usage events.
 - The rail settings button opens a runtime configuration panel for token
   telemetry and opt-in adapter settings. Saving writes the active Phase 0
   key/value config file.
@@ -43,6 +44,8 @@ The Phase 0 browser UI is `WovenTeam Console (Fullscreen)` served by
   launchability.
 - The capacity readout uses `/api/capacity` to show active routing pressure and
   the settings panel exposes role routing and capacity caps.
+- The composer shows projected budget pressure and the daemon rejects packages
+  that would exceed configured daily or monthly allocation budgets.
 
 ## Temporary Placeholders
 
@@ -68,6 +71,7 @@ The scaffold now binds to the task package and Phase 1 state paths:
 - `POST /api/task-package`
 - `POST /api/task-request`
 - `POST /api/task-gate`
+- `POST /api/task-usage`
 
 The next backend step is to expose richer initiative, gate, adapter artifact
 detail, usage, and agent state so the console can enable the remaining disabled

@@ -91,10 +91,10 @@ Create and inspect Phase 0 task packages through the room daemon:
 ./bin/wt-task close task_example_001
 ```
 
-The web console token panel is backed by `GET /api/tokens`. Phase 0 reports
-allocated token budget from task packages, not adapter-measured usage. Token
-budgets and estimated cost settings live in `config/woventeam-phase0.conf` and
-can be edited from the console settings rail.
+The web console token panel is backed by `GET /api/tokens`. Phase 1 separates
+allocated token budget from task packages and actual usage reported through
+`POST /api/task-usage`. Token budgets and estimated cost settings live in
+`config/woventeam-phase0.conf` and can be edited from the console settings rail.
 
 Program and Project Manager roles can request subtasks through the same daemon.
 The daemon records a `task.request`, validates the role spawn policy, creates
@@ -131,3 +131,5 @@ The shared Phase 1 adapter contract, including the opt-in Claude and Gemini
 artifact adapters, is documented in `docs/adapters/adapter-contract-v0.1.md`.
 Sprint 3 routing, capacity, and review gate behavior is documented in
 `docs/orchestration/routing-and-gates.md`.
+Sprint 4 quota and operations behavior is documented in
+`docs/ops/phase1-operations-runbook.md`.

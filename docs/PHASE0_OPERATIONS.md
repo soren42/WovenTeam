@@ -45,5 +45,13 @@ The HTTP server binds to `0.0.0.0` by default for headless intranet access.
 Keep this service behind the local firewall and do not expose it directly to
 the public Internet until authentication, TLS, and operator controls exist.
 
-The Phase 0 core does not execute commands from room messages. Vendor CLI
-integration belongs behind explicit adapter code in a later Phase 0.5 step.
+Health and operations:
+
+```sh
+curl -fsS http://127.0.0.1:8787/api/health | jq .
+./bin/wt-ops-backup --dry-run
+./bin/wt-ops-backup
+./bin/wt-ops-restore --latest --dry-run
+```
+
+The Phase 1 operations runbook is `docs/ops/phase1-operations-runbook.md`.

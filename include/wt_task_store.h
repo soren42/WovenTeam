@@ -34,9 +34,18 @@ typedef struct {
     long long dayWindowAllocatedTokens;
     long long monthWindowAllocatedTokens;
     long long allTimeAllocatedTokens;
+    long long dayWindowActualTokens;
+    long long monthWindowActualTokens;
+    long long allTimeActualTokens;
+    long long dayWindowActualCostCents;
+    long long monthWindowActualCostCents;
+    long long allTimeActualCostCents;
     int dayWindowPackages;
     int monthWindowPackages;
     int allTimePackages;
+    int dayWindowUsageEvents;
+    int monthWindowUsageEvents;
+    int allTimeUsageEvents;
 } WtTokenSummary;
 
 int wtTaskAppendRecord(const char *ledgerPath, const char *jsonLine, bool fsyncRecord);

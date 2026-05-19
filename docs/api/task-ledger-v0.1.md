@@ -104,6 +104,7 @@ package, and emits `task.assign`. The child package includes `parentTaskId`,
 - `GET /api/config`
 - `POST /api/config`
 - `POST /api/task-gate`
+- `POST /api/task-usage`
 
 `bin/wt-task` wraps those endpoints for local operator use with `create`,
 `request`, `list`, `show`, `assign`, `update-status`, `retry`, `cancel`,
@@ -117,12 +118,27 @@ returns the current task rows from that projection, and
 timeline. If the SQLite file is lost, it can be deleted and regenerated from
 `data/task-packages.jsonl`.
 
-`GET /api/tokens` reports token allocation from task package budgets in the
-ledger. Phase 0 does not yet claim adapter-reported token usage; it sums
-`budget.maxTokens` over rolling 24-hour and 30-day windows and compares that
-allocation against the configured budgets. `POST /api/config` currently limits
-web writes to token telemetry settings so the console can adjust budget display
-without exposing broader runtime controls.
+`GET /api/tokens` reports token allocation from task package budgets and actual
+reported usage from `woventeam.task_usage.v0.1` records. Allocation sums
+`budget.maxTokens` over rolling 24-hour and 30-day windows and is enforced as a
+hard stop before new task packages or manager subtasks are accepted.
+
+Usage events use:
+
+```json
+{
+  "schema": "woventeam.task_usage.v0.1",
+  "taskId": "task_example_001",
+  "provider": "openai",
+  "modelId": "openai/gpt-5.3-codex",
+  "inputTokens": 100,
+  "outputTokens": 250,
+  "totalTokens": 350,
+  "estimatedCostCents": 7,
+  "createdBy": "wt-agent@chatgpt",
+  "createdAtUnixMs": 1778917466000
+}
+```
 
 `GET /api/capacity` reports active task counts by agent, initiative, and parent
 task. `wt-roomd` uses the same projection-backed counts to enforce
