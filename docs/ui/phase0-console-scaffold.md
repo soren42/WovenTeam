@@ -50,6 +50,9 @@ The Phase 0 browser UI is `WovenTeam Console (Fullscreen)` served by
   the settings panel exposes role routing and capacity caps.
 - The composer shows projected budget pressure and the daemon rejects packages
   that would exceed configured daily or monthly allocation budgets.
+- The Phase 1 console-facing contract is now covered by
+  `make test-phase1-e2e`, including task detail, artifacts, review gates,
+  tokens, capacity, and restart recovery.
 
 ## Temporary Placeholders
 

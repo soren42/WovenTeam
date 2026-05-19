@@ -74,3 +74,17 @@ sudo systemctl start wt-roomd.service wt-agent@claude.service wt-agent@chatgpt.s
 ```
 
 Then verify `/api/health` and `/api/task-summaries`.
+
+## End-to-End Validation
+
+Run the final Phase 1 launch-era harness before a release or service restart:
+
+```sh
+make test-phase1-e2e
+```
+
+The harness starts an isolated daemon, routes a manager-created child task,
+runs the opt-in Claude artifact adapter through a deterministic fake CLI,
+checks artifact previews and review gates, records actual token usage, covers
+failed/blocked/retry/closed lifecycle states, exercises backup and restore
+previews, restarts `wt-roomd`, and confirms state rebuild from the JSONL ledger.

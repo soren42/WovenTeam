@@ -60,6 +60,7 @@ make run-demo
 make harness-check
 make test-smoke
 make test-harness-check
+make test-phase1-e2e
 make DEBUG=1
 make install-roomd-service
 make install-agent-services
@@ -135,3 +136,6 @@ Sprint 3 routing, capacity, and review gate behavior is documented in
 `docs/orchestration/routing-and-gates.md`.
 Sprint 4 quota and operations behavior is documented in
 `docs/ops/phase1-operations-runbook.md`.
+The Phase 1 final whole-path validation is documented in
+`docs/launch/phase1-spike6-e2e-2026-05-19.md` and can be run with
+`make test-phase1-e2e`.
