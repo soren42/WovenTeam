@@ -129,3 +129,5 @@ eligible task for an isolated task workspace:
 Adapter behavior and artifacts are documented in `docs/adapters/codex-adapter.md`.
 The shared Phase 1 adapter contract, including the opt-in Claude and Gemini
 artifact adapters, is documented in `docs/adapters/adapter-contract-v0.1.md`.
+Sprint 3 routing, capacity, and review gate behavior is documented in
+`docs/orchestration/routing-and-gates.md`.

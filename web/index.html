@@ -51,7 +51,7 @@
     <aside class="rail" aria-label="Console navigation">
       <button type="button" class="rail-button active" data-view="initiatives" title="Initiatives"><span>◰</span><b id="initiativeBadge">0</b></button>
       <button type="button" class="rail-button" data-view="agents" title="Agents"><span>◫</span><b id="agentBadge">3</b></button>
-      <button type="button" class="rail-button disabled-control" data-view="gates" title="Gates disabled until gate API exists" disabled aria-disabled="true"><span>▣</span><b>0</b></button>
+      <button type="button" class="rail-button" data-view="gates" title="Review gates"><span>▣</span><b id="gateBadge">0</b></button>
       <button type="button" class="rail-button disabled-control" data-view="topology" title="Topology disabled until topology API exists" disabled aria-disabled="true"><span>⫳</span></button>
       <button type="button" class="rail-button disabled-control" data-view="audit" title="Audit view disabled until audit query API exists" disabled aria-disabled="true"><span>≣</span></button>
       <div class="rail-spacer"></div>
@@ -92,6 +92,26 @@
           <div><span>Agent poll</span><b id="configAgentPoll">--</b></div>
           <div><span>Adapter timeout</span><b id="configAdapterTimeout">--</b></div>
         </div>
+        <div class="settings-divider">Routing and capacity</div>
+        <label>
+          <span>Role routing</span>
+          <select id="configRoleRoutingEnabled">
+            <option value="1">enabled</option>
+            <option value="0">disabled</option>
+          </select>
+        </label>
+        <label>
+          <span>Max active per agent</span>
+          <input id="configMaxActiveTasksPerAgent" type="number" min="1" step="1">
+        </label>
+        <label>
+          <span>Max subtasks per parent</span>
+          <input id="configMaxSubtasksPerParent" type="number" min="1" step="1">
+        </label>
+        <label>
+          <span>Max tasks per initiative</span>
+          <input id="configMaxTasksPerInitiative" type="number" min="1" step="1">
+        </label>
         <div class="settings-divider">Adapter execution</div>
         <label>
           <span>Codex adapter</span>
@@ -205,6 +225,9 @@
                 <button type="button" data-task-action="retry">Retry</button>
                 <button type="button" data-task-action="cancel">Cancel</button>
                 <button type="button" data-task-action="close">Close</button>
+                <button type="button" data-gate-action="approve">Approve</button>
+                <button type="button" data-gate-action="reject">Reject</button>
+                <button type="button" data-gate-action="revision">Revision</button>
               </div>
             </div>
             <p id="detailBody"></p>
@@ -224,8 +247,8 @@
           </header>
           <div id="transcript" class="transcript" aria-live="polite"></div>
           <div class="gate-strip">
-            <strong>Review gates · disabled</strong>
-            <span>Approve/reject controls are disabled until a gate-state API exists.</span>
+            <strong>Review gates · live</strong>
+            <span id="gateMeta">Select a task, then approve, reject, or request revision from the detail panel.</span>
           </div>
         </article>
 
@@ -280,7 +303,7 @@
             </div>
             <div class="summary-cells">
               <div><span>Est. burn</span><b id="burnEstimate">$20.00</b></div>
-              <div><span>Vendor</span><b>router</b></div>
+              <div><span>Vendor</span><b id="routingSummary">router</b></div>
               <div><span>Sub-agents</span><b id="subAgentSummary">0 / 6</b></div>
               <div><span>Priority</span><b id="prioritySummary">normal</b></div>
             </div>

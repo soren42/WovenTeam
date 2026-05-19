@@ -25,7 +25,11 @@ typedef struct {
     int agentPollMilliseconds;
     int adapterTimeoutSeconds;
     int adapterMaxOutputBytes;
+    int maxActiveTasksPerAgent;
+    int maxSubtasksPerParent;
+    int maxTasksPerInitiative;
     bool fsyncEachMessage;
+    bool roleRoutingEnabled;
     bool enableCodexAdapter;
     bool enableClaudeAdapter;
     bool enableGeminiAdapter;

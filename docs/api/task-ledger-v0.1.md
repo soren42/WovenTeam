@@ -99,9 +99,11 @@ package, and emits `task.assign`. The child package includes `parentTaskId`,
 - `GET /api/tasks`
 - `GET /api/task-summaries`
 - `GET /api/task-detail?taskId=...`
+- `GET /api/capacity`
 - `GET /api/tokens`
 - `GET /api/config`
 - `POST /api/config`
+- `POST /api/task-gate`
 
 `bin/wt-task` wraps those endpoints for local operator use with `create`,
 `request`, `list`, `show`, `assign`, `update-status`, `retry`, `cancel`,
@@ -121,6 +123,15 @@ ledger. Phase 0 does not yet claim adapter-reported token usage; it sums
 allocation against the configured budgets. `POST /api/config` currently limits
 web writes to token telemetry settings so the console can adjust budget display
 without exposing broader runtime controls.
+
+`GET /api/capacity` reports active task counts by agent, initiative, and parent
+task. `wt-roomd` uses the same projection-backed counts to enforce
+`maxActiveTasksPerAgent`, `maxSubtasksPerParent`, and `maxTasksPerInitiative`
+when routing new task packages or manager subtasks.
+
+`POST /api/task-gate` records operator review decisions as append-only task
+events with `eventType=review_gate`. Supported actions are `approve`, `reject`,
+and `revision`.
 
 When a task is marked `blocked`, queued/running child tasks that list it in
 `dependencies` receive an appended `blocked` task event. Terminal dependents are
