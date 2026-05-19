@@ -1,0 +1,441 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>WovenTeam Phase 2 Spike 3 Handoff</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --ink: #17202a;
+      --muted: #5c6875;
+      --line: #d7dee6;
+      --paper: #f7f9fb;
+      --panel: #ffffff;
+      --blue: #2563a8;
+      --green: #1f7a5a;
+      --amber: #a16207;
+      --red: #b42318;
+      --violet: #6d4aff;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      color: var(--ink);
+      background: var(--paper);
+      line-height: 1.48;
+    }
+    header.hero {
+      background: #11253a;
+      color: #fff;
+      padding: 38px clamp(18px, 5vw, 64px) 30px;
+    }
+    header.hero h1 {
+      margin: 0 0 10px;
+      max-width: 980px;
+      font-size: clamp(30px, 5vw, 54px);
+      line-height: 1.02;
+      letter-spacing: 0;
+    }
+    header.hero p {
+      max-width: 900px;
+      margin: 0;
+      color: #dbe7f4;
+      font-size: 18px;
+    }
+    nav {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      padding: 14px clamp(18px, 5vw, 64px);
+      background: #fff;
+      border-bottom: 1px solid var(--line);
+      position: sticky;
+      top: 0;
+      z-index: 2;
+    }
+    nav a, button.filter {
+      border: 1px solid var(--line);
+      background: #fff;
+      color: var(--ink);
+      border-radius: 6px;
+      padding: 8px 10px;
+      font: inherit;
+      text-decoration: none;
+      cursor: pointer;
+    }
+    button.filter.active {
+      border-color: var(--blue);
+      color: var(--blue);
+      background: #e7f0fa;
+    }
+    main {
+      max-width: 1180px;
+      margin: 0 auto;
+      padding: 24px clamp(16px, 4vw, 28px) 48px;
+    }
+    section {
+      margin: 0 0 28px;
+      padding: 24px;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+    }
+    h2 { margin: 0 0 14px; font-size: 24px; }
+    h3 { margin: 0 0 8px; font-size: 18px; }
+    p { margin: 0 0 12px; }
+    ul, ol { margin: 0; padding-left: 22px; }
+    li + li { margin-top: 7px; }
+    code {
+      background: #eef2f6;
+      border: 1px solid #dfe6ee;
+      border-radius: 4px;
+      padding: 1px 4px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 0.95em;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(12, 1fr);
+      gap: 14px;
+    }
+    .card {
+      grid-column: span 4;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 16px;
+      background: #fbfcfe;
+    }
+    .wide { grid-column: span 6; }
+    .full { grid-column: 1 / -1; }
+    .status {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      margin-bottom: 10px;
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .04em;
+    }
+    .dot {
+      width: 9px;
+      height: 9px;
+      border-radius: 999px;
+      background: var(--blue);
+    }
+    .done .dot { background: var(--green); }
+    .next .dot { background: var(--blue); }
+    .risk .dot { background: var(--amber); }
+    .problem .dot { background: var(--red); }
+    .muted { color: var(--muted); }
+    .callout {
+      border-left: 4px solid var(--blue);
+      padding: 12px 14px;
+      background: #eaf3fc;
+      border-radius: 6px;
+      margin: 12px 0 0;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 14px;
+    }
+    th, td {
+      text-align: left;
+      vertical-align: top;
+      padding: 10px;
+      border-bottom: 1px solid var(--line);
+    }
+    th { background: #f0f4f8; }
+    .diagram {
+      width: 100%;
+      height: auto;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+    }
+    .hide { display: none; }
+    @media (max-width: 820px) {
+      nav { position: static; }
+      section { padding: 18px; }
+      .card, .wide { grid-column: 1 / -1; }
+    }
+  </style>
+</head>
+<body>
+  <header class="hero">
+    <h1>Phase 2 Spike 3 Handoff</h1>
+    <p>Technical status, review notes, remaining Phase 2 sprint plan, and Phase 3 direction for WovenTeam workload control and the functional workbench.</p>
+  </header>
+
+  <nav aria-label="Report navigation">
+    <a href="#status">Status</a>
+    <a href="#technical">Technical</a>
+    <a href="#validation">Validation</a>
+    <a href="#remaining">Remaining</a>
+    <a href="#phase3">Phase 3</a>
+    <button class="filter active" data-filter="all">All</button>
+    <button class="filter" data-filter="review">Review</button>
+    <button class="filter" data-filter="ops">Ops</button>
+    <button class="filter" data-filter="next">Next</button>
+  </nav>
+
+  <main>
+    <section id="status" data-kind="review ops">
+      <h2>Executive Status</h2>
+      <div class="grid">
+        <article class="card done">
+          <span class="status"><span class="dot"></span>Delivered</span>
+          <h3>Workload Control</h3>
+          <p>Agents can now be paused and resumed through durable ledger records, and work claims are represented as lease events before execution.</p>
+        </article>
+        <article class="card done">
+          <span class="status"><span class="dot"></span>Delivered</span>
+          <h3>CLI And Web Parity</h3>
+          <p><code>wt-task agent list|pause|resume</code>, <code>GET /api/agents</code>, <code>POST /api/agent-control</code>, and the web console agent panel expose the same operational model.</p>
+        </article>
+        <article class="card risk">
+          <span class="status"><span class="dot"></span>Known Gap</span>
+          <h3>Recovery Policy</h3>
+          <p>Leases and stuck-task detection exist, but automatic lease renewal, expiration reclaim, and retry policy are intentionally left for later Phase 2 work.</p>
+        </article>
+      </div>
+      <div class="callout">
+        <strong>Current branch state:</strong> this handoff covers the Spike 3 changes that add task lease projection, agent controls, CLI commands, web UI controls, documentation, and the new integration test.
+      </div>
+    </section>
+
+    <section id="technical" data-kind="review">
+      <h2>Detailed Technical Status</h2>
+      <div class="grid">
+        <article class="card wide">
+          <h3>Ledger And Agent Runtime</h3>
+          <ul>
+            <li><code>wt-agent</code> checks the latest <code>woventeam.agent_control.v0.1</code> record for its agent before taking work.</li>
+            <li>Paused agents return without claiming, preserving queued work for later processing.</li>
+            <li>Claimed work now gets a <code>woventeam.task_event.v0.1</code> lease event with <code>status:"leased"</code>, <code>assignedAgent</code>, <code>attempt</code>, and <code>leaseExpiresAtUnixMs</code>.</li>
+            <li>The current lease duration is fixed at 15 minutes and is used by projection-level stuck detection.</li>
+          </ul>
+        </article>
+        <article class="card wide">
+          <h3>Projection And API</h3>
+          <ul>
+            <li>The task projection stores lease owner, lease expiry, leased timestamp, running timestamp, and attempt count.</li>
+            <li>The projection rebuild also derives <code>agent_controls</code> from append-only agent control records.</li>
+            <li><code>GET /api/agents</code> returns state, control message, active tasks, leased tasks, running tasks, stuck tasks, attempts, and timestamps for <code>claude</code>, <code>chatgpt</code>, and <code>gemini</code>.</li>
+            <li><code>POST /api/agent-control</code> validates supported agents and <code>pause|resume</code> actions before appending a durable control record.</li>
+          </ul>
+        </article>
+        <article class="card wide">
+          <h3>Operator Interfaces</h3>
+          <ul>
+            <li><code>bin/wt-task agent list</code> prints agent state and workload counters as a compact tabular view.</li>
+            <li><code>bin/wt-task agent pause AGENT --message TEXT</code> and <code>resume</code> use the same HTTP API as the browser.</li>
+            <li>The web console adds agent control cards under the status panel with pause/resume buttons and workload counters.</li>
+            <li>The web task progress model recognizes <code>leased</code> as an intermediate state between queued/assigned and running.</li>
+          </ul>
+        </article>
+        <article class="card wide">
+          <h3>Documentation</h3>
+          <ul>
+            <li><code>README.md</code> includes the new agent control commands.</li>
+            <li><code>docs/api/task-ledger-v0.1.md</code> documents lease events, agent control records, and the new endpoints.</li>
+            <li><code>docs/ui/phase0-console-scaffold.md</code> documents the console surface for agent controls.</li>
+            <li><code>docs/launch/phase2-spike3-workload-control-2026-05-19.md</code> records the spike scope, model, validation, and remaining work.</li>
+          </ul>
+        </article>
+      </div>
+    </section>
+
+    <section id="flow" data-kind="review ops">
+      <h2>Control Flow</h2>
+      <svg class="diagram" viewBox="0 0 1020 315" role="img" aria-label="WovenTeam workload control flow">
+        <defs>
+          <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M 0 0 L 10 5 L 0 10 z" fill="#2563a8"></path>
+          </marker>
+          <style>
+            .node { fill: #fff; stroke: #c7d0da; stroke-width: 1.5; }
+            .blue { fill: #e7f0fa; stroke: #2563a8; }
+            .green { fill: #e7f5ee; stroke: #1f7a5a; }
+            .amber { fill: #fff4db; stroke: #a16207; }
+            .label { fill: #17202a; font: 700 15px system-ui, sans-serif; }
+            .small { fill: #5c6875; font: 12px system-ui, sans-serif; }
+            .line { stroke: #2563a8; stroke-width: 2; fill: none; marker-end: url(#arrow); }
+          </style>
+        </defs>
+        <rect class="node blue" x="24" y="38" width="150" height="64" rx="6"></rect>
+        <text class="label" x="99" y="64" text-anchor="middle">CLI / Web</text>
+        <text class="small" x="99" y="84" text-anchor="middle">pause, resume, list</text>
+        <rect class="node" x="220" y="38" width="150" height="64" rx="6"></rect>
+        <text class="label" x="295" y="64" text-anchor="middle">wt-roomd</text>
+        <text class="small" x="295" y="84" text-anchor="middle">validate + append</text>
+        <rect class="node green" x="416" y="38" width="170" height="64" rx="6"></rect>
+        <text class="label" x="501" y="64" text-anchor="middle">JSONL Ledger</text>
+        <text class="small" x="501" y="84" text-anchor="middle">agent_control + lease</text>
+        <rect class="node amber" x="632" y="38" width="160" height="64" rx="6"></rect>
+        <text class="label" x="712" y="64" text-anchor="middle">SQLite Projection</text>
+        <text class="small" x="712" y="84" text-anchor="middle">counts + stuck work</text>
+        <rect class="node blue" x="838" y="38" width="150" height="64" rx="6"></rect>
+        <text class="label" x="913" y="64" text-anchor="middle">Console</text>
+        <text class="small" x="913" y="84" text-anchor="middle">agent cards</text>
+        <path class="line" d="M174 70 H216"></path>
+        <path class="line" d="M370 70 H412"></path>
+        <path class="line" d="M586 70 H628"></path>
+        <path class="line" d="M792 70 H834"></path>
+        <rect class="node" x="214" y="176" width="170" height="64" rx="6"></rect>
+        <text class="label" x="299" y="202" text-anchor="middle">wt-agent</text>
+        <text class="small" x="299" y="222" text-anchor="middle">check control state</text>
+        <rect class="node amber" x="438" y="176" width="170" height="64" rx="6"></rect>
+        <text class="label" x="523" y="202" text-anchor="middle">Lease Task</text>
+        <text class="small" x="523" y="222" text-anchor="middle">attempt + expiry</text>
+        <rect class="node green" x="662" y="176" width="170" height="64" rx="6"></rect>
+        <text class="label" x="747" y="202" text-anchor="middle">Run Adapter</text>
+        <text class="small" x="747" y="222" text-anchor="middle">status/result events</text>
+        <path class="line" d="M501 104 C495 145 382 148 312 174"></path>
+        <path class="line" d="M384 208 H434"></path>
+        <path class="line" d="M608 208 H658"></path>
+        <path class="line" d="M747 176 C748 132 650 118 586 98"></path>
+      </svg>
+    </section>
+
+    <section id="validation" data-kind="review ops">
+      <h2>Validation Evidence</h2>
+      <table>
+        <thead><tr><th>Check</th><th>Result</th><th>Coverage</th></tr></thead>
+        <tbody>
+          <tr><td><code>make test</code></td><td>Passed</td><td>Full repository test suite, including Spike 3 workload control and Phase 1 end-to-end regression.</td></tr>
+          <tr><td><code>node --check web/app.js</code></td><td>Passed</td><td>Browser JavaScript syntax for the updated console controls.</td></tr>
+          <tr><td><code>git diff --check</code></td><td>Passed</td><td>Whitespace and patch hygiene.</td></tr>
+          <tr><td><code>systemctl is-active</code></td><td>Passed</td><td><code>wt-roomd</code> plus the Claude, ChatGPT, and Gemini agent units are active after restart.</td></tr>
+          <tr><td><code>/api/agents</code> live probe</td><td>Passed</td><td>Live room daemon returns agent states and workload counters.</td></tr>
+          <tr><td><code>wt-task agent pause/resume</code></td><td>Passed</td><td>CLI writes durable agent control records and the API reflects state changes.</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section id="problems" data-kind="review ops next">
+      <h2>Outstanding Problems And Review Focus</h2>
+      <div class="grid">
+        <article class="card problem">
+          <span class="status"><span class="dot"></span>Problem</span>
+          <h3>No Automatic Reclaim</h3>
+          <p>Stuck work is visible, but there is no operator action or daemon job that requeues or cancels expired leases. Reviewers should confirm this is acceptable for the current phase boundary.</p>
+        </article>
+        <article class="card problem">
+          <span class="status"><span class="dot"></span>Problem</span>
+          <h3>No Lease Renewal</h3>
+          <p>Long-running real adapters can exceed the fixed 15-minute lease window. The next implementation should add heartbeat or renewal events before enabling longer tasks.</p>
+        </article>
+        <article class="card risk">
+          <span class="status"><span class="dot"></span>Risk</span>
+          <h3>Attempt Semantics Are Basic</h3>
+          <p>Attempts increment on lease projection, but retry causes, terminal failure reasons, and retry limits are not yet enforced centrally.</p>
+        </article>
+        <article class="card risk">
+          <span class="status"><span class="dot"></span>Risk</span>
+          <h3>Agent Set Is Static</h3>
+          <p>The agent summary endpoint currently returns the three primary agents directly: <code>claude</code>, <code>chatgpt</code>, and <code>gemini</code>. Later phases should derive this from model/agent configuration.</p>
+        </article>
+        <article class="card risk">
+          <span class="status"><span class="dot"></span>Risk</span>
+          <h3>Policy Is Still Distributed</h3>
+          <p>Vendor/model policy checks exist in pieces. Phase 2 Sprint 5 should centralize policy before broader real-adapter execution.</p>
+        </article>
+        <article class="card next">
+          <span class="status"><span class="dot"></span>Review Touchpoints</span>
+          <h3>Files To Inspect</h3>
+          <p><code>src/wt_task_projection.c</code>, <code>src/wt_roomd.c</code>, <code>src/wt_agent.c</code>, <code>bin/wt-task</code>, <code>web/app.js</code>, and <code>tests/integration/wt-agent-workload-control.sh</code>.</p>
+        </article>
+      </div>
+    </section>
+
+    <section id="remaining" data-kind="next">
+      <h2>Remaining Phase 2 Sprints</h2>
+      <div class="grid">
+        <article class="card wide next">
+          <span class="status"><span class="dot"></span>Next</span>
+          <h3>Sprint 4: Artifact Promotion</h3>
+          <ol>
+            <li>Add artifact state events: <code>draft</code>, <code>reviewed</code>, <code>accepted</code>, <code>rejected</code>, and <code>superseded</code>.</li>
+            <li>Add CLI commands for artifact review, promotion, rejection, supersession, and export.</li>
+            <li>Add reviewer identity, decision notes, and references to accepted output paths.</li>
+            <li>Update the console artifact viewer to separate raw stdout/stderr/result data from accepted work product.</li>
+            <li>Add projection tests that rebuild accepted artifact inventory from JSONL alone.</li>
+          </ol>
+        </article>
+        <article class="card wide next">
+          <span class="status"><span class="dot"></span>Next</span>
+          <h3>Sprint 5: Policy, Audit, And Cost Controls</h3>
+          <ol>
+            <li>Introduce a single policy evaluator used by task creation, routing, manager subtasks, config changes, and web submission.</li>
+            <li>Block removed vendors and invalid model-agent combinations before a task enters the ledger.</li>
+            <li>Enforce budget ceilings by initiative, agent, model family, day, and month.</li>
+            <li>Add audit export that includes tasks, events, gates, usage, artifacts, policy decisions, and workload controls.</li>
+            <li>Show policy and budget warnings in the console before operator submission.</li>
+          </ol>
+        </article>
+        <article class="card full next">
+          <span class="status"><span class="dot"></span>Next</span>
+          <h3>Sprint 6: Launch Rehearsal And Documentation</h3>
+          <ol>
+            <li>Add a Phase 2 end-to-end target that covers initiatives, adapter preflight, leasing, artifact promotion, policy denial, budget enforcement, recovery, and UI/API parity.</li>
+            <li>Run one harmless live adapter rehearsal against installed CLIs with explicit token and cost ceilings.</li>
+            <li>Exercise restart and projection rebuild from the append-only ledger.</li>
+            <li>Update the operations runbook, user cheat sheet, API docs, web UI docs, and launch notes.</li>
+            <li>Publish a Phase 2 status report that records evidence, current limits, and go/no-go criteria for functional use.</li>
+          </ol>
+        </article>
+      </div>
+    </section>
+
+    <section id="phase3" data-kind="next">
+      <h2>High-Level Phase 3 Plan</h2>
+      <p>Phase 3 should convert the Phase 2 functional workbench into a dependable collaborative execution environment. The central theme is controlled autonomy: agents should be able to run meaningful bounded work, recover from interruption, surface artifacts for review, and stay inside model, budget, and system-access policy.</p>
+      <div class="grid">
+        <article class="card">
+          <h3>Runtime Reliability</h3>
+          <p>Add lease renewal, explicit reclaim/cancel/retry operations, task concurrency limits, crash recovery, and long-run adapter supervision.</p>
+        </article>
+        <article class="card">
+          <h3>Config-Driven Agents</h3>
+          <p>Move static agent lists and route assumptions into validated configuration with live UI visibility and safe reload behavior.</p>
+        </article>
+        <article class="card">
+          <h3>Review Workflows</h3>
+          <p>Make accepted artifacts, review gates, and audit exports the default path from raw model output to trusted project material.</p>
+        </article>
+        <article class="card">
+          <h3>Security And Access</h3>
+          <p>Formalize filesystem, network, shell, and git permissions per tool policy and adapter profile before broadening task scopes.</p>
+        </article>
+        <article class="card">
+          <h3>Operator Experience</h3>
+          <p>Make the web console the primary workbench for initiative state, task routing, agent health, budgets, artifacts, and recovery actions.</p>
+        </article>
+        <article class="card">
+          <h3>Distributed Readiness</h3>
+          <p>Prepare for worker-node execution by separating local daemon assumptions from agent runtime placement, identity, and telemetry.</p>
+        </article>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    const buttons = Array.from(document.querySelectorAll("button.filter"));
+    const sections = Array.from(document.querySelectorAll("main section"));
+    buttons.forEach((button) => {
+      button.addEventListener("click", () => {
+        const filter = button.dataset.filter;
+        buttons.forEach((item) => item.classList.toggle("active", item === button));
+        sections.forEach((section) => {
+          const kinds = (section.dataset.kind || "").split(/\s+/);
+          section.classList.toggle("hide", filter !== "all" && !kinds.includes(filter));
+        });
+      });
+    });
+  </script>
+</body>
+</html>

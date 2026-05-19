@@ -13,6 +13,9 @@ Usage:
   wt-task initiative show INIT
   wt-task initiative export INIT
   wt-task initiative close INIT [--message TEXT]
+  wt-task agent list
+  wt-task agent pause AGENT [--message TEXT]
+  wt-task agent resume AGENT [--message TEXT]
   wt-task list
   wt-task show TASK_ID
   wt-task assign TASK_ID --agent AGENT [--status assigned]
@@ -283,6 +286,43 @@ cmd_initiative() {
     esac
 }
 
+cmd_agent() {
+    local subcmd="${1:-}"
+    shift || true
+    case "$subcmd" in
+        list)
+            http_get "/api/agents" | jq -r '
+              .agents[] | [.agent, .state, .activeTasks, .leasedTasks, .runningTasks, .stuckTasks, .attempts, .message] | @tsv'
+            ;;
+        pause|resume)
+            local agent="${1:-}" message=""
+            shift || true
+            while [[ $# -gt 0 ]]; do
+                case "$1" in
+                    --message) message="${2:-}"; shift 2 ;;
+                    *) echo "wt-task agent $subcmd: unknown argument: $1" >&2; usage >&2; exit 2 ;;
+                esac
+            done
+            if [[ -z "$agent" ]]; then
+                echo "wt-task agent $subcmd: AGENT is required" >&2
+                exit 2
+            fi
+            [[ -n "$message" ]] || message="Agent $subcmd requested by wt-task."
+            jq -cn --arg agent "$agent" --arg action "$subcmd" --arg message "$message" \
+                '{agent:$agent,action:$action,message:$message,createdBy:"ceo"}' |
+              http_post_json "/api/agent-control" "$(cat)"
+            ;;
+        -h|--help|help|"")
+            usage
+            ;;
+        *)
+            echo "wt-task agent: unknown command: $subcmd" >&2
+            usage >&2
+            exit 2
+            ;;
+    esac
+}
+
 cmd_lifecycle() {
     local status="$1" default_message="$2" task_id="${3:-}" message=""
     shift || true
@@ -370,6 +410,7 @@ case "$cmd" in
     create) cmd_create "$@" ;;
     request) cmd_request "$@" ;;
     initiative) cmd_initiative "$@" ;;
+    agent) cmd_agent "$@" ;;
     list) cmd_list "$@" ;;
     show) cmd_show "$@" ;;
     assign) cmd_assign "$@" ;;

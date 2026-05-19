@@ -433,10 +433,20 @@ static int runCliArtifactAdapter(const WtConfig *config, const char *agentName,
 }
 
 static int handleAssignedTask(const WtConfig *config, const char *agentName) {
+    if (wtTaskAgentPaused(config->taskLedgerPath, agentName)) {
+        printf("[agent] %s paused by operator control\n", agentName);
+        return 0;
+    }
     WtTaskSummary task;
     int found = wtTaskFindQueuedForAgent(config->taskLedgerPath, agentName, &task);
     if (found <= 0) {
         return 0;
+    }
+    long long leaseExpiresAtUnixMs = (long long)time(NULL) * 1000LL + 15LL * 60LL * 1000LL;
+    if (wtTaskAppendLeaseEvent(config->taskLedgerPath, task.taskId, agentName, 1,
+                               leaseExpiresAtUnixMs, config->fsyncEachMessage) != 0) {
+        perror("record task lease");
+        return 1;
     }
     char actor[128];
     snprintf(actor, sizeof(actor), "wt-agent@%s", agentName);

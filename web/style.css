@@ -422,6 +422,54 @@ kbd {
   font-size: 12px;
 }
 
+.agent-controls {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  padding: 0 12px 10px;
+}
+
+.agent-control-card {
+  border: 1px solid var(--edge);
+  background: var(--panel-alt);
+  padding: 8px;
+  min-width: 0;
+}
+
+.agent-control-card.paused {
+  border-color: var(--warn);
+}
+
+.agent-control-card strong,
+.agent-control-card span {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agent-control-card strong {
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 11px;
+}
+
+.agent-control-card span {
+  color: var(--text-dim);
+  font-size: 10px;
+  margin: 4px 0 7px;
+}
+
+.agent-control-card button {
+  width: 100%;
+  border: 1px solid var(--edge);
+  background: var(--panel);
+  color: var(--text);
+  padding: 6px;
+  font-size: 10px;
+  cursor: pointer;
+}
+
 .token-panel {
   --accent: var(--warn);
 }

@@ -1155,6 +1155,75 @@ static int sendCapacityJson(int clientFd, const WtConfig *config) {
     return rc;
 }
 
+static int sendAgentsJson(int clientFd, const WtConfig *config) {
+    if (rebuildProjection(config) != 0) {
+        return wtHttpSendText(clientFd, 500, "Internal Server Error", "application/json",
+                              "{\"ok\":false,\"error\":\"projection rebuild failed\"}\n");
+    }
+    char *body = malloc(WT_TASK_LEDGER_LINE_SIZE * 8);
+    if (!body) {
+        return wtHttpSendText(clientFd, 500, "Internal Server Error", "application/json", "{\"ok\":false}\n");
+    }
+    if (wtTaskProjectionReadAgentsJson(config->taskProjectionDbPath, wtNowUnixMilliseconds(), body,
+                                       WT_TASK_LEDGER_LINE_SIZE * 8) != 0) {
+        free(body);
+        return wtHttpSendText(clientFd, 500, "Internal Server Error", "application/json",
+                              "{\"ok\":false,\"error\":\"agent workload read failed\"}\n");
+    }
+    int rc = wtHttpSendText(clientFd, 200, "OK", "application/json; charset=utf-8", body);
+    free(body);
+    return rc;
+}
+
+static int handlePostAgentControl(int clientFd, const WtConfig *config, const char *request) {
+    const char *body = strstr(request, "\r\n\r\n");
+    if (!body) {
+        return wtHttpSendText(clientFd, 400, "Bad Request", "application/json", "{\"ok\":false}\n");
+    }
+    body += 4;
+    char agent[WT_TASK_AGENT_SIZE];
+    char action[32];
+    char message[WT_TASK_TITLE_SIZE];
+    char createdBy[WT_TASK_AGENT_SIZE];
+    if (wtJsonReadString(body, "agent", agent, sizeof(agent)) != 0 ||
+        wtJsonReadString(body, "action", action, sizeof(action)) != 0 ||
+        (strcmp(action, "pause") != 0 && strcmp(action, "resume") != 0)) {
+        return wtHttpSendText(clientFd, 400, "Bad Request", "application/json", "{\"ok\":false,\"error\":\"invalid agent control\"}\n");
+    }
+    if (strcmp(agent, "claude") != 0 && strcmp(agent, "chatgpt") != 0 && strcmp(agent, "gemini") != 0) {
+        return wtHttpSendText(clientFd, 400, "Bad Request", "application/json", "{\"ok\":false,\"error\":\"unknown agent\"}\n");
+    }
+    if (wtJsonReadString(body, "message", message, sizeof(message)) != 0) {
+        snprintf(message, sizeof(message), "%s", strcmp(action, "pause") == 0 ?
+                 "Agent paused by operator." : "Agent resumed by operator.");
+    }
+    if (wtJsonReadString(body, "createdBy", createdBy, sizeof(createdBy)) != 0) {
+        snprintf(createdBy, sizeof(createdBy), "%s", "ceo");
+    }
+    char escapedAgent[WT_TASK_AGENT_SIZE * 2];
+    char escapedAction[64];
+    char escapedMessage[WT_TASK_TITLE_SIZE * 2];
+    char escapedBy[WT_TASK_AGENT_SIZE * 2];
+    if (wtJsonEscape(agent, escapedAgent, sizeof(escapedAgent)) != 0 ||
+        wtJsonEscape(action, escapedAction, sizeof(escapedAction)) != 0 ||
+        wtJsonEscape(message, escapedMessage, sizeof(escapedMessage)) != 0 ||
+        wtJsonEscape(createdBy, escapedBy, sizeof(escapedBy)) != 0) {
+        return wtHttpSendText(clientFd, 400, "Bad Request", "application/json", "{\"ok\":false,\"error\":\"agent control too large\"}\n");
+    }
+    char record[WT_TASK_LEDGER_LINE_SIZE];
+    snprintf(record, sizeof(record),
+             "{\"schema\":\"woventeam.agent_control.v0.1\",\"agent\":\"%s\","
+             "\"action\":\"%s\",\"message\":\"%s\",\"createdBy\":\"%s\","
+             "\"createdAtUnixMs\":%lld}",
+             escapedAgent, escapedAction, escapedMessage, escapedBy, wtNowUnixMilliseconds());
+    if (wtTaskAppendRecord(config->taskLedgerPath, record, config->fsyncEachMessage) != 0) {
+        return wtHttpSendText(clientFd, 500, "Internal Server Error", "application/json", "{\"ok\":false,\"error\":\"append failed\"}\n");
+    }
+    char response[512];
+    snprintf(response, sizeof(response), "{\"ok\":true,\"agent\":\"%s\",\"action\":\"%s\"}\n", agent, action);
+    return wtHttpSendText(clientFd, 200, "OK", "application/json; charset=utf-8", response);
+}
+
 static const char *artifactKindForName(const char *name) {
     if (strcmp(name, "result.md") == 0) return "result";
     if (strcmp(name, "stdout.log") == 0) return "stdout";
@@ -1498,6 +1567,8 @@ static void handleClient(int clientFd, WtConfig *config) {
         sendTaskArtifactsJson(clientFd, config, taskId);
     } else if (strcmp(method, "GET") == 0 && strcmp(path, "/api/capacity") == 0) {
         sendCapacityJson(clientFd, config);
+    } else if (strcmp(method, "GET") == 0 && strcmp(path, "/api/agents") == 0) {
+        sendAgentsJson(clientFd, config);
     } else if (strcmp(method, "GET") == 0 && strcmp(path, "/api/tokens") == 0) {
         sendTokenJson(clientFd, config);
     } else if (strcmp(method, "GET") == 0 && strcmp(path, "/api/config") == 0) {
@@ -1516,6 +1587,8 @@ static void handleClient(int clientFd, WtConfig *config) {
         handlePostTaskGate(clientFd, config, request);
     } else if (strcmp(method, "POST") == 0 && strcmp(path, "/api/task-usage") == 0) {
         handlePostTaskUsage(clientFd, config, request);
+    } else if (strcmp(method, "POST") == 0 && strcmp(path, "/api/agent-control") == 0) {
+        handlePostAgentControl(clientFd, config, request);
     } else if (strcmp(method, "POST") == 0 && strcmp(path, "/api/config") == 0) {
         handlePostConfig(clientFd, config, request);
     } else if (strcmp(method, "GET") == 0 && strcmp(path, "/api/health") == 0) {

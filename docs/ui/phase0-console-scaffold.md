@@ -15,6 +15,7 @@ The Phase 0 browser UI is `WovenTeam Console (Fullscreen)` served by
   - `GET /api/task-detail?taskId=...`
   - `GET /api/initiatives`
   - `GET /api/initiative-detail?initiativeId=...`
+  - `GET /api/agents`
   - `GET /api/task-artifacts?taskId=...`
   - `GET /api/capacity`
   - `GET /api/tokens`
@@ -24,6 +25,7 @@ The Phase 0 browser UI is `WovenTeam Console (Fullscreen)` served by
   - `POST /api/task-request`
   - `POST /api/task-gate`
   - `POST /api/task-usage`
+  - `POST /api/agent-control`
   - `POST /api/config`
 - The task table reads the rebuildable SQLite task projection and shows task
   status, parent task IDs, requested-by role, event count, assigned role, and
@@ -31,6 +33,9 @@ The Phase 0 browser UI is `WovenTeam Console (Fullscreen)` served by
 - The initiative workbench summary reads `/api/initiatives` and lets operators
   focus the task table by initiative without changing the underlying task
   package contract.
+- The agent status panel reads `/api/agents` and exposes pause/resume controls
+  for Claude, ChatGPT/Codex, and Gemini, including leased, running, stuck, and
+  attempt counts.
 - Selecting a task row opens the Phase 1 task detail panel with task body,
   event timeline, retry/cancel/close lifecycle controls, and review gate
   approve/reject/revision controls.
@@ -82,6 +87,7 @@ The scaffold now binds to the task package and Phase 1 state paths:
 - `GET /api/task-detail?taskId=...`
 - `GET /api/initiatives`
 - `GET /api/initiative-detail?initiativeId=...`
+- `GET /api/agents`
 - `GET /api/task-artifacts?taskId=...`
 - `GET /api/adapters`
 - `GET /api/capacity`
@@ -89,6 +95,7 @@ The scaffold now binds to the task package and Phase 1 state paths:
 - `POST /api/task-request`
 - `POST /api/task-gate`
 - `POST /api/task-usage`
+- `POST /api/agent-control`
 
 The next backend step is to expose richer initiative, gate history, usage, and
 agent state so the console can enable the remaining disabled controls.

@@ -88,6 +88,9 @@ Create and inspect Phase 0 task packages through the room daemon:
 ./bin/wt-task initiative create --title "Launch a bounded initiative" --body "Create the manager charter task." --id init_example
 ./bin/wt-task initiative list
 ./bin/wt-task initiative show init_example
+./bin/wt-task agent list
+./bin/wt-task agent pause chatgpt --message "Hold Codex work while reviewing output."
+./bin/wt-task agent resume chatgpt
 ./bin/wt-task list
 ./bin/wt-task show task_example_001
 ./bin/wt-task assign task_example_001 --agent gemini

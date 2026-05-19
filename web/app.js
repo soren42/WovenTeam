@@ -58,6 +58,7 @@ let state = {
   selectedTaskId: "",
   selectedTaskStatus: "",
   selectedInitiativeId: "",
+  agents: [],
   capacity: {agents: [], initiatives: [], parents: [], caps: {}},
   tokens: {},
   config: {
@@ -286,7 +287,18 @@ async function loadCapacity() {
   const cap = payload.caps?.maxActiveTasksPerAgent || "--";
   document.querySelector("#subAgentSummary").textContent = `${active} active`;
   document.querySelector("#routingSummary").textContent = state.config.roleRoutingEnabled ? `router ${cap}/agent` : "manual";
-  document.querySelector("#agentMeta").textContent = `● ${state.taskStats.activeAgents} ACTIVE · ${state.taskStats.requestCount}R · ${active} CAPACITY`;
+  if (!state.agents.length) {
+    document.querySelector("#agentMeta").textContent = `● ${state.taskStats.activeAgents} ACTIVE · ${state.taskStats.requestCount}R · ${active} CAPACITY`;
+  }
+}
+
+async function loadAgents() {
+  const response = await fetch("/api/agents");
+  if (!response.ok) return;
+  const payload = await response.json();
+  if (!payload.ok || !Array.isArray(payload.agents)) return;
+  state.agents = payload.agents;
+  renderAgentControls();
 }
 
 function summarizeTasks(rows) {
@@ -527,6 +539,7 @@ async function postTaskGate(action) {
 
 function progressForStatus(status) {
   if (status === "complete") return "100%";
+  if (status === "leased") return "35%";
   if (status === "running") return "55%";
   if (status === "blocked" || status === "failed") return "35%";
   return "12%";
@@ -581,6 +594,46 @@ function renderRoles() {
       renderRoles();
     });
     roleButtons.appendChild(button);
+  });
+}
+
+async function postAgentControl(agent, action) {
+  const response = await fetch("/api/agent-control", {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({agent, action, message: `${action} requested from web console`, createdBy: "ceo"})
+  });
+  if (!response.ok) {
+    addAudit("ui", `${action} failed for ${agent}`);
+    return;
+  }
+  addAudit("ui", `${action} posted for ${agent}`);
+  await loadAgents();
+}
+
+function renderAgentControls() {
+  const container = document.querySelector("#agentControls");
+  if (!container) return;
+  const agents = state.agents.length ? state.agents : ["claude", "chatgpt", "gemini"].map(agent => ({
+    agent, state: "active", activeTasks: 0, leasedTasks: 0, runningTasks: 0, stuckTasks: 0, attempts: 0
+  }));
+  const stuck = agents.reduce((sum, agent) => sum + Number(agent.stuckTasks || 0), 0);
+  const paused = agents.filter(agent => agent.state === "paused").length;
+  document.querySelector("#agentMeta").textContent =
+    `● ${agents.length - paused} ACTIVE · ${paused} PAUSED · ${stuck} STUCK`;
+  container.innerHTML = "";
+  agents.forEach(agent => {
+    const card = document.createElement("div");
+    const isPaused = agent.state === "paused";
+    card.className = `agent-control-card ${isPaused ? "paused" : ""}`;
+    card.innerHTML = "<strong></strong><span></span><button type=\"button\"></button>";
+    card.querySelector("strong").textContent = `${agent.agent} · ${agent.state}`;
+    card.querySelector("span").textContent =
+      `${agent.leasedTasks || 0} leased · ${agent.runningTasks || 0} running · ${agent.stuckTasks || 0} stuck · ${agent.attempts || 0} attempts`;
+    const button = card.querySelector("button");
+    button.textContent = isPaused ? "RESUME" : "PAUSE";
+    button.addEventListener("click", () => postAgentControl(agent.agent, isPaused ? "resume" : "pause"));
+    container.appendChild(card);
   });
 }
 
@@ -953,6 +1006,7 @@ async function init() {
   renderRoles();
   renderPresets();
   renderVendors();
+  renderAgentControls();
   drawSparkline();
   updateReadouts();
   wireControls();
@@ -963,12 +1017,14 @@ async function init() {
     await loadTasks();
     await loadTokens();
     await loadAdapters();
+    await loadAgents();
     await loadCapacity();
     connectEvents();
     setInterval(loadInitiatives, 5000);
     setInterval(loadTasks, 5000);
     setInterval(loadTokens, 5000);
     setInterval(loadAdapters, 15000);
+    setInterval(loadAgents, 5000);
     setInterval(loadCapacity, 5000);
   } catch (error) {
     setUplink(false);

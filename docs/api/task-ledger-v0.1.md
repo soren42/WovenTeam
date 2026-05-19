@@ -101,6 +101,7 @@ package, and emits `task.assign`. The child package includes `parentTaskId`,
 - `GET /api/task-detail?taskId=...`
 - `GET /api/initiatives`
 - `GET /api/initiative-detail?initiativeId=...`
+- `GET /api/agents`
 - `GET /api/task-artifacts?taskId=...`
 - `GET /api/capacity`
 - `GET /api/tokens`
@@ -108,10 +109,12 @@ package, and emits `task.assign`. The child package includes `parentTaskId`,
 - `POST /api/config`
 - `POST /api/task-gate`
 - `POST /api/task-usage`
+- `POST /api/agent-control`
 
 `bin/wt-task` wraps those endpoints for local operator use with `create`,
 `request`, `list`, `show`, `assign`, `update-status`, `retry`, `cancel`,
-`close`, `reopen`, and `initiative create/list/show/export/close` commands.
+`close`, `reopen`, `initiative create/list/show/export/close`, and
+`agent list/pause/resume` commands.
 
 Phase 1 keeps the JSONL ledger as the recovery source and adds a rebuildable
 SQLite projection configured by `taskProjectionDbPath`. `wt-roomd` rebuilds the
@@ -160,6 +163,30 @@ when routing new task packages or manager subtasks.
 `POST /api/task-gate` records operator review decisions as append-only task
 events with `eventType=review_gate`. Supported actions are `approve`, `reject`,
 and `revision`.
+
+Phase 2 workload control adds task lease events and agent control records. Before
+`wt-agent` starts work, it appends a normal task event with
+`eventType=lease`, `status=leased`, `assignedAgent`, `attempt`, and
+`leaseExpiresAtUnixMs`. The projection exposes `attemptCount`, `leaseOwner`,
+`leasedAtUnixMs`, `runningAtUnixMs`, and `leaseExpiresAtUnixMs` on task summary
+and detail rows.
+
+Agent pause/resume records use:
+
+```json
+{
+  "schema": "woventeam.agent_control.v0.1",
+  "agent": "chatgpt",
+  "action": "pause",
+  "message": "Operator pause.",
+  "createdBy": "ceo",
+  "createdAtUnixMs": 1779205447000
+}
+```
+
+`GET /api/agents` returns one row for each primary agent with active, leased,
+running, stuck, and attempt counts. A task is considered stuck when it remains
+`leased` or `running` for more than 15 minutes.
 
 When a task is marked `blocked`, queued/running child tasks that list it in
 `dependencies` receive an appended `blocked` task event. Terminal dependents are

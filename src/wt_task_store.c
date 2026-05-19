@@ -150,6 +150,57 @@ int wtTaskFindQueuedForAgent(const char *ledgerPath, const char *agentName, WtTa
     return 0;
 }
 
+int wtTaskAgentPaused(const char *ledgerPath, const char *agentName) {
+    FILE *file = fopen(ledgerPath, "r");
+    if (!file) {
+        return 0;
+    }
+    char line[WT_TASK_LEDGER_LINE_SIZE];
+    int paused = 0;
+    while (fgets(line, sizeof(line), file)) {
+        if (!lineHasSchema(line, "woventeam.agent_control.v0.1")) {
+            continue;
+        }
+        char agent[WT_TASK_AGENT_SIZE];
+        char action[32];
+        if (wtJsonReadString(line, "agent", agent, sizeof(agent)) != 0 ||
+            strcmp(agent, agentName) != 0 ||
+            wtJsonReadString(line, "action", action, sizeof(action)) != 0) {
+            continue;
+        }
+        if (strcmp(action, "pause") == 0) {
+            paused = 1;
+        } else if (strcmp(action, "resume") == 0) {
+            paused = 0;
+        }
+    }
+    fclose(file);
+    return paused;
+}
+
+int wtTaskAppendLeaseEvent(const char *ledgerPath, const char *taskId, const char *agentName,
+                           int attempt, long long leaseExpiresAtUnixMs, bool fsyncRecord) {
+    char escapedTaskId[WT_TASK_ID_SIZE * 2];
+    char escapedAgent[WT_TASK_AGENT_SIZE * 2];
+    char message[256];
+    char escapedMessage[512];
+    char json[2048];
+    snprintf(message, sizeof(message), "Task leased by wt-agent@%s attempt %d.", agentName, attempt);
+    if (wtJsonEscape(taskId, escapedTaskId, sizeof(escapedTaskId)) != 0 ||
+        wtJsonEscape(agentName, escapedAgent, sizeof(escapedAgent)) != 0 ||
+        wtJsonEscape(message, escapedMessage, sizeof(escapedMessage)) != 0) {
+        return -1;
+    }
+    snprintf(json, sizeof(json),
+             "{\"schema\":\"woventeam.task_event.v0.1\",\"taskId\":\"%s\","
+             "\"eventType\":\"lease\",\"status\":\"leased\",\"assignedAgent\":\"%s\","
+             "\"message\":\"%s\",\"createdBy\":\"wt-agent@%s\",\"attempt\":%d,"
+             "\"leaseExpiresAtUnixMs\":%lld,\"createdAtUnixMs\":%lld}",
+             escapedTaskId, escapedAgent, escapedMessage, escapedAgent, attempt,
+             leaseExpiresAtUnixMs, wtNowUnixMilliseconds());
+    return wtTaskAppendRecord(ledgerPath, json, fsyncRecord);
+}
+
 int wtTaskAppendStatusEvent(const char *ledgerPath, const char *taskId, const char *status,
                             const char *createdBy, const char *message, bool fsyncRecord) {
     char escapedTaskId[WT_TASK_ID_SIZE * 2];
