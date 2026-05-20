@@ -1,0 +1,432 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>WovenTeam Phase 2 Sprint 5 Closeout</title>
+  <!--
+    Sprint 5 closeout report. Self-contained: every byte of CSS/SVG/JS lives
+    in this file so the report archives cleanly under docs/launch/. Style
+    matches the Sprint 3 + Sprint 4 closeouts.
+  -->
+  <style>
+    :root {
+      color-scheme: light;
+      --ink: #17202a;
+      --muted: #5c6875;
+      --line: #d7dee6;
+      --paper: #f7f9fb;
+      --panel: #ffffff;
+      --blue: #2563a8;
+      --green: #1f7a5a;
+      --amber: #a16207;
+      --red: #b42318;
+      --violet: #6d4aff;
+      --teal: #0f766e;
+      --soft-blue: #e7f0fa;
+      --soft-green: #e7f5ee;
+      --soft-amber: #fff4db;
+      --soft-red: #fdeceb;
+      --soft-violet: #eeeafe;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      color: var(--ink);
+      background: var(--paper);
+      line-height: 1.48;
+    }
+    header.hero {
+      background: #11253a;
+      color: #fff;
+      padding: 38px clamp(18px, 5vw, 64px) 30px;
+    }
+    header.hero h1 {
+      margin: 0 0 10px;
+      max-width: 980px;
+      font-size: clamp(30px, 5vw, 54px);
+      line-height: 1.02;
+    }
+    header.hero p {
+      max-width: 900px;
+      margin: 0;
+      color: #dbe7f4;
+      font-size: 18px;
+    }
+    header.hero .meta {
+      margin-top: 14px;
+      color: #aac4dd;
+      font-size: 14px;
+    }
+    nav {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      padding: 14px clamp(18px, 5vw, 64px);
+      background: #fff;
+      border-bottom: 1px solid var(--line);
+      position: sticky;
+      top: 0;
+      z-index: 2;
+    }
+    nav a, button.filter {
+      border: 1px solid var(--line);
+      background: #fff;
+      color: var(--ink);
+      border-radius: 6px;
+      padding: 8px 10px;
+      font: inherit;
+      text-decoration: none;
+      cursor: pointer;
+    }
+    nav a:hover, button.filter:hover, button.filter.active {
+      border-color: var(--blue);
+      color: var(--blue);
+      background: var(--soft-blue);
+    }
+    main {
+      max-width: 1180px;
+      margin: 0 auto;
+      padding: 24px clamp(16px, 4vw, 28px) 48px;
+    }
+    section {
+      margin: 0 0 28px;
+      padding: 24px;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+    }
+    h2 { margin: 0 0 14px; font-size: 24px; }
+    h3 { margin: 0 0 8px; font-size: 18px; }
+    p { margin: 0 0 12px; }
+    ul, ol { margin: 0; padding-left: 22px; }
+    li + li { margin-top: 7px; }
+    code {
+      background: #eef2f6;
+      border: 1px solid #dfe6ee;
+      border-radius: 4px;
+      padding: 1px 4px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 0.95em;
+    }
+    pre {
+      margin: 12px 0;
+      padding: 12px 14px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: #fbfcfe;
+      overflow-x: auto;
+      font-size: 13px;
+      line-height: 1.45;
+    }
+    pre code { background: transparent; border: 0; padding: 0; }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(12, 1fr);
+      gap: 14px;
+    }
+    .card {
+      grid-column: span 4;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 16px;
+      background: #fbfcfe;
+    }
+    .wide { grid-column: span 6; }
+    .full { grid-column: 1 / -1; }
+    .status {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      margin-bottom: 10px;
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .04em;
+    }
+    .dot {
+      width: 9px;
+      height: 9px;
+      border-radius: 999px;
+      background: var(--blue);
+    }
+    .done .dot { background: var(--green); }
+    .next .dot { background: var(--blue); }
+    .risk .dot { background: var(--amber); }
+    .problem .dot { background: var(--red); }
+    .muted { color: var(--muted); }
+    .callout {
+      border-left: 4px solid var(--green);
+      padding: 12px 14px;
+      background: var(--soft-green);
+      border-radius: 6px;
+      margin: 12px 0 0;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 14px;
+    }
+    th, td {
+      text-align: left;
+      vertical-align: top;
+      padding: 10px;
+      border-bottom: 1px solid var(--line);
+    }
+    th { background: #f0f4f8; }
+    .diagram {
+      width: 100%;
+      height: auto;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+    }
+    .hide { display: none; }
+    .pill {
+      display: inline-block;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: 3px 8px;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      background: #f6f8fa;
+      color: var(--muted);
+    }
+    .pill.pass { color: var(--green); background: var(--soft-green); border-color: #b7dfcd; }
+    .pill.warn { color: var(--amber); background: var(--soft-amber); border-color: #f0d28c; }
+    @media (max-width: 820px) {
+      nav { position: static; }
+      section { padding: 18px; }
+      .card, .wide { grid-column: 1 / -1; }
+    }
+  </style>
+</head>
+<body>
+  <header class="hero">
+    <h1>Phase 2 Sprint 5 Closeout</h1>
+    <p>Policy and audit land as first-class controls. A single central evaluator owns blocked-vendor, model-agent compatibility, and budget enforcement; denials become durable audit records; a combined initiative audit export folds tasks, events, gates, usage, artifacts, and policy decisions into one report.</p>
+    <div class="meta">Generated 2026-05-20 · branch closeout · closes Sprint 5 of <code>phase2-functional-workbench-plan.html</code></div>
+  </header>
+
+  <nav aria-label="Report navigation">
+    <a href="#status">Status</a>
+    <a href="#technical">Technical</a>
+    <a href="#flow">Flow</a>
+    <a href="#audit">Audit</a>
+    <a href="#validation">Validation</a>
+    <a href="#followups">Follow-ups</a>
+    <button class="filter active" data-filter="all">All</button>
+    <button class="filter" data-filter="review">Review</button>
+    <button class="filter" data-filter="ops">Ops</button>
+    <button class="filter" data-filter="next">Next</button>
+  </nav>
+
+  <main>
+    <section id="status" data-kind="review ops">
+      <h2>Executive Status</h2>
+      <div class="grid">
+        <article class="card done">
+          <span class="status"><span class="dot"></span>Delivered</span>
+          <h3>Central Policy Evaluator</h3>
+          <p>New <code>wt_policy</code> module owns blocked-vendor, model-agent compatibility, daily/monthly/initiative/model-family budget, and agent/initiative capacity checks. Single source of truth for <code>/api/task-package</code> and <code>/api/task-request</code>.</p>
+        </article>
+        <article class="card done">
+          <span class="status"><span class="dot"></span>Delivered</span>
+          <h3>Policy Decisions</h3>
+          <p>Every denial appends a durable <code>woventeam.policy_decision.v0.1</code> record carrying <code>taskId</code>, <code>initiativeId</code>, classified <code>reason</code>, message, and the actor. Reason codes are stable and consumed by both CLI and UI.</p>
+        </article>
+        <article class="card done">
+          <span class="status"><span class="dot"></span>Delivered</span>
+          <h3>Audit Export</h3>
+          <p><code>GET /api/initiative-audit?initiativeId=...</code> returns a single document combining summary, tasks, events, policy decisions, and usage. <code>wt-task audit INIT [--out FILE]</code> streams the same payload; the console adds an Audit button on each initiative card.</p>
+        </article>
+      </div>
+      <div class="callout">
+        <strong>Definition of Done for Sprint 5:</strong> central policy evaluator, blocked-vendor enforcement, per-initiative + per-model-family budgets, audit export command, and policy + budget UI warnings — all live and integration-tested. <code>make test</code> covers 18 integration tests including the new <code>wt-policy-audit.sh</code>.
+      </div>
+    </section>
+
+    <section id="technical" data-kind="review">
+      <h2>Detailed Technical Status</h2>
+      <div class="grid">
+        <article class="card wide">
+          <h3>Policy Module</h3>
+          <ul>
+            <li>New <code>include/wt_policy.h</code> + <code>src/wt_policy.c</code> expose <code>wtPolicyEvaluateTaskPackage()</code>, a pure function over <code>WtPolicyInput</code>. Caller prepares projection totals (initiative + model-family allocations, daily/monthly windows, agent/initiative active counts); evaluator returns <code>{allowed, reason, message}</code>.</li>
+            <li>Reason allowlist (stable): <code>vendor_blocked</code>, <code>model_agent_mismatch</code>, <code>initiative_budget</code>, <code>model_family_budget</code>, <code>daily_budget</code>, <code>monthly_budget</code>, <code>capacity_agent</code>, <code>capacity_initiative</code>.</li>
+            <li><code>wtPolicyVendorIsBlocked()</code> CSV-walks <code>blockedVendors</code> with whitespace tolerance so <code>"deepseek, xai"</code> parses identically to <code>"deepseek,xai"</code>.</li>
+          </ul>
+        </article>
+        <article class="card wide">
+          <h3>Config Additions</h3>
+          <ul>
+            <li><code>blockedVendors</code> — CSV of vendor prefixes. Defaults to <code>deepseek</code> to preserve the existing trust-boundary decision documented in the audit log.</li>
+            <li><code>tokenBudgetPerInitiative</code> — cap on the sum of <code>budget.maxTokens</code> for active task packages within a single initiative. <code>0</code> disables.</li>
+            <li><code>tokenBudgetPerModelFamily</code> — same idea but grouped by <code>modelId</code> family (prefix before <code>/</code>).</li>
+            <li>All three are settable via key/value config file, <code>WT_*</code> environment variables, and <code>POST /api/config</code>.</li>
+          </ul>
+        </article>
+        <article class="card wide">
+          <h3>Projection Helpers</h3>
+          <ul>
+            <li><code>wtTaskProjectionAllocatedTokensForInitiative()</code> + <code>wtTaskProjectionAllocatedTokensForModelFamily()</code> sum <code>max_tokens</code> over non-terminal tasks. Family query uses a <code>LIKE '<family>/%'</code> prefix so <code>openai</code> does not accidentally match <code>openai-experimental</code>.</li>
+            <li>Audit export reuses the existing tasks + task_events SQLite tables and folds in raw JSONL scans for policy decisions + usage events (which are not projected).</li>
+            <li>The audit endpoint matches policy decisions either by <code>taskId IN (initiative_tasks)</code> or by the denial record's own <code>initiativeId</code> — that latter path catches denials for tasks that were rejected before ever reaching the projection.</li>
+          </ul>
+        </article>
+        <article class="card wide">
+          <h3>CLI + Console</h3>
+          <ul>
+            <li><code>bin/wt-task audit INIT [--out FILE]</code> wraps <code>GET /api/initiative-audit</code>.</li>
+            <li><code>bin/wt-task create</code> and <code>request</code> default <code>modelId</code> to empty so the daemon auto-defaults to a family matching the routed (or pinned) agent. Removes the OpenAI default that tripped the new <code>model_agent_mismatch</code> rule.</li>
+            <li>Settings panel adds blocked-vendors + per-initiative + per-family inputs.</li>
+            <li>Composer budget pressure note lists active policy levers (<code>blocked: deepseek</code>, <code>per-initiative cap 10.0M</code>, etc.) so the operator sees what will trip before EXECUTE.</li>
+            <li>Dispatch errors render the evaluator's classified reason inline rather than "dispatch failed".</li>
+            <li>Each initiative card has an Audit button that opens the JSON report in a new tab; mirrors the CLI.</li>
+          </ul>
+        </article>
+      </div>
+    </section>
+
+    <section id="flow" data-kind="review">
+      <h2>Evaluation Flow</h2>
+      <p class="muted">Both <code>/api/task-package</code> and <code>/api/task-request</code> route through the same evaluator. Order matters: most-specific reason wins so the recorded reason code points the operator at the right knob.</p>
+      <svg class="diagram" viewBox="0 0 1040 320" role="img" aria-label="Policy evaluator flow">
+        <defs>
+          <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M 0 0 L 10 5 L 0 10 z" fill="#2563a8"></path>
+          </marker>
+          <style>
+            .node  { fill: #fff; stroke: #b9c3cc; stroke-width: 1.5; }
+            .blue  { fill: #e7f0fa; stroke: #2563a8; }
+            .green { fill: #e7f5ee; stroke: #1f7a5a; }
+            .amber { fill: #fff4db; stroke: #a16207; }
+            .red   { fill: #fdeceb; stroke: #b42318; }
+            .violet{ fill: #eeeafe; stroke: #6d4aff; }
+            .label { fill: #1f2933; font: 700 14px system-ui, sans-serif; }
+            .small { fill: #5c6875; font: 12px system-ui, sans-serif; }
+            .line  { stroke: #2563a8; stroke-width: 2; fill: none; marker-end: url(#arrow); }
+          </style>
+        </defs>
+
+        <rect class="node blue" x="20"  y="30"  width="200" height="58" rx="8"></rect>
+        <text class="label" x="120" y="56"  text-anchor="middle">POST task-package /</text>
+        <text class="label" x="120" y="74"  text-anchor="middle">task-request</text>
+
+        <rect class="node blue" x="260" y="30"  width="210" height="58" rx="8"></rect>
+        <text class="label" x="365" y="58"  text-anchor="middle">routeAgentForTask</text>
+        <text class="small" x="365" y="76"  text-anchor="middle">role + profile -&gt; agent</text>
+
+        <rect class="node violet" x="510" y="30"  width="220" height="58" rx="8"></rect>
+        <text class="label" x="620" y="58"  text-anchor="middle">preparePolicyInput</text>
+        <text class="small" x="620" y="76"  text-anchor="middle">projection + token windows</text>
+
+        <rect class="node amber" x="770" y="30"  width="240" height="58" rx="8"></rect>
+        <text class="label" x="890" y="58"  text-anchor="middle">wtPolicyEvaluateTaskPackage</text>
+        <text class="small" x="890" y="76"  text-anchor="middle">vendor &gt; mismatch &gt; budgets &gt; capacity</text>
+
+        <rect class="node green" x="770" y="130" width="240" height="56" rx="8"></rect>
+        <text class="label" x="890" y="158" text-anchor="middle">accept: append package</text>
+        <text class="small" x="890" y="176" text-anchor="middle">+ routing/assignment events</text>
+
+        <rect class="node red"   x="770" y="210" width="240" height="56" rx="8"></rect>
+        <text class="label" x="890" y="238" text-anchor="middle">deny: 409 Conflict</text>
+        <text class="small" x="890" y="256" text-anchor="middle">+ policy_decision event</text>
+
+        <rect class="node" x="270" y="220" width="430" height="56" rx="8"></rect>
+        <text class="label" x="485" y="246" text-anchor="middle">/api/initiative-audit folds in policy decisions</text>
+        <text class="small" x="485" y="266" text-anchor="middle">match by taskId OR by recorded initiativeId</text>
+
+        <path class="line" d="M220 60 H256"></path>
+        <path class="line" d="M470 60 H506"></path>
+        <path class="line" d="M730 60 H766"></path>
+        <path class="line" d="M890 88 V126"></path>
+        <path class="line" d="M890 88 C940 130 930 180 890 206"></path>
+        <path class="line" d="M770 250 H706"></path>
+        <path class="line" d="M770 158 C600 200 480 215 480 218"></path>
+      </svg>
+    </section>
+
+    <section id="audit" data-kind="ops">
+      <h2>Audit Export</h2>
+      <p>The combined audit fits into one response so an operator can hand a single JSON file to compliance or a downstream dashboard. Empty initiatives return HTTP 404.</p>
+      <pre><code>{
+  "ok": true,
+  "initiativeId": "init_example",
+  "summary": {
+    "taskCount": 7,
+    "activeTasks": 2,
+    "completeTasks": 4,
+    "failedTasks": 1,
+    "blockedTasks": 0,
+    "acceptedArtifacts": 3,
+    "maxTokens": 14000,
+    "createdAtUnixMs": 1779000000000,
+    "updatedAtUnixMs": 1779253500000,
+    "title": "Implementation initiative"
+  },
+  "tasks":          [ /* full projection rows */ ],
+  "events":         [ /* every task_event in chronological order */ ],
+  "policyDecisions":[ /* every denial, including rejected taskIds */ ],
+  "usage":          [ /* every woventeam.task_usage.v0.1 record */ ]
+}</code></pre>
+      <p class="muted">CLI parity: <code>wt-task audit INIT --out report.json</code>. Console parity: each initiative card carries an Audit button that opens the same URL in a new tab.</p>
+    </section>
+
+    <section id="validation" data-kind="ops">
+      <h2>Validation</h2>
+      <p>One new integration test plus the full sweep:</p>
+      <pre><code>make test-policy-audit          # new in Sprint 5
+make test                       # 18 integration tests; phase1-e2e included</code></pre>
+      <table>
+        <thead><tr><th>Coverage</th><th>Mechanism</th><th>Result</th></tr></thead>
+        <tbody>
+          <tr><td>Blocked-vendor denial</td><td>POST <code>modelId=deepseek/...</code>; expect 409 with <code>reason=vendor_blocked</code>; policy_decision record appended.</td><td><span class="pill pass">Pass</span></td></tr>
+          <tr><td>Model-agent mismatch denial</td><td>POST <code>agent=claude, modelId=openai/...</code>; expect 409 with <code>reason=model_agent_mismatch</code>.</td><td><span class="pill pass">Pass</span></td></tr>
+          <tr><td>Per-initiative budget hard stop</td><td>Allocate under cap, then attempt to push over; expect 409 with <code>reason=initiative_budget</code>.</td><td><span class="pill pass">Pass</span></td></tr>
+          <tr><td>Per-model-family budget hard stop</td><td>Push family allocation over cap with a different initiative so family check fires first; expect <code>reason=model_family_budget</code>.</td><td><span class="pill pass">Pass</span></td></tr>
+          <tr><td>Audit export contents</td><td>One accepted task + 3 policy denials show up in <code>tasks</code> + <code>policyDecisions</code>; <code>summary.taskCount == 1</code>; reasons sort to <code>[initiative_budget, model_agent_mismatch, vendor_blocked]</code>.</td><td><span class="pill pass">Pass</span></td></tr>
+          <tr><td>CLI parity</td><td><code>wt-task audit INIT --out file.json</code> writes the same payload.</td><td><span class="pill pass">Pass</span></td></tr>
+          <tr><td>Unknown initiative</td><td>HTTP 404 with <code>ok=false</code>.</td><td><span class="pill pass">Pass</span></td></tr>
+          <tr><td>Full regression sweep</td><td><code>make test</code> — 18 integration tests including phase1-e2e and the prior Sprint 3/4 tests.</td><td><span class="pill pass">Pass</span></td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section id="followups" data-kind="next">
+      <h2>Follow-ups Into Sprint 6 (Launch Rehearsal)</h2>
+      <ul>
+        <li>Sprint 6 should drive an end-to-end rehearsal that exercises the policy evaluator against real CLI adapters — at least one accepted artifact, one budgeted denial, and one operator reclaim.</li>
+        <li>The audit export is currently a single 1 MiB buffer. Initiatives with many hundreds of events will eventually need pagination; revisit during Sprint 6 load testing.</li>
+        <li>Model-family budget enforcement only considers <code>maxTokens</code> allocations on task packages, not actual usage events. A future enhancement could let the operator pick between allocation-based or actual-usage-based caps.</li>
+        <li>Topology and command-palette console views remain disabled. Sprint 6 documentation should explicitly bound their scope so they do not block the launch report.</li>
+      </ul>
+      <p class="muted">No new operational risks. The evaluator is additive: defaults preserve prior behavior (only deepseek blocked, per-initiative and per-family budgets at 0). Old ledgers without policy_decision records project as empty arrays and the UI degrades gracefully.</p>
+    </section>
+  </main>
+
+  <script>
+    /*
+     * Single-file inline filter wiring (same pattern as prior closeouts).
+     * Filter buttons toggle a 'hide' class on sections whose data-kind does
+     * not intersect the chosen filter.
+     */
+    const filterButtons = document.querySelectorAll("button.filter");
+    const sections = document.querySelectorAll("section[data-kind]");
+    filterButtons.forEach(button => {
+      button.addEventListener("click", () => {
+        filterButtons.forEach(item => item.classList.toggle("active", item === button));
+        const filter = button.dataset.filter;
+        sections.forEach(section => {
+          const kinds = (section.dataset.kind || "").split(/\s+/);
+          const visible = filter === "all" || kinds.includes(filter);
+          section.classList.toggle("hide", !visible);
+        });
+      });
+    });
+  </script>
+</body>
+</html>

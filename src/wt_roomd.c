@@ -10,6 +10,7 @@
 #include "wt_http.h"
 #include "wt_json.h"
 #include "wt_message.h"
+#include "wt_policy.h"
 #include "wt_room_store.h"
 #include "wt_task_projection.h"
 #include "wt_task_store.h"
@@ -269,13 +270,15 @@ static int sendConfigJson(int clientFd, const WtConfig *config) {
     char claudeCommand[WT_PATH_SIZE * 2];
     char gptCommand[WT_PATH_SIZE * 2];
     char geminiCommand[WT_PATH_SIZE * 2];
+    char blockedVendors[WT_PATH_SIZE * 2];
     if (wtJsonEscape(config->configPath, configPath, sizeof(configPath)) != 0 ||
         wtJsonEscape(config->claudeMode, claudeMode, sizeof(claudeMode)) != 0 ||
         wtJsonEscape(config->chatgptMode, chatgptMode, sizeof(chatgptMode)) != 0 ||
         wtJsonEscape(config->geminiMode, geminiMode, sizeof(geminiMode)) != 0 ||
         wtJsonEscape(config->claudeCommand, claudeCommand, sizeof(claudeCommand)) != 0 ||
         wtJsonEscape(config->gptCommand, gptCommand, sizeof(gptCommand)) != 0 ||
-        wtJsonEscape(config->geminiCommand, geminiCommand, sizeof(geminiCommand)) != 0) {
+        wtJsonEscape(config->geminiCommand, geminiCommand, sizeof(geminiCommand)) != 0 ||
+        wtJsonEscape(config->blockedVendors, blockedVendors, sizeof(blockedVendors)) != 0) {
         return wtHttpSendText(clientFd, 500, "Internal Server Error", "application/json",
                               "{\"ok\":false,\"error\":\"config serialization failed\"}\n");
     }
@@ -302,7 +305,10 @@ static int sendConfigJson(int clientFd, const WtConfig *config) {
              "\"geminiMode\":\"%s\","
              "\"claudeCommand\":\"%s\","
              "\"gptCommand\":\"%s\","
-             "\"geminiCommand\":\"%s\"}\n",
+             "\"geminiCommand\":\"%s\","
+             "\"blockedVendors\":\"%s\","
+             "\"tokenBudgetPerInitiative\":%ld,"
+             "\"tokenBudgetPerModelFamily\":%ld}\n",
              configPath,
              config->tokenTelemetryEnabled ? "true" : "false",
              config->tokenDailyBudget,
@@ -325,7 +331,10 @@ static int sendConfigJson(int clientFd, const WtConfig *config) {
              geminiMode,
              claudeCommand,
              gptCommand,
-             geminiCommand);
+             geminiCommand,
+             blockedVendors,
+             config->tokenBudgetPerInitiative,
+             config->tokenBudgetPerModelFamily);
     return wtHttpSendText(clientFd, 200, "OK", "application/json; charset=utf-8", body);
 }
 
@@ -587,6 +596,14 @@ static int handlePostConfig(int clientFd, WtConfig *config, const char *request)
     wtJsonReadString(body, "claudeCommand", config->claudeCommand, sizeof(config->claudeCommand));
     wtJsonReadString(body, "gptCommand", config->gptCommand, sizeof(config->gptCommand));
     wtJsonReadString(body, "geminiCommand", config->geminiCommand, sizeof(config->geminiCommand));
+    /* Sprint 5 policy + budget knobs. */
+    wtJsonReadString(body, "blockedVendors", config->blockedVendors, sizeof(config->blockedVendors));
+    if (wtJsonReadLong(body, "tokenBudgetPerInitiative", &value) == 0) {
+        config->tokenBudgetPerInitiative = value < 0 ? 0 : value;
+    }
+    if (wtJsonReadLong(body, "tokenBudgetPerModelFamily", &value) == 0) {
+        config->tokenBudgetPerModelFamily = value < 0 ? 0 : value;
+    }
     if (wtConfigWriteFile(config, config->configPath) != 0) {
         return wtHttpSendText(clientFd, 500, "Internal Server Error", "application/json",
                               "{\"ok\":false,\"error\":\"config write failed\"}\n");
@@ -673,23 +690,77 @@ static void defaultAgentForRole(const char *role, char *agent, size_t agentSize)
     }
 }
 
-static int enforceTokenBudget(const WtConfig *config, long maxTokens, char *error, size_t errorSize) {
-    if (!config->tokenTelemetryEnabled || maxTokens <= 0) {
-        return 0;
+/*
+ * Sprint 5: append a woventeam.policy_decision.v0.1 record so the audit trail
+ * preserves rejected attempts. createdBy = the operator who tried to push the
+ * package; createdAtUnixMs = denial time. This is fire-and-forget; we never
+ * fail the request because the audit append failed.
+ */
+static void recordPolicyDenial(const WtConfig *config, const char *taskId,
+                               const char *initiativeId,
+                               const WtPolicyDecision *decision, const char *createdBy) {
+    char escapedTaskId[WT_TASK_ID_SIZE * 2];
+    char escapedInitiative[WT_TASK_ID_SIZE * 2];
+    char escapedReason[WT_POLICY_REASON_SIZE * 2];
+    char escapedMessage[WT_POLICY_MESSAGE_SIZE * 2];
+    char escapedBy[WT_TASK_AGENT_SIZE * 2];
+    if (wtJsonEscape(taskId ? taskId : "", escapedTaskId, sizeof(escapedTaskId)) != 0 ||
+        wtJsonEscape(initiativeId ? initiativeId : "", escapedInitiative, sizeof(escapedInitiative)) != 0 ||
+        wtJsonEscape(decision->reason, escapedReason, sizeof(escapedReason)) != 0 ||
+        wtJsonEscape(decision->message, escapedMessage, sizeof(escapedMessage)) != 0 ||
+        wtJsonEscape(createdBy ? createdBy : "ceo", escapedBy, sizeof(escapedBy)) != 0) {
+        return;
     }
+    /* initiativeId is recorded explicitly so audit exports can find denials
+     * for tasks that were rejected before ever reaching the projection. */
+    char record[WT_TASK_LEDGER_LINE_SIZE];
+    snprintf(record, sizeof(record),
+             "{\"schema\":\"woventeam.policy_decision.v0.1\",\"taskId\":\"%s\","
+             "\"initiativeId\":\"%s\","
+             "\"decision\":\"deny\",\"reason\":\"%s\",\"message\":\"%s\","
+             "\"createdBy\":\"%s\",\"createdAtUnixMs\":%lld}",
+             escapedTaskId, escapedInitiative, escapedReason, escapedMessage,
+             escapedBy, wtNowUnixMilliseconds());
+    wtTaskAppendRecord(config->taskLedgerPath, record, config->fsyncEachMessage);
+}
+
+/*
+ * Sprint 5: assemble the WtPolicyInput a single task-package evaluation needs.
+ * Reads from the projection (initiative + family totals) and the JSONL ledger
+ * (rolling daily / monthly windows) so the evaluator stays a pure function.
+ */
+static void preparePolicyInput(const WtConfig *config, WtPolicyInput *input) {
     WtTokenSummary summary;
+    memset(&summary, 0, sizeof(summary));
     wtTaskSummarizeTokenBudgets(config->taskLedgerPath, wtNowUnixMilliseconds(), &summary);
-    if (config->tokenDailyBudget > 0 &&
-        summary.dayWindowAllocatedTokens + maxTokens > config->tokenDailyBudget) {
-        snprintf(error, errorSize, "daily token budget exceeded");
-        return 1;
+    input->dayWindowAllocatedTokens = summary.dayWindowAllocatedTokens;
+    input->monthWindowAllocatedTokens = summary.monthWindowAllocatedTokens;
+    long long perInitiative = 0;
+    long long perFamily = 0;
+    if (input->initiativeId && input->initiativeId[0]) {
+        perInitiative = wtTaskProjectionAllocatedTokensForInitiative(
+            config->taskProjectionDbPath, input->initiativeId);
+        if (perInitiative < 0) perInitiative = 0;
     }
-    if (config->tokenMonthlyBudget > 0 &&
-        summary.monthWindowAllocatedTokens + maxTokens > config->tokenMonthlyBudget) {
-        snprintf(error, errorSize, "monthly token budget exceeded");
-        return 1;
+    char modelFamily[64];
+    if (input->modelId && wtPolicyExtractModelFamily(input->modelId, modelFamily, sizeof(modelFamily)) == 0) {
+        perFamily = wtTaskProjectionAllocatedTokensForModelFamily(
+            config->taskProjectionDbPath, modelFamily);
+        if (perFamily < 0) perFamily = 0;
     }
-    return 0;
+    input->initiativeAllocatedTokens = perInitiative;
+    input->modelFamilyAllocatedTokens = perFamily;
+    int activeAgent = -1;
+    int activeInitiative = -1;
+    if (input->assignedAgent && input->assignedAgent[0]) {
+        activeAgent = wtTaskProjectionCountActiveForAgent(config->taskProjectionDbPath, input->assignedAgent);
+    }
+    if (input->initiativeId && input->initiativeId[0]) {
+        activeInitiative = wtTaskProjectionCountActiveForInitiative(config->taskProjectionDbPath, input->initiativeId);
+    }
+    input->activeTasksForAgent = activeAgent < 0 ? 0 : activeAgent;
+    input->activeTasksForInitiative = activeInitiative < 0 ? 0 : activeInitiative;
+    input->nowUnixMs = wtNowUnixMilliseconds();
 }
 
 static int agentSupportsProfile(const char *agent, const char *profile) {
@@ -820,22 +891,62 @@ static int handlePostTaskPackage(int clientFd, const WtConfig *config, const cha
     if (maxTokens < 0) {
         maxTokens = 0;
     }
+    /* Capture whether the operator left agent selection to the router. Used a
+     * few lines down to decide if we should auto-default the model to the
+     * routed agent's family. We never auto-default when the operator pinned
+     * an explicit agent + model so a blocked-vendor request still trips the
+     * policy evaluator's vendor_blocked rule. */
+    int requestedRouterAgent = shouldRouteAgent(assignedAgent);
     routeAgentForTask(config, assignedRole, toolProfile, assignedAgent, sizeof(assignedAgent));
-    char budgetError[256];
-    int budget = enforceTokenBudget(config, maxTokens, budgetError, sizeof(budgetError));
-    if (budget != 0) {
-        char response[512];
-        snprintf(response, sizeof(response), "{\"ok\":false,\"error\":\"%s\"}\n", budgetError);
-        return wtHttpSendText(clientFd, 409, "Conflict", "application/json", response);
+    /*
+     * Sprint 5: central policy evaluation. Replaces the previous scattered
+     * budget + capacity checks with a single classified decision so denials
+     * land in the audit trail as woventeam.policy_decision.v0.1 records and
+     * the UI can read the same reason codes the CLI sees.
+     */
+    if (rebuildProjection(config) != 0) {
+        return wtHttpSendText(clientFd, 500, "Internal Server Error", "application/json",
+                              "{\"ok\":false,\"error\":\"projection rebuild failed\"}\n");
     }
-    char capacityError[256];
-    int capacity = enforceCapacity(config, assignedAgent, initiativeId, "", capacityError, sizeof(capacityError));
-    if (capacity != 0) {
-        char response[512];
-        snprintf(response, sizeof(response), "{\"ok\":false,\"error\":\"%s\"}\n", capacityError);
-        return wtHttpSendText(clientFd, capacity > 0 ? 409 : 500,
-                              capacity > 0 ? "Conflict" : "Internal Server Error",
-                              "application/json", response);
+    char modelId[WT_TASK_MODEL_SIZE] = "";
+    wtJsonReadString(body, "modelId", modelId, sizeof(modelId));
+    /* Auto-default the model when (a) the operator left it blank, or (b) the
+     * operator left the agent up to the router and the inherited model no
+     * longer fits. Explicit agent + explicit mismatched model is deliberately
+     * NOT auto-corrected so the policy evaluator can deny the request with a
+     * model_agent_mismatch reason. */
+    if (modelId[0] == '\0' ||
+        (requestedRouterAgent && !modelMatchesAgent(assignedAgent, modelId))) {
+        defaultModelForAgent(assignedAgent, modelId, sizeof(modelId));
+    }
+    WtPolicyInput policyInput;
+    memset(&policyInput, 0, sizeof(policyInput));
+    policyInput.taskId = taskId;
+    policyInput.assignedRole = assignedRole;
+    policyInput.assignedAgent = assignedAgent;
+    policyInput.modelId = modelId;
+    policyInput.toolProfile = toolProfile;
+    policyInput.initiativeId = initiativeId;
+    policyInput.maxTokens = maxTokens;
+    preparePolicyInput(config, &policyInput);
+    WtPolicyDecision decision;
+    wtPolicyEvaluateTaskPackage(config, &policyInput, &decision);
+    if (!decision.allowed) {
+        char createdBy[WT_TASK_AGENT_SIZE];
+        if (wtJsonReadString(body, "createdBy", createdBy, sizeof(createdBy)) != 0) {
+            snprintf(createdBy, sizeof(createdBy), "%s", "ceo");
+        }
+        recordPolicyDenial(config, taskId, initiativeId, &decision, createdBy);
+        char escapedReason[WT_POLICY_REASON_SIZE * 2];
+        char escapedDetail[WT_POLICY_MESSAGE_SIZE * 2];
+        wtJsonEscape(decision.reason, escapedReason, sizeof(escapedReason));
+        wtJsonEscape(decision.message, escapedDetail, sizeof(escapedDetail));
+        /* Detail appears twice; size for 2 * escapedDetail + escapedReason + JSON envelope. */
+        char response[1536];
+        snprintf(response, sizeof(response),
+                 "{\"ok\":false,\"error\":\"%s\",\"reason\":\"%s\",\"detail\":\"%s\"}\n",
+                 escapedDetail, escapedReason, escapedDetail);
+        return wtHttpSendText(clientFd, 409, "Conflict", "application/json", response);
     }
     char compact[WT_TASK_LEDGER_LINE_SIZE];
     if (shouldRouteAgent(assignedAgent)) {
@@ -926,24 +1037,58 @@ static int handlePostTaskRequest(int clientFd, const WtConfig *config, const cha
     if (wtJsonReadString(body, "profile", toolProfile, sizeof(toolProfile)) != 0) {
         snprintf(toolProfile, sizeof(toolProfile), "%s", "observe");
     }
+    int requestedRouterAgentForRequest = shouldRouteAgent(assignedAgent);
     if (wtJsonReadString(body, "modelId", modelId, sizeof(modelId)) != 0) {
-        snprintf(modelId, sizeof(modelId), "%s", "openai/gpt-5.3-codex");
+        modelId[0] = '\0';
     }
     wtJsonReadLong(body, "maxTokens", &maxTokens);
     if (maxTokens < 0) {
         maxTokens = 0;
     }
-    char budgetError[256];
-    int budget = enforceTokenBudget(config, maxTokens, budgetError, sizeof(budgetError));
-    if (budget != 0) {
-        char response[512];
-        snprintf(response, sizeof(response), "{\"ok\":false,\"error\":\"%s\"}\n", budgetError);
-        return wtHttpSendText(clientFd, 409, "Conflict", "application/json", response);
-    }
     routeAgentForTask(config, requestedRole, toolProfile, assignedAgent, sizeof(assignedAgent));
-    if (!modelMatchesAgent(assignedAgent, modelId)) {
+    /* Same model auto-default rules as /api/task-package (see comment there). */
+    if (modelId[0] == '\0' ||
+        (requestedRouterAgentForRequest && !modelMatchesAgent(assignedAgent, modelId))) {
         defaultModelForAgent(assignedAgent, modelId, sizeof(modelId));
     }
+    /*
+     * Sprint 5: same central policy evaluator as /api/task-package so manager-
+     * driven subtasks honor blocked vendors, per-initiative caps, and per-
+     * model-family caps without duplicate enforcement code.
+     */
+    if (rebuildProjection(config) != 0) {
+        return wtHttpSendText(clientFd, 500, "Internal Server Error", "application/json",
+                              "{\"ok\":false,\"error\":\"projection rebuild failed\"}\n");
+    }
+    WtPolicyInput requestInput;
+    memset(&requestInput, 0, sizeof(requestInput));
+    requestInput.taskId = requestedTaskId;
+    requestInput.assignedRole = requestedRole;
+    requestInput.assignedAgent = assignedAgent;
+    requestInput.modelId = modelId;
+    requestInput.toolProfile = toolProfile;
+    requestInput.initiativeId = initiativeId;
+    requestInput.maxTokens = maxTokens;
+    preparePolicyInput(config, &requestInput);
+    /* Manager-subtask parent capacity is not part of the package check; the
+     * existing maxSubtasksPerParent guard below covers it explicitly. */
+    WtPolicyDecision requestDecision;
+    wtPolicyEvaluateTaskPackage(config, &requestInput, &requestDecision);
+    if (!requestDecision.allowed) {
+        recordPolicyDenial(config, requestedTaskId, initiativeId, &requestDecision, requestedBy);
+        char escapedReason[WT_POLICY_REASON_SIZE * 2];
+        char escapedDetail[WT_POLICY_MESSAGE_SIZE * 2];
+        wtJsonEscape(requestDecision.reason, escapedReason, sizeof(escapedReason));
+        wtJsonEscape(requestDecision.message, escapedDetail, sizeof(escapedDetail));
+        /* Detail appears twice; size accordingly (see /api/task-package above). */
+        char response[1536];
+        snprintf(response, sizeof(response),
+                 "{\"ok\":false,\"error\":\"%s\",\"reason\":\"%s\",\"detail\":\"%s\"}\n",
+                 escapedDetail, escapedReason, escapedDetail);
+        return wtHttpSendText(clientFd, 409, "Conflict", "application/json", response);
+    }
+    /* Subtasks have an extra per-parent capacity check that does not apply to
+     * top-level packages; keep it separate from the central evaluator. */
     char capacityError[256];
     int capacity = enforceCapacity(config, assignedAgent, initiativeId, parentTaskId, capacityError, sizeof(capacityError));
     if (capacity != 0) {
@@ -1254,6 +1399,38 @@ static int handlePostTaskArtifact(int clientFd, const WtConfig *config, const ch
              "{\"ok\":true,\"taskId\":\"%s\",\"state\":\"%s\",\"reviewer\":\"%s\",\"artifactPath\":\"%s\"}\n",
              taskId, state, reviewer, artifactPath);
     return wtHttpSendText(clientFd, 200, "OK", "application/json; charset=utf-8", response);
+}
+
+/*
+ * Sprint 5: combined audit export for one initiative. Allocates a larger
+ * buffer than other endpoints because the response folds tasks + events +
+ * policy decisions + usage events into a single JSON document.
+ */
+static int sendInitiativeAuditJson(int clientFd, const WtConfig *config, const char *initiativeId) {
+    if (rebuildProjection(config) != 0) {
+        return wtHttpSendText(clientFd, 500, "Internal Server Error", "application/json",
+                              "{\"ok\":false,\"error\":\"projection rebuild failed\"}\n");
+    }
+    /* 1 MiB lets a meaningful initiative (~100 tasks, ~2000 events) fit comfortably
+     * without forcing the caller to paginate. */
+    size_t auditSize = WT_TASK_LEDGER_LINE_SIZE * 64;
+    char *body = malloc(auditSize);
+    if (!body) {
+        return wtHttpSendText(clientFd, 500, "Internal Server Error", "application/json", "{\"ok\":false}\n");
+    }
+    int rc = wtTaskProjectionReadInitiativeAuditJson(config->taskProjectionDbPath,
+                                                    config->taskLedgerPath, initiativeId,
+                                                    body, auditSize);
+    if (rc < 0) {
+        free(body);
+        return wtHttpSendText(clientFd, 500, "Internal Server Error", "application/json",
+                              "{\"ok\":false,\"error\":\"audit read failed\"}\n");
+    }
+    int status = rc == 1 ? 404 : 200;
+    const char *reason = rc == 1 ? "Not Found" : "OK";
+    int sendRc = wtHttpSendText(clientFd, status, reason, "application/json; charset=utf-8", body);
+    free(body);
+    return sendRc;
 }
 
 static int sendInitiativeArtifactsJson(int clientFd, const WtConfig *config, const char *initiativeId) {
@@ -1767,6 +1944,15 @@ static void handleClient(int clientFd, WtConfig *config) {
             if (amp) *amp = '\0';
         }
         sendInitiativeArtifactsJson(clientFd, config, initiativeId);
+    } else if (strcmp(method, "GET") == 0 && strncmp(path, "/api/initiative-audit", 21) == 0) {
+        char initiativeId[WT_TASK_ID_SIZE] = "";
+        char *idText = strstr(path, "initiativeId=");
+        if (idText) {
+            snprintf(initiativeId, sizeof(initiativeId), "%s", idText + 13);
+            char *amp = strchr(initiativeId, '&');
+            if (amp) *amp = '\0';
+        }
+        sendInitiativeAuditJson(clientFd, config, initiativeId);
     } else if (strcmp(method, "POST") == 0 && strcmp(path, "/api/config") == 0) {
         handlePostConfig(clientFd, config, request);
     } else if (strcmp(method, "GET") == 0 && strcmp(path, "/api/health") == 0) {

@@ -20,7 +20,11 @@ COMMON_OBJS := \
 	$(BUILD_DIR)/wt_task_store.o \
 	$(BUILD_DIR)/wt_time.o
 
-.PHONY: all clean run-roomd run-demo harness-check test-smoke test-harness-check test-task-assignment test-codex-adapter test-cli-artifact-adapter test-artifact-viewer test-artifact-promotion test-adapter-capabilities test-adapter-preflight test-initiatives test-agent-workload-control test-routing-gates test-manager-subtasks test-token-config test-task-projection test-quotas-ops test-phase1-e2e test install-roomd-service install-agent-services
+# Sprint 5: central policy evaluator. Only linked into wt-roomd because the CLI
+# helpers and wt-agent are not policy enforcement points.
+POLICY_OBJS := $(BUILD_DIR)/wt_policy.o
+
+.PHONY: all clean run-roomd run-demo harness-check test-smoke test-harness-check test-task-assignment test-codex-adapter test-cli-artifact-adapter test-artifact-viewer test-artifact-promotion test-adapter-capabilities test-adapter-preflight test-initiatives test-agent-workload-control test-routing-gates test-manager-subtasks test-token-config test-task-projection test-quotas-ops test-policy-audit test-phase1-e2e test install-roomd-service install-agent-services
 
 all: $(BUILD_DIR)/wt-roomd $(BUILD_DIR)/wt-say $(BUILD_DIR)/wt-tail $(BUILD_DIR)/wt-agent
 
@@ -30,7 +34,7 @@ $(BUILD_DIR):
 $(BUILD_DIR)/%.o: src/%.c | $(BUILD_DIR)
 	$(CC) $(CFLAGS) -c -o $@ $<
 
-$(BUILD_DIR)/wt-roomd: $(COMMON_OBJS) $(BUILD_DIR)/wt_task_projection.o $(BUILD_DIR)/wt_http.o $(BUILD_DIR)/wt_roomd.o
+$(BUILD_DIR)/wt-roomd: $(COMMON_OBJS) $(POLICY_OBJS) $(BUILD_DIR)/wt_task_projection.o $(BUILD_DIR)/wt_http.o $(BUILD_DIR)/wt_roomd.o
 	$(CC) $(LDFLAGS) -o $@ $^ $(SQLITE_LIBS) $(LDLIBS)
 
 $(BUILD_DIR)/wt-say: $(COMMON_OBJS) $(BUILD_DIR)/wt_say.o
@@ -104,10 +108,13 @@ test-task-projection: all
 test-quotas-ops: all
 	./tests/integration/wt-quotas-ops.sh
 
+test-policy-audit: all
+	./tests/integration/wt-policy-audit.sh
+
 test-phase1-e2e: all
 	./tests/integration/wt-phase1-e2e.sh
 
-test: test-smoke test-harness-check test-task-assignment test-codex-adapter test-cli-artifact-adapter test-artifact-viewer test-artifact-promotion test-adapter-capabilities test-adapter-preflight test-initiatives test-agent-workload-control test-routing-gates test-manager-subtasks test-token-config test-task-projection test-quotas-ops test-phase1-e2e
+test: test-smoke test-harness-check test-task-assignment test-codex-adapter test-cli-artifact-adapter test-artifact-viewer test-artifact-promotion test-adapter-capabilities test-adapter-preflight test-initiatives test-agent-workload-control test-routing-gates test-manager-subtasks test-token-config test-task-projection test-quotas-ops test-policy-audit test-phase1-e2e
 
 install-roomd-service: all
 	sudo install -m 0644 deploy/systemd/wt-roomd.service /etc/systemd/system/

@@ -113,6 +113,25 @@
           <span>Max tasks per initiative</span>
           <input id="configMaxTasksPerInitiative" type="number" min="1" step="1">
         </label>
+        <!--
+          Sprint 5 policy knobs. blockedVendors is a CSV of vendor prefixes
+          (e.g. "deepseek,xai") that the daemon's central policy evaluator
+          refuses to accept. Budget caps are evaluated against active task
+          packages; 0 disables the check.
+        -->
+        <div class="settings-divider">Policy and budgets</div>
+        <label>
+          <span>Blocked vendors (CSV)</span>
+          <input id="configBlockedVendors" placeholder="deepseek,xai">
+        </label>
+        <label>
+          <span>Per-initiative token budget</span>
+          <input id="configTokenBudgetPerInitiative" type="number" min="0" step="1000">
+        </label>
+        <label>
+          <span>Per-model-family token budget</span>
+          <input id="configTokenBudgetPerModelFamily" type="number" min="0" step="1000">
+        </label>
         <div class="settings-divider">Adapter execution</div>
         <label>
           <span>Codex adapter</span>

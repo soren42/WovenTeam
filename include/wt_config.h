@@ -45,6 +45,20 @@ typedef struct {
     char claudeCommand[WT_PATH_SIZE];
     char gptCommand[WT_PATH_SIZE];
     char geminiCommand[WT_PATH_SIZE];
+    /*
+     * Sprint 5 policy + budget settings.
+     *   blockedVendors          - comma-separated vendor prefixes that the
+     *                             central policy evaluator refuses to accept on
+     *                             new task packages (e.g. "deepseek,xai").
+     *   tokenBudgetPerInitiative - per-initiative allocation cap (0 disables).
+     *                             Compared against the sum of maxTokens across
+     *                             active task packages with the same initiativeId.
+     *   tokenBudgetPerModelFamily - per-model-family allocation cap (0 disables).
+     *                              Family = prefix before the first '/' in modelId.
+     */
+    char blockedVendors[WT_PATH_SIZE];
+    long tokenBudgetPerInitiative;
+    long tokenBudgetPerModelFamily;
 } WtConfig;
 
 void wtConfigInitDefaults(WtConfig *config);

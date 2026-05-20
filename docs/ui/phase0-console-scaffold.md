@@ -83,6 +83,12 @@ The Phase 0 browser UI is `WovenTeam Console (Fullscreen)` served by
 - The help overlay (`?` key or top-bar button) lists keyboard shortcuts and the
   CLI ↔ UI parity table so operators can move between `wt-task` and the
   console without context switching.
+- Sprint 5 wires policy + audit. The composer's budget pressure note now lists
+  active policy levers (blocked vendors, per-initiative cap, per-family cap);
+  the settings panel exposes those three knobs; the dispatch error path
+  surfaces the policy evaluator's classified reason code; each initiative
+  card carries an Audit button that opens the combined audit JSON in a new
+  tab.
 
 ## Temporary Placeholders
 
@@ -116,6 +122,7 @@ The scaffold now binds to the task package and Phase 1 state paths:
 - `POST /api/task-reclaim`
 - `POST /api/task-artifact`
 - `GET /api/initiative-artifacts?initiativeId=...`
+- `GET /api/initiative-audit?initiativeId=...`
 
 The next backend step is to expose richer initiative, gate history, usage, and
 agent state so the console can enable the remaining disabled controls.
