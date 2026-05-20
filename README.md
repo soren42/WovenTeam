@@ -99,6 +99,9 @@ Create and inspect Phase 0 task packages through the room daemon:
 ./bin/wt-task cancel task_example_001
 ./bin/wt-task close task_example_001
 ./bin/wt-task reclaim task_example_001 --reason operator --message "Manual unblock - stuck after restart."
+./bin/wt-task artifact promote task_example_001 --path result.md --reviewer ceo --notes "Ships."
+./bin/wt-task artifact list init_example
+./bin/wt-task artifact export task_example_001 --out /tmp/promoted.md
 ```
 
 The web console token panel is backed by `GET /api/tokens`. Phase 1 separates

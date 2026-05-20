@@ -111,11 +111,14 @@ package, and emits `task.assign`. The child package includes `parentTaskId`,
 - `POST /api/task-usage`
 - `POST /api/agent-control`
 - `POST /api/task-reclaim`
+- `POST /api/task-artifact`
+- `GET /api/initiative-artifacts?initiativeId=...`
 
 `bin/wt-task` wraps those endpoints for local operator use with `create`,
 `request`, `list`, `show`, `assign`, `update-status`, `retry`, `cancel`,
-`close`, `reopen`, `reclaim`, `initiative create/list/show/export/close`, and
-`agent list/pause/resume` commands.
+`close`, `reopen`, `reclaim`, `initiative create/list/show/export/close`,
+`agent list/pause/resume`, and
+`artifact promote/reject/review/supersede/note/list/export` commands.
 
 Phase 1 keeps the JSONL ledger as the recovery source and adds a rebuildable
 SQLite projection configured by `taskProjectionDbPath`. `wt-roomd` rebuilds the
@@ -237,6 +240,64 @@ recovery would emit.
 When a task is marked `blocked`, queued/running child tasks that list it in
 `dependencies` receive an appended `blocked` task event. Terminal dependents are
 not rewritten.
+
+Sprint 4 (2026-05-20) adds artifact promotion. Each operator decision about an
+adapter-produced workspace artifact is recorded as a task event with
+`eventType=artifact` and an `artifactState` field. Supported states are
+`draft`, `reviewed`, `accepted`, `rejected`, and `superseded`:
+
+```json
+{
+  "schema": "woventeam.task_event.v0.1",
+  "taskId": "task_example_001",
+  "eventType": "artifact",
+  "artifactState": "accepted",
+  "reviewer": "ceo",
+  "reviewNotes": "Ships this iteration. Passed manual smoke.",
+  "artifactPath": "result.md",
+  "message": "Ships this iteration. Passed manual smoke.",
+  "createdBy": "ceo",
+  "createdAtUnixMs": 1779251400000
+}
+```
+
+The projection latches `artifactState`, `lastReviewer`, and `lastReviewNotes`
+on every artifact event. The `accepted_at_ms` and `accepted_artifact_path`
+columns latch only when state is `accepted`, so the inventory keeps a stable
+record of "what was accepted, by whom, and when" even after later supersede
+events.
+
+`POST /api/task-artifact` accepts a JSON body with `taskId`, `state`
+(allowlisted to the five states above), optional `reviewer`,
+optional `notes`, and optional `artifactPath` (workspace-relative; rejected if
+it contains traversal characters). The endpoint appends the artifact task event
+and broadcasts a `task.artifact` room message so chat observers see promotion
+activity inline.
+
+`GET /api/initiative-artifacts?initiativeId=...` returns the per-initiative
+inventory of artifact decisions, sorted with accepted assets first:
+
+```json
+{
+  "ok": true,
+  "initiativeId": "init_example",
+  "artifacts": [
+    {
+      "taskId": "task_example_001",
+      "title": "Implement adapter manifest dump",
+      "assignedAgent": "claude",
+      "artifactState": "accepted",
+      "lastReviewer": "ceo",
+      "lastReviewNotes": "Ships this iteration.",
+      "acceptedAtUnixMs": 1779251400000,
+      "updatedAtUnixMs": 1779251400000,
+      "acceptedArtifactPath": "result.md"
+    }
+  ],
+  "acceptedCount": 1,
+  "pendingCount": 0
+}
+```
 
 Codex adapter runs also write an artifact manifest under the per-task runtime
 workspace. The manifest uses:

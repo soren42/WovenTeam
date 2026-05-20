@@ -959,6 +959,291 @@ kbd {
   line-height: 1.45;
 }
 
+/*
+ * Sprint 4 artifact decision panel. Sits below the artifact viewer and offers
+ * the operator a single place to record promote/review/reject/supersede plus
+ * notes and the chosen artifact path.
+ */
+.artifact-decision {
+  margin-top: 10px;
+  padding: 10px;
+  border: 1px solid var(--edge);
+  background: var(--panel-alt);
+}
+.artifact-decision header {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  margin-bottom: 6px;
+}
+.artifact-decision header strong {
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text);
+}
+.artifact-decision header small {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--text-dim);
+}
+.artifact-decision-fields {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px 10px;
+}
+.artifact-decision-fields label {
+  display: grid;
+  gap: 2px;
+  font-size: 10px;
+  color: var(--text-dim);
+}
+.artifact-decision-fields label.full {
+  grid-column: 1 / -1;
+}
+.artifact-decision-fields input,
+.artifact-decision-fields select,
+.artifact-decision-fields textarea {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text);
+  background: var(--panel);
+  border: 1px solid var(--edge);
+  padding: 5px 6px;
+}
+.artifact-decision-fields textarea {
+  resize: vertical;
+}
+.artifact-decision-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+.artifact-decision-actions button {
+  border: 1px solid var(--edge);
+  background: var(--panel);
+  color: var(--text);
+  padding: 5px 9px;
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+.artifact-decision-actions button.accent {
+  border-color: var(--ok, #10b981);
+  color: var(--ok, #10b981);
+  background: rgba(16, 185, 129, 0.08);
+}
+.artifact-decision-actions button.ghost {
+  background: transparent;
+  color: var(--text-dim);
+}
+
+/*
+ * Sprint 4 alert feed - lives inside .alerts-panel. Rows are buttons so
+ * keyboard focus + click navigates to the affected task.
+ */
+.alerts-list {
+  display: grid;
+  gap: 4px;
+  padding: 6px 12px 10px;
+  max-height: 132px;
+  overflow-y: auto;
+}
+.alerts-empty {
+  font-size: 10px;
+  color: var(--text-dim);
+  padding: 8px 0;
+}
+.alert-row {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  grid-template-rows: auto auto;
+  column-gap: 8px;
+  row-gap: 2px;
+  text-align: left;
+  border: 1px solid var(--edge);
+  background: var(--panel-alt);
+  padding: 6px 8px;
+  cursor: pointer;
+}
+.alert-row:hover { border-color: var(--accent, #06b6d4); }
+.alert-row .alert-kind {
+  grid-row: 1 / span 2;
+  align-self: center;
+  font-family: var(--mono);
+  font-size: 9.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 2px 6px;
+  border: 1px solid var(--edge);
+  color: var(--text-dim);
+}
+.alert-row.alert-failed .alert-kind,
+.alert-row.alert-stuck .alert-kind {
+  color: var(--alert, #ef4444);
+  border-color: var(--alert, #ef4444);
+}
+.alert-row.alert-blocked .alert-kind {
+  color: var(--warn, #f59e0b);
+  border-color: var(--warn, #f59e0b);
+}
+.alert-row.alert-revision .alert-kind {
+  color: var(--accent, #06b6d4);
+  border-color: var(--accent, #06b6d4);
+}
+.alert-row strong {
+  font-size: 11px;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.alert-row small {
+  font-size: 9.5px;
+  color: var(--text-dim);
+  font-family: var(--mono);
+}
+
+/*
+ * Sprint 4 promoted-asset inventory panel - lists accepted artifacts under the
+ * currently focused initiative.
+ */
+.initiative-assets-panel {
+  margin-top: 12px;
+}
+.initiative-assets-list {
+  display: grid;
+  gap: 6px;
+  padding: 8px 12px 12px;
+}
+.initiative-asset-row {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: 8px;
+  align-items: baseline;
+  padding: 8px 10px;
+  border: 1px solid var(--edge);
+  background: var(--panel-alt);
+  cursor: pointer;
+}
+.initiative-asset-row:hover { border-color: var(--accent, #06b6d4); }
+.initiative-asset-row strong {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.initiative-asset-row small {
+  font-size: 10px;
+  color: var(--text-dim);
+}
+.initiative-asset-row .asset-state {
+  font-family: var(--mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 2px 6px;
+  border: 1px solid var(--edge);
+  color: var(--text-dim);
+}
+.initiative-asset-row .asset-state.accepted {
+  color: var(--ok, #10b981);
+  border-color: var(--ok, #10b981);
+}
+.initiative-asset-row .asset-state.rejected {
+  color: var(--alert, #ef4444);
+  border-color: var(--alert, #ef4444);
+}
+
+/* Sprint 4 chat-panel filter dropdowns. */
+.chat-controls select {
+  border: 1px solid var(--edge);
+  background: var(--panel);
+  color: var(--text);
+  font: inherit;
+  font-size: 11px;
+  padding: 4px 6px;
+  min-width: 110px;
+}
+
+/*
+ * Sprint 4 help overlay. Positioned over the entire console with a translucent
+ * backdrop so the underlying state stays partially visible while the operator
+ * scans the parity table.
+ */
+.help-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(2, 6, 23, 0.72);
+}
+.help-card {
+  background: var(--panel);
+  border: 1px solid var(--edge-bright);
+  width: min(720px, 92vw);
+  max-height: 80vh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+.help-card header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--edge);
+  background: var(--panel-alt);
+}
+.help-card header strong {
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.help-body {
+  padding: 14px;
+  overflow: auto;
+  display: grid;
+  gap: 14px;
+}
+.help-body h4 {
+  margin: 0 0 6px;
+  font-size: 11px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+.help-body table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11px;
+}
+.help-body th, .help-body td {
+  text-align: left;
+  border-bottom: 1px solid var(--edge);
+  padding: 6px 8px;
+  vertical-align: top;
+}
+.help-body th {
+  color: var(--text-dim);
+  font-weight: 600;
+  width: 38%;
+}
+.help-body code {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  background: var(--panel-alt);
+  border: 1px solid var(--edge);
+  padding: 1px 5px;
+}
+
 .detail-event p {
   margin: 4px 0 0;
   overflow-wrap: anywhere;

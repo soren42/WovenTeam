@@ -1176,6 +1176,107 @@ static int sendAgentsJson(int clientFd, const WtConfig *config) {
 }
 
 /*
+ * POST /api/task-artifact
+ *
+ * Sprint 4: artifact promotion endpoint. Records a state transition for an
+ * adapter-produced workspace artifact so a reviewed asset becomes a first-class
+ * project output. Body shape:
+ *   { "taskId": "task_abc",
+ *     "state": "draft|reviewed|accepted|rejected|superseded",
+ *     "reviewer": "alice",
+ *     "notes": "Looks good, shipping.",
+ *     "artifactPath": "result.md" }
+ *
+ * artifactPath is workspace-relative (validated against the artifact-name
+ * safety check used by /api/task-artifacts so callers cannot promote arbitrary
+ * filesystem paths through the endpoint).
+ */
+static int handlePostTaskArtifact(int clientFd, const WtConfig *config, const char *request) {
+    const char *body = strstr(request, "\r\n\r\n");
+    if (!body) {
+        return wtHttpSendText(clientFd, 400, "Bad Request", "application/json",
+                              "{\"ok\":false,\"error\":\"missing body\"}\n");
+    }
+    body += 4;
+    char taskId[WT_TASK_ID_SIZE];
+    char state[64];
+    char reviewer[WT_TASK_AGENT_SIZE];
+    char notes[WT_TASK_BODY_SIZE];
+    char artifactPath[512];
+    if (wtJsonReadString(body, "taskId", taskId, sizeof(taskId)) != 0) {
+        return wtHttpSendText(clientFd, 400, "Bad Request", "application/json",
+                              "{\"ok\":false,\"error\":\"taskId required\"}\n");
+    }
+    if (wtJsonReadString(body, "state", state, sizeof(state)) != 0) {
+        return wtHttpSendText(clientFd, 400, "Bad Request", "application/json",
+                              "{\"ok\":false,\"error\":\"state required\"}\n");
+    }
+    /* State allowlist: matches the documented lifecycle in
+     * docs/launch/phase2-functional-workbench-plan.html stream #4. */
+    if (strcmp(state, "draft") != 0 && strcmp(state, "reviewed") != 0 &&
+        strcmp(state, "accepted") != 0 && strcmp(state, "rejected") != 0 &&
+        strcmp(state, "superseded") != 0) {
+        return wtHttpSendText(clientFd, 400, "Bad Request", "application/json",
+                              "{\"ok\":false,\"error\":\"unsupported artifact state\"}\n");
+    }
+    if (wtJsonReadString(body, "reviewer", reviewer, sizeof(reviewer)) != 0) {
+        snprintf(reviewer, sizeof(reviewer), "%s", "ceo");
+    }
+    if (wtJsonReadString(body, "notes", notes, sizeof(notes)) != 0) {
+        notes[0] = '\0';
+    }
+    if (wtJsonReadString(body, "artifactPath", artifactPath, sizeof(artifactPath)) != 0) {
+        artifactPath[0] = '\0';
+    }
+    /* If an artifact path was supplied, validate it before persisting so the
+     * inventory and CLI export can trust the projection value. Empty paths are
+     * allowed for "reviewed" notes that do not pin a specific file. */
+    if (artifactPath[0] != '\0' && !isSafeArtifactName(artifactPath)) {
+        return wtHttpSendText(clientFd, 400, "Bad Request", "application/json",
+                              "{\"ok\":false,\"error\":\"invalid artifact path\"}\n");
+    }
+    if (wtTaskAppendArtifactEvent(config->taskLedgerPath, taskId, state, reviewer, notes,
+                                  artifactPath, config->fsyncEachMessage) != 0) {
+        return wtHttpSendText(clientFd, 500, "Internal Server Error", "application/json",
+                              "{\"ok\":false,\"error\":\"append failed\"}\n");
+    }
+    /* Echo to the shared room transcript so operators reading the chat panel
+     * see promotion activity alongside chat. */
+    char roomMessage[WT_TASK_TITLE_SIZE];
+    snprintf(roomMessage, sizeof(roomMessage), "artifact %s by %s%s%s",
+             state, reviewer,
+             artifactPath[0] ? " (" : "",
+             artifactPath[0] ? artifactPath : "");
+    if (artifactPath[0]) strncat(roomMessage, ")", sizeof(roomMessage) - strlen(roomMessage) - 1);
+    appendTaskRoomEvent(config, taskId, "all", "task.artifact", state, roomMessage);
+    char response[1024];
+    snprintf(response, sizeof(response),
+             "{\"ok\":true,\"taskId\":\"%s\",\"state\":\"%s\",\"reviewer\":\"%s\",\"artifactPath\":\"%s\"}\n",
+             taskId, state, reviewer, artifactPath);
+    return wtHttpSendText(clientFd, 200, "OK", "application/json; charset=utf-8", response);
+}
+
+static int sendInitiativeArtifactsJson(int clientFd, const WtConfig *config, const char *initiativeId) {
+    if (rebuildProjection(config) != 0) {
+        return wtHttpSendText(clientFd, 500, "Internal Server Error", "application/json",
+                              "{\"ok\":false,\"error\":\"projection rebuild failed\"}\n");
+    }
+    char *body = malloc(WT_TASK_LEDGER_LINE_SIZE * 8);
+    if (!body) {
+        return wtHttpSendText(clientFd, 500, "Internal Server Error", "application/json", "{\"ok\":false}\n");
+    }
+    if (wtTaskProjectionReadInitiativeArtifactsJson(config->taskProjectionDbPath, initiativeId,
+                                                    body, WT_TASK_LEDGER_LINE_SIZE * 8) != 0) {
+        free(body);
+        return wtHttpSendText(clientFd, 500, "Internal Server Error", "application/json",
+                              "{\"ok\":false,\"error\":\"artifact inventory read failed\"}\n");
+    }
+    int rc = wtHttpSendText(clientFd, 200, "OK", "application/json; charset=utf-8", body);
+    free(body);
+    return rc;
+}
+
+/*
  * POST /api/task-reclaim
  *
  * Operator-visible reclaim path. Releases the most recent lease on a task so it
@@ -1655,6 +1756,17 @@ static void handleClient(int clientFd, WtConfig *config) {
         handlePostAgentControl(clientFd, config, request);
     } else if (strcmp(method, "POST") == 0 && strcmp(path, "/api/task-reclaim") == 0) {
         handlePostTaskReclaim(clientFd, config, request);
+    } else if (strcmp(method, "POST") == 0 && strcmp(path, "/api/task-artifact") == 0) {
+        handlePostTaskArtifact(clientFd, config, request);
+    } else if (strcmp(method, "GET") == 0 && strncmp(path, "/api/initiative-artifacts", 25) == 0) {
+        char initiativeId[WT_TASK_ID_SIZE] = "";
+        char *idText = strstr(path, "initiativeId=");
+        if (idText) {
+            snprintf(initiativeId, sizeof(initiativeId), "%s", idText + 13);
+            char *amp = strchr(initiativeId, '&');
+            if (amp) *amp = '\0';
+        }
+        sendInitiativeArtifactsJson(clientFd, config, initiativeId);
     } else if (strcmp(method, "POST") == 0 && strcmp(path, "/api/config") == 0) {
         handlePostConfig(clientFd, config, request);
     } else if (strcmp(method, "GET") == 0 && strcmp(path, "/api/health") == 0) {

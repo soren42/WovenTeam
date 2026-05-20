@@ -20,7 +20,7 @@ COMMON_OBJS := \
 	$(BUILD_DIR)/wt_task_store.o \
 	$(BUILD_DIR)/wt_time.o
 
-.PHONY: all clean run-roomd run-demo harness-check test-smoke test-harness-check test-task-assignment test-codex-adapter test-cli-artifact-adapter test-artifact-viewer test-adapter-capabilities test-adapter-preflight test-initiatives test-agent-workload-control test-routing-gates test-manager-subtasks test-token-config test-task-projection test-quotas-ops test-phase1-e2e test install-roomd-service install-agent-services
+.PHONY: all clean run-roomd run-demo harness-check test-smoke test-harness-check test-task-assignment test-codex-adapter test-cli-artifact-adapter test-artifact-viewer test-artifact-promotion test-adapter-capabilities test-adapter-preflight test-initiatives test-agent-workload-control test-routing-gates test-manager-subtasks test-token-config test-task-projection test-quotas-ops test-phase1-e2e test install-roomd-service install-agent-services
 
 all: $(BUILD_DIR)/wt-roomd $(BUILD_DIR)/wt-say $(BUILD_DIR)/wt-tail $(BUILD_DIR)/wt-agent
 
@@ -74,6 +74,9 @@ test-cli-artifact-adapter: all
 test-artifact-viewer: all
 	./tests/integration/wt-artifact-viewer.sh
 
+test-artifact-promotion: all
+	./tests/integration/wt-artifact-promotion.sh
+
 test-adapter-capabilities: all
 	./tests/integration/wt-adapter-capabilities.sh
 
@@ -104,7 +107,7 @@ test-quotas-ops: all
 test-phase1-e2e: all
 	./tests/integration/wt-phase1-e2e.sh
 
-test: test-smoke test-harness-check test-task-assignment test-codex-adapter test-cli-artifact-adapter test-artifact-viewer test-adapter-capabilities test-adapter-preflight test-initiatives test-agent-workload-control test-routing-gates test-manager-subtasks test-token-config test-task-projection test-quotas-ops test-phase1-e2e
+test: test-smoke test-harness-check test-task-assignment test-codex-adapter test-cli-artifact-adapter test-artifact-viewer test-artifact-promotion test-adapter-capabilities test-adapter-preflight test-initiatives test-agent-workload-control test-routing-gates test-manager-subtasks test-token-config test-task-projection test-quotas-ops test-phase1-e2e
 
 install-roomd-service: all
 	sudo install -m 0644 deploy/systemd/wt-roomd.service /etc/systemd/system/

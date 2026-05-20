@@ -58,6 +58,7 @@ let state = {
   selectedTaskId: "",
   selectedTaskStatus: "",
   selectedInitiativeId: "",
+  roleFilter: "all",
   agents: [],
   capacity: {agents: [], initiatives: [], parents: [], caps: {}},
   tokens: {},
@@ -152,6 +153,64 @@ async function loadInitiatives() {
   const payload = await response.json();
   if (!payload.ok || !Array.isArray(payload.initiatives)) return;
   renderInitiatives(payload.initiatives);
+}
+
+/*
+ * Sprint 4: fetch and render the accepted-asset inventory for an initiative.
+ * Visible only when an initiative is focused; clears on defocus.
+ */
+async function loadInitiativeAssets(initiativeId) {
+  const panel = document.querySelector("#initiativeAssetsPanel");
+  if (!panel) return;
+  if (!initiativeId) {
+    panel.hidden = true;
+    return;
+  }
+  panel.hidden = false;
+  const response = await fetch(`/api/initiative-artifacts?initiativeId=${encodeURIComponent(initiativeId)}`);
+  if (!response.ok) {
+    renderInitiativeAssets({initiativeId, artifacts: [], acceptedCount: 0, pendingCount: 0});
+    return;
+  }
+  const payload = await response.json();
+  if (payload.ok) renderInitiativeAssets(payload);
+}
+
+function renderInitiativeAssets(payload) {
+  const list = document.querySelector("#initiativeAssetsList");
+  const countEl = document.querySelector("#initiativeAssetsCount");
+  const metaEl = document.querySelector("#initiativeAssetsMeta");
+  if (!list || !countEl) return;
+  countEl.textContent = String(payload.acceptedCount || 0);
+  metaEl.textContent = `${payload.acceptedCount || 0} accepted · ${payload.pendingCount || 0} pending · ${payload.initiativeId}`;
+  list.innerHTML = "";
+  if (!Array.isArray(payload.artifacts) || !payload.artifacts.length) {
+    const empty = document.createElement("div");
+    empty.className = "initiative-asset-row";
+    empty.innerHTML = "<strong>No artifact decisions yet</strong><small></small><span class=\"asset-state\">--</span>";
+    list.appendChild(empty);
+    return;
+  }
+  payload.artifacts.forEach(asset => {
+    const row = document.createElement("div");
+    row.className = "initiative-asset-row";
+    const acceptedAt = asset.acceptedAtUnixMs ? new Date(asset.acceptedAtUnixMs).toISOString().slice(0, 19).replace("T", " ") : "";
+    const meta = [
+      asset.taskId,
+      asset.acceptedArtifactPath || "—",
+      asset.lastReviewer || "unknown",
+      acceptedAt,
+    ].filter(Boolean).join(" · ");
+    row.innerHTML = "<strong></strong><small></small><span class=\"asset-state\"></span>";
+    row.querySelector("strong").textContent = asset.title || asset.taskId;
+    row.querySelector("small").textContent = meta;
+    const stateEl = row.querySelector(".asset-state");
+    stateEl.textContent = asset.artifactState || "--";
+    if (asset.artifactState === "accepted") stateEl.classList.add("accepted");
+    if (asset.artifactState === "rejected") stateEl.classList.add("rejected");
+    row.addEventListener("click", () => loadTaskDetail(asset.taskId));
+    list.appendChild(row);
+  });
 }
 
 function summarizeProjectedTasks(tasks) {
@@ -347,7 +406,9 @@ function summarizeTasks(rows) {
 }
 
 function renderTasks(tasks) {
-  const filtered = state.selectedInitiativeId ? tasks.filter(task => task.initiativeId === state.selectedInitiativeId) : tasks;
+  /* Render alerts off the same data; cheap and keeps the two views consistent. */
+  renderAlerts(tasks);
+  const filtered = applyTaskFilters(tasks);
   document.querySelector("#requestCount").textContent = String(state.taskStats.requestCount);
   document.querySelector("#blockedCount").textContent = String(state.taskStats.blockedCount);
   document.querySelector("#agentCount").textContent = String(state.taskStats.activeAgents);
@@ -388,10 +449,88 @@ function renderTasks(tasks) {
   });
 }
 
+/*
+ * Combine the active filters (initiative focus + role filter from the chat
+ * panel dropdown) into a single filter pass. Centralizing here lets the alert
+ * feed honor the same selections without duplicating logic.
+ */
+function applyTaskFilters(tasks) {
+  let filtered = tasks;
+  if (state.selectedInitiativeId) {
+    filtered = filtered.filter(task => task.initiativeId === state.selectedInitiativeId);
+  }
+  if (state.roleFilter && state.roleFilter !== "all") {
+    filtered = filtered.filter(task => task.assignedRole === state.roleFilter);
+  }
+  return filtered;
+}
+
+/*
+ * Sprint 4: derive an alert list from the task summaries projection. Surface
+ * failed, stuck, blocked, and revision_requested tasks. The same projection
+ * fields drive the agent panel's stuck count, so totals stay consistent.
+ */
+function renderAlerts(tasks) {
+  const listEl = document.querySelector("#alertsList");
+  const metaEl = document.querySelector("#alertsMeta");
+  if (!listEl || !metaEl) return;
+  const nowMs = Date.now();
+  const stuckMs = 15 * 60 * 1000;
+  const alerts = [];
+  tasks.forEach(task => {
+    if (task.status === "failed") {
+      alerts.push({task, kind: "failed", label: task.failureCause ? `failed (${task.failureCause})` : "failed"});
+    } else if (task.status === "blocked") {
+      alerts.push({task, kind: "blocked", label: "blocked"});
+    } else if (task.status === "revision_requested") {
+      alerts.push({task, kind: "revision", label: "revision requested"});
+    } else if ((task.status === "leased" || task.status === "running") &&
+               task.leasedAtUnixMs > 0 && nowMs - task.leasedAtUnixMs > stuckMs) {
+      alerts.push({task, kind: "stuck", label: `stuck >15m (${task.assignedAgent || "?"})`});
+    }
+  });
+  metaEl.textContent = `${alerts.length} OPEN`;
+  listEl.innerHTML = "";
+  if (!alerts.length) {
+    const empty = document.createElement("div");
+    empty.className = "alerts-empty";
+    empty.textContent = "No failed, stuck, blocked, or revision-requested tasks.";
+    listEl.appendChild(empty);
+    return;
+  }
+  /* Limit to top 8 so the alert panel never crowds the status grid. */
+  alerts.slice(0, 8).forEach(({task, kind, label}) => {
+    const row = document.createElement("button");
+    row.type = "button";
+    row.className = `alert-row alert-${kind}`;
+    row.innerHTML = "<span class=\"alert-kind\"></span><strong></strong><small></small>";
+    row.querySelector(".alert-kind").textContent = label;
+    row.querySelector("strong").textContent = task.title || task.taskId;
+    row.querySelector("small").textContent = `${task.taskId} · ${task.assignedAgent || "all"}`;
+    row.addEventListener("click", () => loadTaskDetail(task.taskId));
+    listEl.appendChild(row);
+  });
+}
+
 function renderInitiatives(initiatives) {
   const summary = document.querySelector("#initiativeSummary");
   document.querySelector("#initiativeCount").textContent = String(initiatives.length);
   document.querySelector("#initiativeBadge").textContent = String(initiatives.length);
+  /* Keep the chat-panel initiative filter dropdown in sync with the latest
+   * projection rows. Preserve the operator's current selection if it still
+   * exists. */
+  const initiativeFilter = document.querySelector("#initiativeFilter");
+  if (initiativeFilter) {
+    const previous = initiativeFilter.value;
+    initiativeFilter.innerHTML = '<option value="">all initiatives</option>';
+    initiatives.forEach(initiative => {
+      const option = document.createElement("option");
+      option.value = initiative.initiativeId;
+      option.textContent = `${initiative.initiativeId} · ${initiative.title || ""}`.trim();
+      initiativeFilter.appendChild(option);
+    });
+    initiativeFilter.value = state.selectedInitiativeId || previous || "";
+  }
   if (!initiatives.length) {
     summary.innerHTML = '<button type="button" class="initiative-card"><strong>No initiatives</strong><span>Create a task package to start.</span></button>';
     return;
@@ -412,6 +551,7 @@ function renderInitiatives(initiatives) {
       state.selectedInitiativeId = state.selectedInitiativeId === initiative.initiativeId ? "" : initiative.initiativeId;
       await loadTasks();
       renderInitiatives(initiatives);
+      await loadInitiativeAssets(state.selectedInitiativeId);
       addAudit("ui", state.selectedInitiativeId ? `focused ${state.selectedInitiativeId}` : "cleared initiative focus");
     });
     summary.appendChild(card);
@@ -451,6 +591,13 @@ async function loadTaskDetail(taskId) {
     const reason = detail.task.lastReclaimReason || "operator";
     metaParts.push(`reclaimed ${detail.task.reclaimCount}× (${reason})`);
   }
+  /* Sprint 4: surface artifact lifecycle state and accepted path in the meta
+   * line. The artifact decision panel below shows the editable controls; this
+   * is the read-only inline summary. */
+  if (detail.task.artifactState) {
+    const acceptedPath = detail.task.acceptedArtifactPath ? ` ${detail.task.acceptedArtifactPath}` : "";
+    metaParts.push(`artifact: ${detail.task.artifactState}${acceptedPath}`);
+  }
   document.querySelector("#detailMeta").textContent = metaParts.join(" · ");
   document.querySelector("#detailBody").textContent = detail.task.body || "";
   const events = document.querySelector("#detailEvents");
@@ -487,6 +634,7 @@ function renderArtifacts(artifacts) {
   if (!artifacts.exists) {
     head.textContent = "No task workspace yet";
     viewer.textContent = "Artifacts appear here after an adapter run creates a workspace.";
+    populateArtifactDecisionPanel(artifacts, null);
     return;
   }
   head.textContent = `${artifacts.files.length} file(s) · ${artifacts.workspace}`;
@@ -500,10 +648,115 @@ function renderArtifacts(artifacts) {
         file.kind === "stderr" ? "stderrText" :
         file.kind === "manifest" ? "manifestText" : "";
       viewer.textContent = key ? artifacts[key] || "" : "File preview is not available for this artifact.";
+      /* Selecting a file also pre-populates the decision panel path. */
+      const select = document.querySelector("#artifactPathSelect");
+      if (select) select.value = file.name;
     });
     files.appendChild(chip);
   });
   viewer.textContent = artifacts.resultText || artifacts.manifestText || artifacts.stdoutText || "Workspace exists, but no previewable artifact has content yet.";
+  /* Cache artifacts for the export button to read text snippets without a refetch. */
+  state.artifactsCache = artifacts;
+  populateArtifactDecisionPanel(artifacts, state.selectedTaskDetail);
+}
+
+/*
+ * Populate the artifact decision panel for the currently selected task. Fills
+ * the path <select> with workspace files, defaults the reviewer to the current
+ * operator name, and shows the latest recorded state + notes.
+ */
+function populateArtifactDecisionPanel(artifacts, task) {
+  const stateLabel = document.querySelector("#artifactStateLabel");
+  const pathSelect = document.querySelector("#artifactPathSelect");
+  const reviewerInput = document.querySelector("#artifactReviewer");
+  const notesInput = document.querySelector("#artifactNotes");
+  if (!stateLabel || !pathSelect) return;
+  pathSelect.innerHTML = "";
+  const fileNames = (artifacts && artifacts.files) ? artifacts.files.map(file => file.name) : [];
+  /* Always include the canonical result.md option even if the workspace is empty
+   * so the operator can record decisions before an adapter run completes. */
+  if (!fileNames.includes("result.md")) fileNames.unshift("result.md");
+  fileNames.forEach(name => {
+    const option = document.createElement("option");
+    option.value = name;
+    option.textContent = name;
+    pathSelect.appendChild(option);
+  });
+  if (task && task.acceptedArtifactPath && fileNames.includes(task.acceptedArtifactPath)) {
+    pathSelect.value = task.acceptedArtifactPath;
+  }
+  if (reviewerInput && !reviewerInput.value) {
+    reviewerInput.value = (task && task.lastReviewer) || "ceo";
+  }
+  if (notesInput) {
+    notesInput.value = (task && task.lastReviewNotes) || "";
+  }
+  if (task && task.artifactState) {
+    const acceptedAt = task.acceptedAtUnixMs ? new Date(task.acceptedAtUnixMs).toISOString().slice(0, 19).replace("T", " ") : "";
+    stateLabel.textContent = `${task.artifactState}${task.lastReviewer ? ` by ${task.lastReviewer}` : ""}${acceptedAt ? ` (${acceptedAt})` : ""}`;
+  } else {
+    stateLabel.textContent = "No decision recorded";
+  }
+}
+
+/*
+ * Sprint 4: post an artifact decision. Mirrors the bin/wt-task artifact verbs:
+ * promote (accepted), reviewed, rejected, superseded.
+ */
+async function postTaskArtifact(decisionState) {
+  if (!state.selectedTaskId) {
+    addAudit("ui", "select a task before recording an artifact decision");
+    return;
+  }
+  const path = (document.querySelector("#artifactPathSelect") || {}).value || "result.md";
+  const reviewer = ((document.querySelector("#artifactReviewer") || {}).value || "ceo").trim();
+  const notes = ((document.querySelector("#artifactNotes") || {}).value || "").trim();
+  const response = await fetch("/api/task-artifact", {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({
+      taskId: state.selectedTaskId,
+      state: decisionState,
+      reviewer: reviewer || "ceo",
+      notes,
+      artifactPath: path,
+    }),
+  });
+  if (!response.ok) {
+    addAudit("ui", `artifact ${decisionState} failed for ${state.selectedTaskId}`);
+    return;
+  }
+  addAudit("ui", `artifact ${decisionState} recorded for ${state.selectedTaskId}`);
+  await loadTasks();
+  await loadTaskDetail(state.selectedTaskId);
+  if (state.selectedInitiativeId) await loadInitiativeAssets(state.selectedInitiativeId);
+}
+
+/*
+ * Copies the accepted artifact text to the clipboard, mirroring
+ * `wt-task artifact export` from the CLI side.
+ */
+async function exportSelectedArtifact() {
+  if (!state.selectedTaskId) {
+    addAudit("ui", "select a task before exporting");
+    return;
+  }
+  const path = (document.querySelector("#artifactPathSelect") || {}).value || "result.md";
+  const artifacts = state.artifactsCache || {};
+  const key = path === "stdout.log" ? "stdoutText" :
+              path === "stderr.log" ? "stderrText" :
+              path === "manifest.json" ? "manifestText" : "resultText";
+  const text = artifacts[key] || "";
+  try {
+    await navigator.clipboard.writeText(text);
+    addAudit("ui", `copied ${path} (${text.length} bytes) to clipboard`);
+  } catch (err) {
+    /* Fallback for environments without clipboard permission - dump into the
+     * artifact viewer so the operator can copy manually. */
+    const viewer = document.querySelector("#artifactViewer");
+    if (viewer) viewer.textContent = text || "(empty artifact)";
+    addAudit("ui", `clipboard unavailable; rendered ${path} into viewer`);
+  }
 }
 
 async function postTaskLifecycle(status, message) {
@@ -1039,6 +1292,12 @@ function wireControls() {
   document.querySelectorAll("[data-gate-action]").forEach(button => {
     button.addEventListener("click", () => postTaskGate(button.dataset.gateAction));
   });
+  /* Sprint 4 artifact decision wiring. */
+  document.querySelectorAll("[data-artifact-action]").forEach(button => {
+    button.addEventListener("click", () => postTaskArtifact(button.dataset.artifactAction));
+  });
+  const exportButton = document.querySelector("#artifactExportButton");
+  if (exportButton) exportButton.addEventListener("click", exportSelectedArtifact);
 
   document.querySelectorAll(".mode-button").forEach(button => {
     button.addEventListener("click", () => setDispatchMode(button.dataset.mode));
@@ -1053,6 +1312,50 @@ function wireControls() {
     bodyEl.focus();
   });
 
+  /* Sprint 4 parity wiring: initiative + role filter dropdowns. */
+  const initiativeFilter = document.querySelector("#initiativeFilter");
+  if (initiativeFilter) {
+    initiativeFilter.addEventListener("change", async () => {
+      state.selectedInitiativeId = initiativeFilter.value || "";
+      await loadTasks();
+      await loadInitiatives();
+      await loadInitiativeAssets(state.selectedInitiativeId);
+      addAudit("ui", state.selectedInitiativeId ? `filter focused ${state.selectedInitiativeId}` : "cleared initiative filter");
+    });
+  }
+  const roleFilter = document.querySelector("#roleFilter");
+  if (roleFilter) {
+    /* Populate the role filter dropdown from the canonical role list. */
+    roles.forEach(role => {
+      const option = document.createElement("option");
+      option.value = role.roleId;
+      option.textContent = role.name;
+      roleFilter.appendChild(option);
+    });
+    roleFilter.addEventListener("change", async () => {
+      state.roleFilter = roleFilter.value || "all";
+      await loadTasks();
+      addAudit("ui", state.roleFilter === "all" ? "cleared role filter" : `role filter: ${state.roleFilter}`);
+    });
+  }
+
+  /* Sprint 4 help overlay wiring. */
+  const helpButton = document.querySelector("#helpButton");
+  const helpOverlay = document.querySelector("#helpOverlay");
+  const helpClose = document.querySelector("#helpClose");
+  const toggleHelp = (force) => {
+    if (!helpOverlay) return;
+    const next = typeof force === "boolean" ? !force : !helpOverlay.hidden;
+    helpOverlay.hidden = next;
+  };
+  if (helpButton) helpButton.addEventListener("click", () => toggleHelp());
+  if (helpClose) helpClose.addEventListener("click", () => toggleHelp(false));
+  if (helpOverlay) {
+    helpOverlay.addEventListener("click", event => {
+      if (event.target === helpOverlay) toggleHelp(false);
+    });
+  }
+
   armButton.addEventListener("click", armComposer);
   form.addEventListener("submit", submitDirective);
   ["tokenBudget", "maxAgents", "timeframeHours", "priority"].forEach(id => {
@@ -1064,8 +1367,24 @@ function wireControls() {
       event.preventDefault();
       addAudit("ui", "command palette disabled until task action indexing exists");
     }
-    if (!["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement.tagName) && event.key.toLowerCase() === "n") {
+    const isTyping = ["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement.tagName);
+    if (!isTyping && event.key.toLowerCase() === "n") {
       bodyEl.focus();
+    }
+    /* Sprint 4: ? toggles help; Esc closes the overlay or settings panel. */
+    if (!isTyping && event.key === "?") {
+      event.preventDefault();
+      const overlay = document.querySelector("#helpOverlay");
+      if (overlay) overlay.hidden = !overlay.hidden;
+    }
+    if (event.key === "Escape") {
+      const overlay = document.querySelector("#helpOverlay");
+      if (overlay && !overlay.hidden) {
+        overlay.hidden = true;
+      } else if (!settingsPanel.hidden) {
+        settingsPanel.hidden = true;
+        document.querySelector("#settingsButton").classList.remove("active");
+      }
     }
   });
 }
