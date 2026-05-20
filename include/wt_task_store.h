@@ -25,6 +25,16 @@ typedef struct {
     char body[WT_TASK_BODY_SIZE];
     char modelId[WT_TASK_MODEL_SIZE];
     char toolProfile[WT_TASK_POLICY_SIZE];
+    char autonomyLevel[WT_TASK_POLICY_SIZE];
+    char autonomyScope[WT_TASK_BODY_SIZE];
+    char autonomyNetwork[WT_TASK_POLICY_SIZE];
+    char autonomyCredentialClass[WT_TASK_POLICY_SIZE];
+    int autonomyTtlSeconds;
+    int autonomyMaxWallClockSeconds;
+    int autonomyRequiresCleanWorktree;
+    long long autonomyCreatedAtUnixMs;
+    long long autonomyRevokedAtUnixMs;
+    char autonomyRevokedBy[WT_TASK_AGENT_SIZE];
     int timeoutSeconds;
     int maxOutputBytes;
     long long updatedAtUnixMs;
@@ -95,6 +105,53 @@ int wtTaskAppendReclaimEvent(const char *ledgerPath, const char *taskId, const c
 int wtTaskAppendArtifactEvent(const char *ledgerPath, const char *taskId, const char *state,
                               const char *reviewer, const char *notes, const char *artifactPath,
                               bool fsyncRecord);
+/*
+ * Phase 3 Sprint 1: agent heartbeat. One record per heartbeat tick. agentName
+ * + host identify the emitter; currentTaskId may be empty when idle.
+ * statusLine is a short free-text status (truncated by caller if needed).
+ * leaseExpiresAtUnixMs surfaces the agent's view of its current lease so the
+ * status aggregator can compute "time-to-expiry" without re-walking the
+ * ledger. 0 means the agent holds no lease.
+ */
+int wtTaskAppendHeartbeat(const char *ledgerPath, const char *agentName, const char *host,
+                          const char *currentTaskId, long long leaseExpiresAtUnixMs,
+                          const char *statusLine, bool fsyncRecord);
+/*
+ * Phase 3 Sprint 1: milestone event tied to a task. Allowed values for the
+ * milestone field are an open allowlist: plan, execute, review, escalate,
+ * complete. The helper does NOT validate the milestone string; the daemon
+ * endpoint that exposes this to network clients does.
+ */
+int wtTaskAppendMilestone(const char *ledgerPath, const char *taskId, const char *milestone,
+                          const char *message, const char *createdBy, bool fsyncRecord);
+/*
+ * Phase 3 Sprint 1: lease renewal. Same shape as the original lease event but
+ * the daemon + projection treat it as an extension rather than a new attempt.
+ * Attempt number stays the same; only leaseExpiresAtUnixMs advances.
+ */
+int wtTaskAppendLeaseRenewal(const char *ledgerPath, const char *taskId, const char *agentName,
+                             int attempt, long long leaseExpiresAtUnixMs, bool fsyncRecord);
+/*
+ * Phase 3 Sprint 1: operator cancel request. Appends a kill_event so the
+ * adapter wait loop in wt-agent can see the request the next time it polls.
+ * reason is free-text (operator, autonomy-revoke, etc.).
+ */
+int wtTaskAppendKillEvent(const char *ledgerPath, const char *taskId, const char *reason,
+                          const char *createdBy, bool fsyncRecord);
+int wtTaskAppendAutonomyEvent(const char *ledgerPath, const char *taskId, const char *actor,
+                              const char *target, const char *action, const char *commandClass,
+                              const char *autonomyLevel, const char *reason, int allowed,
+                              int exitCode, bool fsyncRecord);
+int wtTaskReadLatestAutonomyRevocation(const char *ledgerPath, const char *taskId,
+                                       long long *revokedAtUnixMs, char *revokedBy,
+                                       size_t revokedBySize);
+/*
+ * Phase 3 Sprint 1: did the task receive a cancel request? Returns 1 if a
+ * kill_event has been appended for this task since the most recent
+ * routing/assignment event, 0 otherwise. Used by wt-agent in the adapter
+ * wait loop so it can tear the child process down promptly.
+ */
+int wtTaskCancelRequested(const char *ledgerPath, const char *taskId);
 /*
  * Inspect the most recent lease for a task. Returns 1 when a lease line is found,
  * 0 when no lease exists or the latest lease was already released by a reclaim

@@ -45,13 +45,20 @@ static int projectPackage(sqlite3 *db, const char *line) {
     const char *sql =
         "INSERT INTO tasks "
         "(task_id,initiative_id,parent_task_id,requested_by_role,assigned_role,assigned_agent,"
-        "model_id,priority,status,title,body,tool_profile,max_tokens,created_at_ms,updated_at_ms,event_count) "
-        "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,0) "
+        "model_id,priority,status,title,body,tool_profile,autonomy_level,autonomy_scope,"
+        "autonomy_network,autonomy_credential_class,autonomy_ttl_seconds,autonomy_max_wall_clock_seconds,"
+        "autonomy_requires_clean_worktree,max_tokens,created_at_ms,updated_at_ms,event_count) "
+        "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,0) "
         "ON CONFLICT(task_id) DO UPDATE SET "
         "initiative_id=excluded.initiative_id,parent_task_id=excluded.parent_task_id,"
         "requested_by_role=excluded.requested_by_role,assigned_role=excluded.assigned_role,"
         "assigned_agent=excluded.assigned_agent,model_id=excluded.model_id,priority=excluded.priority,"
         "status=excluded.status,title=excluded.title,body=excluded.body,tool_profile=excluded.tool_profile,"
+        "autonomy_level=excluded.autonomy_level,autonomy_scope=excluded.autonomy_scope,"
+        "autonomy_network=excluded.autonomy_network,autonomy_credential_class=excluded.autonomy_credential_class,"
+        "autonomy_ttl_seconds=excluded.autonomy_ttl_seconds,"
+        "autonomy_max_wall_clock_seconds=excluded.autonomy_max_wall_clock_seconds,"
+        "autonomy_requires_clean_worktree=excluded.autonomy_requires_clean_worktree,"
         "max_tokens=excluded.max_tokens,created_at_ms=excluded.created_at_ms,"
         "updated_at_ms=max(tasks.updated_at_ms,excluded.updated_at_ms)";
     if (sqlite3_prepare_v2(db, sql, -1, &stmt, NULL) != SQLITE_OK) {
@@ -69,6 +76,13 @@ static int projectPackage(sqlite3 *db, const char *line) {
     char title[WT_TASK_TITLE_SIZE];
     char body[WT_TASK_BODY_SIZE];
     char toolProfile[WT_TASK_POLICY_SIZE];
+    char autonomyLevel[WT_TASK_POLICY_SIZE];
+    char autonomyScope[WT_TASK_BODY_SIZE];
+    char autonomyNetwork[WT_TASK_POLICY_SIZE];
+    char autonomyCredentialClass[WT_TASK_POLICY_SIZE];
+    long autonomyTtlSeconds = 0;
+    long autonomyMaxWallClockSeconds = 0;
+    long autonomyRequiresCleanWorktree = 0;
     long maxTokens = 0;
     long long createdAtMs = 0;
     readStringOrDefault(line, "taskId", taskId, sizeof(taskId), "");
@@ -83,6 +97,13 @@ static int projectPackage(sqlite3 *db, const char *line) {
     readStringOrDefault(line, "title", title, sizeof(title), "Untitled task");
     readStringOrDefault(line, "body", body, sizeof(body), "");
     readStringOrDefault(line, "profile", toolProfile, sizeof(toolProfile), "observe");
+    readStringOrDefault(line, "autonomyLevel", autonomyLevel, sizeof(autonomyLevel), "");
+    readStringOrDefault(line, "scope", autonomyScope, sizeof(autonomyScope), "");
+    readStringOrDefault(line, "network", autonomyNetwork, sizeof(autonomyNetwork), "none");
+    readStringOrDefault(line, "credentialClass", autonomyCredentialClass, sizeof(autonomyCredentialClass), "none");
+    wtJsonReadLong(line, "ttlSeconds", &autonomyTtlSeconds);
+    wtJsonReadLong(line, "maxWallClockSeconds", &autonomyMaxWallClockSeconds);
+    wtJsonReadLong(line, "requiresCleanWorktree", &autonomyRequiresCleanWorktree);
     wtJsonReadLong(line, "maxTokens", &maxTokens);
     wtJsonReadLongLong(line, "createdAtUnixMs", &createdAtMs);
     bindText(stmt, 1, taskId);
@@ -97,9 +118,16 @@ static int projectPackage(sqlite3 *db, const char *line) {
     bindText(stmt, 10, title);
     bindText(stmt, 11, body);
     bindText(stmt, 12, toolProfile);
-    sqlite3_bind_int64(stmt, 13, maxTokens);
-    sqlite3_bind_int64(stmt, 14, createdAtMs);
-    sqlite3_bind_int64(stmt, 15, createdAtMs);
+    bindText(stmt, 13, autonomyLevel);
+    bindText(stmt, 14, autonomyScope);
+    bindText(stmt, 15, autonomyNetwork);
+    bindText(stmt, 16, autonomyCredentialClass);
+    sqlite3_bind_int64(stmt, 17, autonomyTtlSeconds);
+    sqlite3_bind_int64(stmt, 18, autonomyMaxWallClockSeconds);
+    sqlite3_bind_int64(stmt, 19, autonomyRequiresCleanWorktree);
+    sqlite3_bind_int64(stmt, 20, maxTokens);
+    sqlite3_bind_int64(stmt, 21, createdAtMs);
+    sqlite3_bind_int64(stmt, 22, createdAtMs);
     int rc = sqlite3_step(stmt) == SQLITE_DONE ? 0 : -1;
     sqlite3_finalize(stmt);
     return taskId[0] && rc == 0 ? 0 : -1;
@@ -312,6 +340,107 @@ static int projectAgentControl(sqlite3 *db, const char *line) {
     return agent[0] && rc == 0 ? 0 : -1;
 }
 
+/*
+ * Phase 3 Sprint 1: project a heartbeat record. One row per agent; the upsert
+ * always overwrites with the latest observation so /api/status sees the most
+ * recent state without needing to scan the ledger.
+ */
+static int projectHeartbeat(sqlite3 *db, const char *line) {
+    sqlite3_stmt *stmt = NULL;
+    const char *sql =
+        "INSERT INTO heartbeats (agent,host,current_task_id,lease_expires_at_ms,status_line,last_seen_ms) "
+        "VALUES (?,?,?,?,?,?) "
+        "ON CONFLICT(agent) DO UPDATE SET "
+        "host=excluded.host,current_task_id=excluded.current_task_id,"
+        "lease_expires_at_ms=excluded.lease_expires_at_ms,"
+        "status_line=excluded.status_line,last_seen_ms=excluded.last_seen_ms";
+    if (sqlite3_prepare_v2(db, sql, -1, &stmt, NULL) != SQLITE_OK) {
+        return -1;
+    }
+    char agent[WT_TASK_AGENT_SIZE];
+    char host[128];
+    char currentTaskId[WT_TASK_ID_SIZE];
+    char statusLine[WT_TASK_BODY_SIZE];
+    long long leaseExpiresAtMs = 0;
+    long long createdAtMs = 0;
+    readStringOrDefault(line, "agent", agent, sizeof(agent), "");
+    readStringOrDefault(line, "host", host, sizeof(host), "");
+    readStringOrDefault(line, "currentTaskId", currentTaskId, sizeof(currentTaskId), "");
+    readStringOrDefault(line, "statusLine", statusLine, sizeof(statusLine), "");
+    wtJsonReadLongLong(line, "leaseExpiresAtUnixMs", &leaseExpiresAtMs);
+    wtJsonReadLongLong(line, "createdAtUnixMs", &createdAtMs);
+    bindText(stmt, 1, agent);
+    bindText(stmt, 2, host);
+    bindText(stmt, 3, currentTaskId);
+    sqlite3_bind_int64(stmt, 4, leaseExpiresAtMs);
+    bindText(stmt, 5, statusLine);
+    sqlite3_bind_int64(stmt, 6, createdAtMs);
+    int rc = sqlite3_step(stmt) == SQLITE_DONE ? 0 : -1;
+    sqlite3_finalize(stmt);
+    return agent[0] && rc == 0 ? 0 : -1;
+}
+
+/*
+ * Phase 3 Sprint 1: project a milestone record. Append-only - the projection
+ * stores every milestone so the audit + status board can show the full chain.
+ */
+static int projectMilestone(sqlite3 *db, const char *line) {
+    sqlite3_stmt *stmt = NULL;
+    const char *sql =
+        "INSERT INTO milestones (task_id,milestone,message,created_by,created_at_ms) "
+        "VALUES (?,?,?,?,?)";
+    if (sqlite3_prepare_v2(db, sql, -1, &stmt, NULL) != SQLITE_OK) {
+        return -1;
+    }
+    char taskId[WT_TASK_ID_SIZE];
+    char milestone[64];
+    char message[WT_TASK_BODY_SIZE];
+    char createdBy[WT_TASK_AGENT_SIZE];
+    long long createdAtMs = 0;
+    readStringOrDefault(line, "taskId", taskId, sizeof(taskId), "");
+    readStringOrDefault(line, "milestone", milestone, sizeof(milestone), "");
+    readStringOrDefault(line, "message", message, sizeof(message), "");
+    readStringOrDefault(line, "createdBy", createdBy, sizeof(createdBy), "");
+    wtJsonReadLongLong(line, "createdAtUnixMs", &createdAtMs);
+    bindText(stmt, 1, taskId);
+    bindText(stmt, 2, milestone);
+    bindText(stmt, 3, message);
+    bindText(stmt, 4, createdBy);
+    sqlite3_bind_int64(stmt, 5, createdAtMs);
+    int rc = sqlite3_step(stmt) == SQLITE_DONE ? 0 : -1;
+    sqlite3_finalize(stmt);
+    return taskId[0] && rc == 0 ? 0 : -1;
+}
+
+/*
+ * Phase 3 Sprint 1: project a kill_event record. Append-only; the wt-agent
+ * cancel-check uses the JSONL directly, so this table exists primarily for
+ * audit export + status surfaces.
+ */
+static int projectKillEvent(sqlite3 *db, const char *line) {
+    sqlite3_stmt *stmt = NULL;
+    const char *sql =
+        "INSERT INTO kill_events (task_id,reason,created_by,created_at_ms) VALUES (?,?,?,?)";
+    if (sqlite3_prepare_v2(db, sql, -1, &stmt, NULL) != SQLITE_OK) {
+        return -1;
+    }
+    char taskId[WT_TASK_ID_SIZE];
+    char reason[128];
+    char createdBy[WT_TASK_AGENT_SIZE];
+    long long createdAtMs = 0;
+    readStringOrDefault(line, "taskId", taskId, sizeof(taskId), "");
+    readStringOrDefault(line, "reason", reason, sizeof(reason), "");
+    readStringOrDefault(line, "createdBy", createdBy, sizeof(createdBy), "");
+    wtJsonReadLongLong(line, "createdAtUnixMs", &createdAtMs);
+    bindText(stmt, 1, taskId);
+    bindText(stmt, 2, reason);
+    bindText(stmt, 3, createdBy);
+    sqlite3_bind_int64(stmt, 4, createdAtMs);
+    int rc = sqlite3_step(stmt) == SQLITE_DONE ? 0 : -1;
+    sqlite3_finalize(stmt);
+    return taskId[0] && rc == 0 ? 0 : -1;
+}
+
 int wtTaskProjectionRebuild(const char *dbPath, const char *ledgerPath) {
     if (wtRoomEnsureParentDirs(dbPath) != 0) {
         return -1;
@@ -323,13 +452,17 @@ int wtTaskProjectionRebuild(const char *dbPath, const char *ledgerPath) {
     }
     if (execSql(db, "PRAGMA journal_mode=WAL;") != 0 ||
         execSql(db, "BEGIN IMMEDIATE;") != 0 ||
-        execSql(db, "DROP TABLE IF EXISTS tasks; DROP TABLE IF EXISTS task_events; DROP TABLE IF EXISTS agent_controls;") != 0 ||
+        execSql(db, "DROP TABLE IF EXISTS tasks; DROP TABLE IF EXISTS task_events; DROP TABLE IF EXISTS agent_controls; DROP TABLE IF EXISTS heartbeats; DROP TABLE IF EXISTS milestones; DROP TABLE IF EXISTS kill_events;") != 0 ||
         execSql(db,
             "CREATE TABLE tasks ("
             "task_id TEXT PRIMARY KEY,"
             "initiative_id TEXT,parent_task_id TEXT,requested_by_role TEXT,"
             "assigned_role TEXT,assigned_agent TEXT,model_id TEXT,priority TEXT,status TEXT,"
             "title TEXT,body TEXT,tool_profile TEXT,max_tokens INTEGER DEFAULT 0,"
+            "autonomy_level TEXT DEFAULT '',autonomy_scope TEXT DEFAULT '',"
+            "autonomy_network TEXT DEFAULT 'none',autonomy_credential_class TEXT DEFAULT 'none',"
+            "autonomy_ttl_seconds INTEGER DEFAULT 0,autonomy_max_wall_clock_seconds INTEGER DEFAULT 0,"
+            "autonomy_requires_clean_worktree INTEGER DEFAULT 0,"
             "created_at_ms INTEGER DEFAULT 0,updated_at_ms INTEGER DEFAULT 0,event_count INTEGER DEFAULT 0,"
             "lease_owner TEXT DEFAULT '',lease_expires_at_ms INTEGER DEFAULT 0,"
             "leased_at_ms INTEGER DEFAULT 0,running_at_ms INTEGER DEFAULT 0,attempt_count INTEGER DEFAULT 0,"
@@ -359,7 +492,25 @@ int wtTaskProjectionRebuild(const char *dbPath, const char *ledgerPath) {
             "id INTEGER PRIMARY KEY AUTOINCREMENT,task_id TEXT,schema TEXT,event_type TEXT,status TEXT,"
             "assigned_agent TEXT,message TEXT,created_by TEXT,created_at_ms INTEGER DEFAULT 0,raw_json TEXT);"
             "CREATE INDEX idx_task_events_task ON task_events(task_id,id);"
-            "CREATE TABLE agent_controls (agent TEXT PRIMARY KEY,state TEXT,message TEXT,updated_at_ms INTEGER DEFAULT 0);") != 0) {
+            "CREATE TABLE agent_controls (agent TEXT PRIMARY KEY,state TEXT,message TEXT,updated_at_ms INTEGER DEFAULT 0);"
+            /*
+             * Phase 3 Sprint 1 projection tables:
+             *   heartbeats - one row per agent, last seen heartbeat
+             *   milestones - one row per milestone event (chronological)
+             *   kill_events - one row per cancel request (chronological)
+             */
+            "CREATE TABLE heartbeats ("
+            "agent TEXT PRIMARY KEY,host TEXT,current_task_id TEXT,"
+            "lease_expires_at_ms INTEGER DEFAULT 0,status_line TEXT,"
+            "last_seen_ms INTEGER DEFAULT 0);"
+            "CREATE TABLE milestones ("
+            "id INTEGER PRIMARY KEY AUTOINCREMENT,task_id TEXT,milestone TEXT,"
+            "message TEXT,created_by TEXT,created_at_ms INTEGER DEFAULT 0);"
+            "CREATE INDEX idx_milestones_task ON milestones(task_id,id);"
+            "CREATE TABLE kill_events ("
+            "id INTEGER PRIMARY KEY AUTOINCREMENT,task_id TEXT,reason TEXT,"
+            "created_by TEXT,created_at_ms INTEGER DEFAULT 0);"
+            "CREATE INDEX idx_kill_events_task ON kill_events(task_id,id);") != 0) {
         execSql(db, "ROLLBACK;");
         sqlite3_close(db);
         return -1;
@@ -380,6 +531,12 @@ int wtTaskProjectionRebuild(const char *dbPath, const char *ledgerPath) {
                 insertEvent(db, line, "woventeam.task_request.v0.1");
             } else if (lineHasSchema(line, "woventeam.agent_control.v0.1")) {
                 projectAgentControl(db, line);
+            } else if (lineHasSchema(line, "woventeam.heartbeat.v0.1")) {
+                projectHeartbeat(db, line);
+            } else if (lineHasSchema(line, "woventeam.milestone.v0.1")) {
+                projectMilestone(db, line);
+            } else if (lineHasSchema(line, "woventeam.kill_event.v0.1")) {
+                projectKillEvent(db, line);
             }
         }
         fclose(file);
@@ -507,7 +664,10 @@ int wtTaskProjectionReadDetailJson(const char *dbPath, const char *taskId, char 
     sqlite3_stmt *task = NULL;
     const char *taskSql =
         "SELECT task_id,initiative_id,parent_task_id,requested_by_role,assigned_role,assigned_agent,"
-        "model_id,priority,status,title,body,tool_profile,max_tokens,created_at_ms,updated_at_ms,event_count,"
+        "model_id,priority,status,title,body,tool_profile,"
+        "autonomy_level,autonomy_scope,autonomy_network,autonomy_credential_class,"
+        "autonomy_ttl_seconds,autonomy_max_wall_clock_seconds,autonomy_requires_clean_worktree,"
+        "max_tokens,created_at_ms,updated_at_ms,event_count,"
         "lease_owner,lease_expires_at_ms,leased_at_ms,running_at_ms,attempt_count,"
         "failure_cause,last_reclaim_reason,reclaim_count,"
         "artifact_state,last_reviewer,last_review_notes,accepted_at_ms,accepted_artifact_path "
@@ -535,36 +695,50 @@ int wtTaskProjectionReadDetailJson(const char *dbPath, const char *taskId, char 
         appendRaw(buffer, bufferSize, &used, "\":");
         appendJsonString(buffer, bufferSize, &used, columnText(task, index));
     }
+    appendRaw(buffer, bufferSize, &used, ",\"autonomyLevel\":");
+    appendJsonString(buffer, bufferSize, &used, columnText(task, 12));
+    appendRaw(buffer, bufferSize, &used, ",\"autonomyGrant\":{\"scope\":");
+    appendJsonString(buffer, bufferSize, &used, columnText(task, 13));
+    appendRaw(buffer, bufferSize, &used, ",\"network\":");
+    appendJsonString(buffer, bufferSize, &used, columnText(task, 14));
+    appendRaw(buffer, bufferSize, &used, ",\"credentialClass\":");
+    appendJsonString(buffer, bufferSize, &used, columnText(task, 15));
+    snprintf(number, sizeof(number),
+             ",\"ttlSeconds\":%lld,\"maxWallClockSeconds\":%lld,\"requiresCleanWorktree\":%s}",
+             sqlite3_column_int64(task, 16),
+             sqlite3_column_int64(task, 17),
+             sqlite3_column_int(task, 18) ? "true" : "false");
+    appendRaw(buffer, bufferSize, &used, number);
     snprintf(number, sizeof(number),
              ",\"maxTokens\":%lld,\"createdAtUnixMs\":%lld,\"updatedAtUnixMs\":%lld,\"eventCount\":%d,\"leaseOwner\":",
-             sqlite3_column_int64(task, 12),
-             sqlite3_column_int64(task, 13),
-             sqlite3_column_int64(task, 14),
-             sqlite3_column_int(task, 15));
+             sqlite3_column_int64(task, 19),
+             sqlite3_column_int64(task, 20),
+             sqlite3_column_int64(task, 21),
+             sqlite3_column_int(task, 22));
     appendRaw(buffer, bufferSize, &used, number);
-    appendJsonString(buffer, bufferSize, &used, columnText(task, 16));
+    appendJsonString(buffer, bufferSize, &used, columnText(task, 23));
     snprintf(number, sizeof(number),
              ",\"leaseExpiresAtUnixMs\":%lld,\"leasedAtUnixMs\":%lld,\"runningAtUnixMs\":%lld,\"attemptCount\":%d,"
              "\"failureCause\":",
-             sqlite3_column_int64(task, 17),
-             sqlite3_column_int64(task, 18),
-             sqlite3_column_int64(task, 19),
-             sqlite3_column_int(task, 20));
-    appendRaw(buffer, bufferSize, &used, number);
-    appendJsonString(buffer, bufferSize, &used, columnText(task, 21));
-    appendRaw(buffer, bufferSize, &used, ",\"lastReclaimReason\":");
-    appendJsonString(buffer, bufferSize, &used, columnText(task, 22));
-    snprintf(number, sizeof(number), ",\"reclaimCount\":%d,\"artifactState\":", sqlite3_column_int(task, 23));
-    appendRaw(buffer, bufferSize, &used, number);
-    appendJsonString(buffer, bufferSize, &used, columnText(task, 24));
-    appendRaw(buffer, bufferSize, &used, ",\"lastReviewer\":");
-    appendJsonString(buffer, bufferSize, &used, columnText(task, 25));
-    appendRaw(buffer, bufferSize, &used, ",\"lastReviewNotes\":");
-    appendJsonString(buffer, bufferSize, &used, columnText(task, 26));
-    snprintf(number, sizeof(number), ",\"acceptedAtUnixMs\":%lld,\"acceptedArtifactPath\":",
-             sqlite3_column_int64(task, 27));
+             sqlite3_column_int64(task, 24),
+             sqlite3_column_int64(task, 25),
+             sqlite3_column_int64(task, 26),
+             sqlite3_column_int(task, 27));
     appendRaw(buffer, bufferSize, &used, number);
     appendJsonString(buffer, bufferSize, &used, columnText(task, 28));
+    appendRaw(buffer, bufferSize, &used, ",\"lastReclaimReason\":");
+    appendJsonString(buffer, bufferSize, &used, columnText(task, 29));
+    snprintf(number, sizeof(number), ",\"reclaimCount\":%d,\"artifactState\":", sqlite3_column_int(task, 30));
+    appendRaw(buffer, bufferSize, &used, number);
+    appendJsonString(buffer, bufferSize, &used, columnText(task, 31));
+    appendRaw(buffer, bufferSize, &used, ",\"lastReviewer\":");
+    appendJsonString(buffer, bufferSize, &used, columnText(task, 32));
+    appendRaw(buffer, bufferSize, &used, ",\"lastReviewNotes\":");
+    appendJsonString(buffer, bufferSize, &used, columnText(task, 33));
+    snprintf(number, sizeof(number), ",\"acceptedAtUnixMs\":%lld,\"acceptedArtifactPath\":",
+             sqlite3_column_int64(task, 34));
+    appendRaw(buffer, bufferSize, &used, number);
+    appendJsonString(buffer, bufferSize, &used, columnText(task, 35));
     appendRaw(buffer, bufferSize, &used, "},\"events\":[");
     sqlite3_finalize(task);
 
@@ -887,6 +1061,7 @@ int wtTaskProjectionReadInitiativeArtifactsJson(const char *dbPath, const char *
  */
 int wtTaskProjectionReadInitiativeAuditJson(const char *dbPath, const char *ledgerPath,
                                             const char *initiativeId,
+                                            long long sinceUnixMs, int limit,
                                             char *buffer, size_t bufferSize) {
     sqlite3 *db = NULL;
     if (sqlite3_open(dbPath, &db) != SQLITE_OK) {
@@ -1001,17 +1176,31 @@ int wtTaskProjectionReadInitiativeAuditJson(const char *dbPath, const char *ledg
     /* Events block - chronological task_events for any task in this initiative. */
     appendRaw(buffer, bufferSize, &used, "],\"events\":[");
     sqlite3_stmt *eventStmt = NULL;
+    /*
+     * Phase 3 Sprint 1: optional since/limit pagination. The SQL filters by
+     * created_at_ms >= sinceUnixMs when sinceUnixMs > 0; otherwise it returns
+     * every event. limit > 0 acts as a soft cap across events + policy +
+     * usage combined; the helper tracks emittedCount and stops once limit is
+     * hit, recording nextSinceUnixMs as the cursor for the next page.
+     */
     const char *eventSql =
         "SELECT id,task_id,schema,event_type,status,assigned_agent,message,created_by,created_at_ms "
         "FROM task_events WHERE task_id IN (SELECT task_id FROM tasks WHERE initiative_id=?) "
+        "AND (? = 0 OR created_at_ms >= ?) "
         "ORDER BY created_at_ms ASC, id ASC";
     if (sqlite3_prepare_v2(db, eventSql, -1, &eventStmt, NULL) != SQLITE_OK) {
         sqlite3_close(db);
         return -1;
     }
     bindText(eventStmt, 1, initiativeId);
+    sqlite3_bind_int64(eventStmt, 2, sinceUnixMs);
+    sqlite3_bind_int64(eventStmt, 3, sinceUnixMs);
     first = 1;
+    int emittedCount = 0;
+    long long maxEmittedAtMs = 0;
+    int truncated = 0;
     while (sqlite3_step(eventStmt) == SQLITE_ROW) {
+        if (limit > 0 && emittedCount >= limit) { truncated = 1; break; }
         if (!first) appendRaw(buffer, bufferSize, &used, ",");
         first = 0;
         char head[64];
@@ -1025,9 +1214,12 @@ int wtTaskProjectionReadInitiativeAuditJson(const char *dbPath, const char *ledg
             appendRaw(buffer, bufferSize, &used, "\":");
             appendJsonString(buffer, bufferSize, &used, columnText(eventStmt, index + 2));
         }
+        long long ms = sqlite3_column_int64(eventStmt, 8);
+        if (ms > maxEmittedAtMs) maxEmittedAtMs = ms;
         char tail[64];
-        snprintf(tail, sizeof(tail), ",\"createdAtUnixMs\":%lld}", sqlite3_column_int64(eventStmt, 8));
+        snprintf(tail, sizeof(tail), ",\"createdAtUnixMs\":%lld}", ms);
         appendRaw(buffer, bufferSize, &used, tail);
+        emittedCount++;
     }
     sqlite3_finalize(eventStmt);
 
@@ -1063,6 +1255,7 @@ int wtTaskProjectionReadInitiativeAuditJson(const char *dbPath, const char *ledg
     if (file) {
         char line[WT_TASK_LEDGER_LINE_SIZE];
         while (fgets(line, sizeof(line), file)) {
+            if (limit > 0 && emittedCount >= limit) { truncated = 1; break; }
             char schema[128];
             if (wtJsonReadString(line, "schema", schema, sizeof(schema)) != 0) continue;
             int isPolicy = strcmp(schema, "woventeam.policy_decision.v0.1") == 0;
@@ -1086,6 +1279,11 @@ int wtTaskProjectionReadInitiativeAuditJson(const char *dbPath, const char *ledg
                 }
             }
             if (!member) continue;
+            /* since-filter on createdAtUnixMs */
+            long long createdAtMs = 0;
+            wtJsonReadLongLong(line, "createdAtUnixMs", &createdAtMs);
+            if (sinceUnixMs > 0 && createdAtMs < sinceUnixMs) continue;
+            if (createdAtMs > maxEmittedAtMs) maxEmittedAtMs = createdAtMs;
             /* Strip the trailing newline so the embedded JSON is valid. */
             size_t length = strlen(line);
             while (length > 0 && (line[length - 1] == '\n' || line[length - 1] == '\r')) {
@@ -1110,6 +1308,7 @@ int wtTaskProjectionReadInitiativeAuditJson(const char *dbPath, const char *ledg
                     usageBuffer[usageUsed] = '\0';
                 }
             }
+            emittedCount++;
         }
         fclose(file);
     }
@@ -1117,7 +1316,106 @@ int wtTaskProjectionReadInitiativeAuditJson(const char *dbPath, const char *ledg
     if (usageUsed > 0) {
         appendRaw(buffer, bufferSize, &used, usageBuffer);
     }
-    appendRaw(buffer, bufferSize, &used, "]}\n");
+    /*
+     * Tail: emit pagination metadata so the caller knows whether more pages
+     * follow. nextSinceUnixMs is the highest createdAtUnixMs we emitted plus 1
+     * (so the next page does not re-emit the boundary record); 0 when the
+     * response was not truncated.
+     */
+    long long nextSince = truncated ? (maxEmittedAtMs + 1) : 0;
+    char tail[160];
+    snprintf(tail, sizeof(tail),
+             "],\"truncated\":%s,\"nextSinceUnixMs\":%lld,\"emittedCount\":%d}\n",
+             truncated ? "true" : "false", nextSince, emittedCount);
+    appendRaw(buffer, bufferSize, &used, tail);
+    return 0;
+}
+
+/*
+ * Phase 3 Sprint 1 helpers for /api/status. Each one writes a JSON array
+ * (NOT a complete document) into the supplied buffer.
+ */
+int wtTaskProjectionReadHeartbeatsJson(const char *dbPath, char *buffer, size_t bufferSize) {
+    sqlite3 *db = NULL;
+    if (sqlite3_open(dbPath, &db) != SQLITE_OK) {
+        sqlite3_close(db);
+        return -1;
+    }
+    sqlite3_stmt *stmt = NULL;
+    const char *sql =
+        "SELECT agent,host,current_task_id,lease_expires_at_ms,status_line,last_seen_ms "
+        "FROM heartbeats ORDER BY agent";
+    if (sqlite3_prepare_v2(db, sql, -1, &stmt, NULL) != SQLITE_OK) {
+        sqlite3_close(db);
+        return -1;
+    }
+    size_t used = 0;
+    appendRaw(buffer, bufferSize, &used, "[");
+    int first = 1;
+    while (sqlite3_step(stmt) == SQLITE_ROW) {
+        if (!first) appendRaw(buffer, bufferSize, &used, ",");
+        first = 0;
+        appendRaw(buffer, bufferSize, &used, "{\"agent\":");
+        appendJsonString(buffer, bufferSize, &used, columnText(stmt, 0));
+        appendRaw(buffer, bufferSize, &used, ",\"host\":");
+        appendJsonString(buffer, bufferSize, &used, columnText(stmt, 1));
+        appendRaw(buffer, bufferSize, &used, ",\"currentTaskId\":");
+        appendJsonString(buffer, bufferSize, &used, columnText(stmt, 2));
+        char number[128];
+        snprintf(number, sizeof(number), ",\"leaseExpiresAtUnixMs\":%lld,\"statusLine\":",
+                 sqlite3_column_int64(stmt, 3));
+        appendRaw(buffer, bufferSize, &used, number);
+        appendJsonString(buffer, bufferSize, &used, columnText(stmt, 4));
+        snprintf(number, sizeof(number), ",\"lastSeenUnixMs\":%lld}",
+                 sqlite3_column_int64(stmt, 5));
+        appendRaw(buffer, bufferSize, &used, number);
+    }
+    appendRaw(buffer, bufferSize, &used, "]");
+    sqlite3_finalize(stmt);
+    sqlite3_close(db);
+    return 0;
+}
+
+int wtTaskProjectionReadRecentMilestonesJson(const char *dbPath, int limit, char *buffer, size_t bufferSize) {
+    sqlite3 *db = NULL;
+    if (sqlite3_open(dbPath, &db) != SQLITE_OK) {
+        sqlite3_close(db);
+        return -1;
+    }
+    int effectiveLimit = limit > 0 ? limit : 50;
+    sqlite3_stmt *stmt = NULL;
+    const char *sql =
+        "SELECT id,task_id,milestone,message,created_by,created_at_ms "
+        "FROM milestones ORDER BY id DESC LIMIT ?";
+    if (sqlite3_prepare_v2(db, sql, -1, &stmt, NULL) != SQLITE_OK) {
+        sqlite3_close(db);
+        return -1;
+    }
+    sqlite3_bind_int(stmt, 1, effectiveLimit);
+    size_t used = 0;
+    appendRaw(buffer, bufferSize, &used, "[");
+    int first = 1;
+    while (sqlite3_step(stmt) == SQLITE_ROW) {
+        if (!first) appendRaw(buffer, bufferSize, &used, ",");
+        first = 0;
+        char head[64];
+        snprintf(head, sizeof(head), "{\"id\":%lld,\"taskId\":", sqlite3_column_int64(stmt, 0));
+        appendRaw(buffer, bufferSize, &used, head);
+        appendJsonString(buffer, bufferSize, &used, columnText(stmt, 1));
+        appendRaw(buffer, bufferSize, &used, ",\"milestone\":");
+        appendJsonString(buffer, bufferSize, &used, columnText(stmt, 2));
+        appendRaw(buffer, bufferSize, &used, ",\"message\":");
+        appendJsonString(buffer, bufferSize, &used, columnText(stmt, 3));
+        appendRaw(buffer, bufferSize, &used, ",\"createdBy\":");
+        appendJsonString(buffer, bufferSize, &used, columnText(stmt, 4));
+        char tail[64];
+        snprintf(tail, sizeof(tail), ",\"createdAtUnixMs\":%lld}",
+                 sqlite3_column_int64(stmt, 5));
+        appendRaw(buffer, bufferSize, &used, tail);
+    }
+    appendRaw(buffer, bufferSize, &used, "]");
+    sqlite3_finalize(stmt);
+    sqlite3_close(db);
     return 0;
 }
 

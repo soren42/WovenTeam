@@ -352,7 +352,60 @@ When the evaluator denies a request it appends a durable record:
 Reason codes (stable; consumed by both the CLI and the web console):
 `vendor_blocked`, `model_agent_mismatch`, `initiative_budget`,
 `model_family_budget`, `daily_budget`, `monthly_budget`, `capacity_agent`,
-`capacity_initiative`.
+`capacity_initiative`, `autonomy_required`, `autonomy_expired`,
+`autonomy_revoked`.
+
+## Phase 3 autonomy contract
+
+Sprint 2 of the v1.0 phase adds bounded autonomy grants to task packages. A
+package may include:
+
+```json
+{
+  "autonomyLevel": "autonomous",
+  "autonomyGrant": {
+    "scope": "workspace",
+    "ttlSeconds": 3600,
+    "maxWallClockSeconds": 1800,
+    "maxCostUsd": 1.0,
+    "maxTokens": 2000000,
+    "network": "intranet",
+    "credentialClass": "repo-write",
+    "requiresCleanWorktree": false
+  }
+}
+```
+
+`autonomyLevel` may be `observe`, `ask-each`, `ask-batch`, or `autonomous`.
+When omitted, the daemon derives a default from `toolPolicy.profile`, unless a
+per-agent config default overrides it. Autonomous execution requires a positive
+`ttlSeconds` and a scope containing `workspace`, `adapter`, or `*`; otherwise
+the policy evaluator rejects the package with `autonomy_required`. Expired
+grants are rejected as `autonomy_expired`.
+
+Every elevated adapter invocation and every adapter invocation decision appends:
+
+```json
+{
+  "schema": "woventeam.autonomy_event.v0.1",
+  "taskId": "task_example_001",
+  "actor": "wt-agent@chatgpt",
+  "target": "codex",
+  "action": "adapter_invocation_elevated",
+  "commandClass": "codex-cli",
+  "autonomyLevel": "autonomous",
+  "reason": "autonomy grant permits codex adapter invocation",
+  "allowed": true,
+  "exitCode": -1,
+  "createdAtUnixMs": 1779253511752
+}
+```
+
+`POST /api/autonomy-revoke` accepts `taskId`, optional `reason`, and optional
+`createdBy`. It appends `woventeam.autonomy_event.v0.1` with
+`action:"revoked"` and a `woventeam.kill_event.v0.1` with
+`reason:"autonomy-revoke"`. The next adapter invocation downgrades to normal
+approval flags after revocation.
 
 `GET /api/initiative-audit?initiativeId=...` returns a single combined report:
 

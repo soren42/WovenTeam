@@ -93,6 +93,28 @@ static int findKnownTask(WtTaskSummary *tasks, int count, const char *taskId) {
     return -1;
 }
 
+static void populateTaskAutonomy(const char *line, WtTaskSummary *task) {
+    readOptionalString(line, "autonomyLevel", task->autonomyLevel,
+                       sizeof(task->autonomyLevel), "");
+    readOptionalString(line, "scope", task->autonomyScope,
+                       sizeof(task->autonomyScope), "");
+    readOptionalString(line, "network", task->autonomyNetwork,
+                       sizeof(task->autonomyNetwork), "none");
+    readOptionalString(line, "credentialClass", task->autonomyCredentialClass,
+                       sizeof(task->autonomyCredentialClass), "none");
+    long value = 0;
+    if (wtJsonReadLong(line, "ttlSeconds", &value) == 0) {
+        task->autonomyTtlSeconds = (int)value;
+    }
+    if (wtJsonReadLong(line, "maxWallClockSeconds", &value) == 0) {
+        task->autonomyMaxWallClockSeconds = (int)value;
+    }
+    if (wtJsonReadLong(line, "requiresCleanWorktree", &value) == 0) {
+        task->autonomyRequiresCleanWorktree = value != 0;
+    }
+    wtJsonReadLongLong(line, "createdAtUnixMs", &task->autonomyCreatedAtUnixMs);
+}
+
 int wtTaskFindQueuedForAgent(const char *ledgerPath, const char *agentName, WtTaskSummary *task) {
     FILE *file = fopen(ledgerPath, "r");
     if (!file) {
@@ -121,6 +143,7 @@ int wtTaskFindQueuedForAgent(const char *ledgerPath, const char *agentName, WtTa
                 readOptionalString(line, "body", tasks[index].body, sizeof(tasks[index].body), "");
                 readOptionalString(line, "modelId", tasks[index].modelId, sizeof(tasks[index].modelId), "");
                 readOptionalString(line, "profile", tasks[index].toolProfile, sizeof(tasks[index].toolProfile), "observe");
+                populateTaskAutonomy(line, &tasks[index]);
                 long timeout = 0;
                 long maxOutput = 0;
                 if (wtJsonReadLong(line, "timeoutSeconds", &timeout) == 0) {
@@ -200,6 +223,7 @@ int wtTaskFindClaimableForAgent(const char *ledgerPath, const char *agentName,
                 readOptionalString(line, "body", tasks[index].body, sizeof(tasks[index].body), "");
                 readOptionalString(line, "modelId", tasks[index].modelId, sizeof(tasks[index].modelId), "");
                 readOptionalString(line, "profile", tasks[index].toolProfile, sizeof(tasks[index].toolProfile), "observe");
+                populateTaskAutonomy(line, &tasks[index]);
                 long timeoutSec = 0;
                 long maxOutput = 0;
                 if (wtJsonReadLong(line, "timeoutSeconds", &timeoutSec) == 0) {
@@ -371,6 +395,210 @@ int wtTaskAppendReclaimEvent(const char *ledgerPath, const char *taskId, const c
              escapedTaskId, escapedPreviousAgent, escapedReason, escapedMessage,
              escapedReclaimedBy, wtNowUnixMilliseconds());
     return wtTaskAppendRecord(ledgerPath, json, fsyncRecord);
+}
+
+int wtTaskAppendHeartbeat(const char *ledgerPath, const char *agentName, const char *host,
+                          const char *currentTaskId, long long leaseExpiresAtUnixMs,
+                          const char *statusLine, bool fsyncRecord) {
+    char escapedAgent[WT_TASK_AGENT_SIZE * 2];
+    char escapedHost[128];
+    char escapedTaskId[WT_TASK_ID_SIZE * 2];
+    char escapedStatus[WT_TASK_BODY_SIZE];
+    /* Worst case: every byte of escapedStatus expands and every fixed field
+     * is at max; size the buffer for ~6x escaped status plus the rest. */
+    char json[WT_TASK_BODY_SIZE * 2 + 1024];
+    if (wtJsonEscape(agentName ? agentName : "", escapedAgent, sizeof(escapedAgent)) != 0 ||
+        wtJsonEscape(host ? host : "", escapedHost, sizeof(escapedHost)) != 0 ||
+        wtJsonEscape(currentTaskId ? currentTaskId : "", escapedTaskId, sizeof(escapedTaskId)) != 0 ||
+        wtJsonEscape(statusLine ? statusLine : "", escapedStatus, sizeof(escapedStatus)) != 0) {
+        return -1;
+    }
+    snprintf(json, sizeof(json),
+             "{\"schema\":\"woventeam.heartbeat.v0.1\",\"agent\":\"%s\","
+             "\"host\":\"%s\",\"currentTaskId\":\"%s\","
+             "\"leaseExpiresAtUnixMs\":%lld,\"statusLine\":\"%s\","
+             "\"createdAtUnixMs\":%lld}",
+             escapedAgent, escapedHost, escapedTaskId,
+             leaseExpiresAtUnixMs, escapedStatus, wtNowUnixMilliseconds());
+    return wtTaskAppendRecord(ledgerPath, json, fsyncRecord);
+}
+
+int wtTaskAppendMilestone(const char *ledgerPath, const char *taskId, const char *milestone,
+                          const char *message, const char *createdBy, bool fsyncRecord) {
+    char escapedTaskId[WT_TASK_ID_SIZE * 2];
+    char escapedMilestone[64];
+    char escapedMessage[WT_TASK_BODY_SIZE];
+    char escapedBy[WT_TASK_AGENT_SIZE * 2];
+    /* Same sizing argument as the heartbeat helper above. */
+    char json[WT_TASK_BODY_SIZE * 2 + 1024];
+    if (wtJsonEscape(taskId, escapedTaskId, sizeof(escapedTaskId)) != 0 ||
+        wtJsonEscape(milestone ? milestone : "", escapedMilestone, sizeof(escapedMilestone)) != 0 ||
+        wtJsonEscape(message ? message : "", escapedMessage, sizeof(escapedMessage)) != 0 ||
+        wtJsonEscape(createdBy ? createdBy : "", escapedBy, sizeof(escapedBy)) != 0) {
+        return -1;
+    }
+    snprintf(json, sizeof(json),
+             "{\"schema\":\"woventeam.milestone.v0.1\",\"taskId\":\"%s\","
+             "\"milestone\":\"%s\",\"message\":\"%s\","
+             "\"createdBy\":\"%s\",\"createdAtUnixMs\":%lld}",
+             escapedTaskId, escapedMilestone, escapedMessage, escapedBy,
+             wtNowUnixMilliseconds());
+    return wtTaskAppendRecord(ledgerPath, json, fsyncRecord);
+}
+
+int wtTaskAppendLeaseRenewal(const char *ledgerPath, const char *taskId, const char *agentName,
+                             int attempt, long long leaseExpiresAtUnixMs, bool fsyncRecord) {
+    /*
+     * Renewal carries eventType="lease_renewal" so the projection can recognize
+     * it as an extension rather than a fresh claim. The schema reuses
+     * woventeam.task_event.v0.1 to keep downstream consumers simple.
+     */
+    char escapedTaskId[WT_TASK_ID_SIZE * 2];
+    char escapedAgent[WT_TASK_AGENT_SIZE * 2];
+    char message[256];
+    char escapedMessage[512];
+    char json[2048];
+    snprintf(message, sizeof(message),
+             "Lease renewed by wt-agent@%s attempt %d; extended to %lld.",
+             agentName, attempt, leaseExpiresAtUnixMs);
+    if (wtJsonEscape(taskId, escapedTaskId, sizeof(escapedTaskId)) != 0 ||
+        wtJsonEscape(agentName, escapedAgent, sizeof(escapedAgent)) != 0 ||
+        wtJsonEscape(message, escapedMessage, sizeof(escapedMessage)) != 0) {
+        return -1;
+    }
+    snprintf(json, sizeof(json),
+             "{\"schema\":\"woventeam.task_event.v0.1\",\"taskId\":\"%s\","
+             "\"eventType\":\"lease_renewal\",\"status\":\"running\","
+             "\"assignedAgent\":\"%s\",\"message\":\"%s\","
+             "\"createdBy\":\"wt-agent@%s\",\"attempt\":%d,"
+             "\"leaseExpiresAtUnixMs\":%lld,\"createdAtUnixMs\":%lld}",
+             escapedTaskId, escapedAgent, escapedMessage, escapedAgent, attempt,
+             leaseExpiresAtUnixMs, wtNowUnixMilliseconds());
+    return wtTaskAppendRecord(ledgerPath, json, fsyncRecord);
+}
+
+int wtTaskAppendKillEvent(const char *ledgerPath, const char *taskId, const char *reason,
+                          const char *createdBy, bool fsyncRecord) {
+    char escapedTaskId[WT_TASK_ID_SIZE * 2];
+    char escapedReason[128];
+    char escapedBy[WT_TASK_AGENT_SIZE * 2];
+    char json[1024];
+    if (wtJsonEscape(taskId, escapedTaskId, sizeof(escapedTaskId)) != 0 ||
+        wtJsonEscape(reason ? reason : "operator", escapedReason, sizeof(escapedReason)) != 0 ||
+        wtJsonEscape(createdBy ? createdBy : "ceo", escapedBy, sizeof(escapedBy)) != 0) {
+        return -1;
+    }
+    snprintf(json, sizeof(json),
+             "{\"schema\":\"woventeam.kill_event.v0.1\",\"taskId\":\"%s\","
+             "\"reason\":\"%s\",\"createdBy\":\"%s\","
+             "\"createdAtUnixMs\":%lld}",
+             escapedTaskId, escapedReason, escapedBy, wtNowUnixMilliseconds());
+    return wtTaskAppendRecord(ledgerPath, json, fsyncRecord);
+}
+
+int wtTaskAppendAutonomyEvent(const char *ledgerPath, const char *taskId, const char *actor,
+                              const char *target, const char *action, const char *commandClass,
+                              const char *autonomyLevel, const char *reason, int allowed,
+                              int exitCode, bool fsyncRecord) {
+    char escapedTaskId[WT_TASK_ID_SIZE * 2];
+    char escapedActor[WT_TASK_AGENT_SIZE * 2];
+    char escapedTarget[WT_TASK_AGENT_SIZE * 2];
+    char escapedAction[64];
+    char escapedCommandClass[128];
+    char escapedAutonomyLevel[WT_TASK_POLICY_SIZE * 2];
+    char escapedReason[256];
+    char json[2048];
+    if (wtJsonEscape(taskId ? taskId : "", escapedTaskId, sizeof(escapedTaskId)) != 0 ||
+        wtJsonEscape(actor ? actor : "system", escapedActor, sizeof(escapedActor)) != 0 ||
+        wtJsonEscape(target ? target : "", escapedTarget, sizeof(escapedTarget)) != 0 ||
+        wtJsonEscape(action ? action : "", escapedAction, sizeof(escapedAction)) != 0 ||
+        wtJsonEscape(commandClass ? commandClass : "", escapedCommandClass, sizeof(escapedCommandClass)) != 0 ||
+        wtJsonEscape(autonomyLevel ? autonomyLevel : "", escapedAutonomyLevel, sizeof(escapedAutonomyLevel)) != 0 ||
+        wtJsonEscape(reason ? reason : "", escapedReason, sizeof(escapedReason)) != 0) {
+        return -1;
+    }
+    snprintf(json, sizeof(json),
+             "{\"schema\":\"woventeam.autonomy_event.v0.1\",\"taskId\":\"%s\","
+             "\"actor\":\"%s\",\"target\":\"%s\",\"action\":\"%s\","
+             "\"commandClass\":\"%s\",\"autonomyLevel\":\"%s\","
+             "\"reason\":\"%s\",\"allowed\":%s,\"exitCode\":%d,"
+             "\"createdAtUnixMs\":%lld}",
+             escapedTaskId, escapedActor, escapedTarget, escapedAction,
+             escapedCommandClass, escapedAutonomyLevel, escapedReason,
+             allowed ? "true" : "false", exitCode, wtNowUnixMilliseconds());
+    return wtTaskAppendRecord(ledgerPath, json, fsyncRecord);
+}
+
+int wtTaskReadLatestAutonomyRevocation(const char *ledgerPath, const char *taskId,
+                                       long long *revokedAtUnixMs, char *revokedBy,
+                                       size_t revokedBySize) {
+    if (revokedAtUnixMs) *revokedAtUnixMs = 0;
+    if (revokedBy && revokedBySize > 0) revokedBy[0] = '\0';
+    FILE *file = fopen(ledgerPath, "r");
+    if (!file) {
+        return 0;
+    }
+    char line[WT_TASK_LEDGER_LINE_SIZE];
+    int found = 0;
+    while (fgets(line, sizeof(line), file)) {
+        char schema[128];
+        char eventTaskId[WT_TASK_ID_SIZE];
+        char action[64];
+        if (wtJsonReadString(line, "schema", schema, sizeof(schema)) != 0 ||
+            strcmp(schema, "woventeam.autonomy_event.v0.1") != 0 ||
+            wtJsonReadString(line, "taskId", eventTaskId, sizeof(eventTaskId)) != 0 ||
+            strcmp(eventTaskId, taskId) != 0 ||
+            wtJsonReadString(line, "action", action, sizeof(action)) != 0 ||
+            strcmp(action, "revoked") != 0) {
+            continue;
+        }
+        found = 1;
+        if (revokedAtUnixMs) {
+            wtJsonReadLongLong(line, "createdAtUnixMs", revokedAtUnixMs);
+        }
+        if (revokedBy && revokedBySize > 0) {
+            readOptionalString(line, "actor", revokedBy, revokedBySize, "");
+        }
+    }
+    fclose(file);
+    return found;
+}
+
+int wtTaskCancelRequested(const char *ledgerPath, const char *taskId) {
+    /*
+     * Walk the ledger; return 1 if any kill_event matches the taskId AFTER the
+     * most recent lease event. Resetting on lease means a reclaimed + re-leased
+     * task starts a fresh cancel window: the operator's earlier cancel doesn't
+     * silently kill the new attempt.
+     */
+    FILE *file = fopen(ledgerPath, "r");
+    if (!file) {
+        return 0;
+    }
+    char line[WT_TASK_LEDGER_LINE_SIZE];
+    int cancelSeen = 0;
+    while (fgets(line, sizeof(line), file)) {
+        char schema[128];
+        char eventTaskId[WT_TASK_ID_SIZE];
+        if (wtJsonReadString(line, "schema", schema, sizeof(schema)) != 0 ||
+            wtJsonReadString(line, "taskId", eventTaskId, sizeof(eventTaskId)) != 0 ||
+            strcmp(eventTaskId, taskId) != 0) {
+            continue;
+        }
+        if (strcmp(schema, "woventeam.kill_event.v0.1") == 0) {
+            cancelSeen = 1;
+        } else if (strcmp(schema, "woventeam.task_event.v0.1") == 0) {
+            char eventType[32];
+            if (wtJsonReadString(line, "eventType", eventType, sizeof(eventType)) == 0 &&
+                strcmp(eventType, "lease") == 0) {
+                /* A new lease resets the cancel state - the operator must
+                 * cancel again to kill the next attempt. */
+                cancelSeen = 0;
+            }
+        }
+    }
+    fclose(file);
+    return cancelSeen;
 }
 
 int wtTaskAppendArtifactEvent(const char *ledgerPath, const char *taskId, const char *state,

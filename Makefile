@@ -24,7 +24,11 @@ COMMON_OBJS := \
 # helpers and wt-agent are not policy enforcement points.
 POLICY_OBJS := $(BUILD_DIR)/wt_policy.o
 
-.PHONY: all clean run-roomd run-demo harness-check test-smoke test-harness-check test-task-assignment test-codex-adapter test-cli-artifact-adapter test-artifact-viewer test-artifact-promotion test-adapter-capabilities test-adapter-preflight test-initiatives test-agent-workload-control test-routing-gates test-manager-subtasks test-token-config test-task-projection test-quotas-ops test-policy-audit test-phase1-e2e test-phase2-e2e test install-roomd-service install-agent-services
+# Phase 3 Sprint 1: notification dispatcher. Only linked into wt-roomd; agents
+# do not push to Slack themselves.
+NOTIFY_OBJS := $(BUILD_DIR)/wt_notify.o
+
+.PHONY: all clean run-roomd run-demo harness-check test-smoke test-harness-check test-task-assignment test-codex-adapter test-cli-artifact-adapter test-artifact-viewer test-artifact-promotion test-adapter-capabilities test-adapter-preflight test-initiatives test-agent-workload-control test-autonomy test-observability test-routing-gates test-manager-subtasks test-token-config test-task-projection test-quotas-ops test-policy-audit test-phase1-e2e test-phase2-e2e test install-roomd-service install-agent-services
 
 all: $(BUILD_DIR)/wt-roomd $(BUILD_DIR)/wt-say $(BUILD_DIR)/wt-tail $(BUILD_DIR)/wt-agent
 
@@ -34,7 +38,7 @@ $(BUILD_DIR):
 $(BUILD_DIR)/%.o: src/%.c | $(BUILD_DIR)
 	$(CC) $(CFLAGS) -c -o $@ $<
 
-$(BUILD_DIR)/wt-roomd: $(COMMON_OBJS) $(POLICY_OBJS) $(BUILD_DIR)/wt_task_projection.o $(BUILD_DIR)/wt_http.o $(BUILD_DIR)/wt_roomd.o
+$(BUILD_DIR)/wt-roomd: $(COMMON_OBJS) $(POLICY_OBJS) $(NOTIFY_OBJS) $(BUILD_DIR)/wt_task_projection.o $(BUILD_DIR)/wt_http.o $(BUILD_DIR)/wt_roomd.o
 	$(CC) $(LDFLAGS) -o $@ $^ $(SQLITE_LIBS) $(LDLIBS)
 
 $(BUILD_DIR)/wt-say: $(COMMON_OBJS) $(BUILD_DIR)/wt_say.o
@@ -93,6 +97,12 @@ test-initiatives: all
 test-agent-workload-control: all
 	./tests/integration/wt-agent-workload-control.sh
 
+test-autonomy: all
+	./tests/integration/wt-autonomy.sh
+
+test-observability: all
+	./tests/integration/wt-observability.sh
+
 test-routing-gates: all
 	./tests/integration/wt-routing-gates.sh
 
@@ -117,7 +127,7 @@ test-phase1-e2e: all
 test-phase2-e2e: all
 	./tests/integration/wt-phase2-e2e.sh
 
-test: test-smoke test-harness-check test-task-assignment test-codex-adapter test-cli-artifact-adapter test-artifact-viewer test-artifact-promotion test-adapter-capabilities test-adapter-preflight test-initiatives test-agent-workload-control test-routing-gates test-manager-subtasks test-token-config test-task-projection test-quotas-ops test-policy-audit test-phase1-e2e test-phase2-e2e
+test: test-smoke test-harness-check test-task-assignment test-codex-adapter test-cli-artifact-adapter test-artifact-viewer test-artifact-promotion test-adapter-capabilities test-adapter-preflight test-initiatives test-agent-workload-control test-autonomy test-observability test-routing-gates test-manager-subtasks test-token-config test-task-projection test-quotas-ops test-policy-audit test-phase1-e2e test-phase2-e2e
 
 install-roomd-service: all
 	sudo install -m 0644 deploy/systemd/wt-roomd.service /etc/systemd/system/

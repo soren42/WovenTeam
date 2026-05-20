@@ -143,6 +143,168 @@ static void capFileSize(const char *path, int maxBytes) {
     }
 }
 
+static const char *profileDefaultAutonomy(const char *profile) {
+    if (!profile || strcmp(profile, "observe") == 0) return "observe";
+    if (strcmp(profile, "repo_branch") == 0 || strcmp(profile, "test_local") == 0) return "ask-batch";
+    return "ask-each";
+}
+
+static const char *configuredAutonomyForAgent(const WtConfig *config, const char *agentName) {
+    if (strcmp(agentName, "claude") == 0 && config->claudeDefaultAutonomyLevel[0]) {
+        return config->claudeDefaultAutonomyLevel;
+    }
+    if (strcmp(agentName, "chatgpt") == 0 && config->chatgptDefaultAutonomyLevel[0]) {
+        return config->chatgptDefaultAutonomyLevel;
+    }
+    if (strcmp(agentName, "gemini") == 0 && config->geminiDefaultAutonomyLevel[0]) {
+        return config->geminiDefaultAutonomyLevel;
+    }
+    return config->defaultAutonomyLevel[0] ? config->defaultAutonomyLevel : NULL;
+}
+
+static void effectiveAutonomyLevel(const WtConfig *config, const char *agentName,
+                                   const WtTaskSummary *task, char *buffer, size_t bufferSize) {
+    if (task->autonomyLevel[0]) {
+        snprintf(buffer, bufferSize, "%s", task->autonomyLevel);
+        return;
+    }
+    const char *configured = configuredAutonomyForAgent(config, agentName);
+    snprintf(buffer, bufferSize, "%s", configured ? configured : profileDefaultAutonomy(task->toolProfile));
+}
+
+static int scopeCoversAdapter(const char *scope) {
+    return scope && (strstr(scope, "workspace") || strstr(scope, "adapter") || strstr(scope, "*"));
+}
+
+static int cleanWorktreeRequiredOk(const WtTaskSummary *task) {
+    if (!task->autonomyRequiresCleanWorktree) {
+        return 1;
+    }
+    int rc = system("git diff --quiet && git diff --cached --quiet");
+    return rc == 0;
+}
+
+static int autonomyGrantActive(const WtConfig *config, const char *agentName,
+                               const WtTaskSummary *task, const char *adapterName,
+                               long long nowUnixMs, char *level, size_t levelSize,
+                               char *reason, size_t reasonSize) {
+    effectiveAutonomyLevel(config, agentName, task, level, levelSize);
+    long long revokedAt = 0;
+    char revokedBy[WT_TASK_AGENT_SIZE];
+    wtTaskReadLatestAutonomyRevocation(config->taskLedgerPath, task->taskId,
+                                       &revokedAt, revokedBy, sizeof(revokedBy));
+    if (revokedAt > 0) {
+        snprintf(reason, reasonSize, "autonomy revoked by %s", revokedBy[0] ? revokedBy : "operator");
+        return 0;
+    }
+    if (strcmp(level, "autonomous") != 0) {
+        snprintf(reason, reasonSize, "autonomy level %s does not permit elevated adapter flags", level);
+        return 0;
+    }
+    if (task->autonomyTtlSeconds <= 0 || !scopeCoversAdapter(task->autonomyScope)) {
+        snprintf(reason, reasonSize, "autonomy grant missing ttl or adapter/workspace scope");
+        return 0;
+    }
+    long long grantStart = task->autonomyCreatedAtUnixMs > 0 ? task->autonomyCreatedAtUnixMs : nowUnixMs;
+    if (nowUnixMs > grantStart + (long long)task->autonomyTtlSeconds * 1000LL) {
+        snprintf(reason, reasonSize, "autonomy grant expired");
+        return 0;
+    }
+    if (!cleanWorktreeRequiredOk(task)) {
+        snprintf(reason, reasonSize, "autonomy requires a clean worktree");
+        return 0;
+    }
+    snprintf(reason, reasonSize, "autonomy grant permits %s adapter invocation", adapterName);
+    return 1;
+}
+
+/*
+ * Phase 3 Sprint 1: wait for an adapter child process to exit, while
+ *   (1) renewing the lease every leaseRenewalIntervalSeconds, and
+ *   (2) checking for an operator cancel request via the ledger.
+ *
+ * Returns 0 on normal exit, 1 on timeout, 2 on cancel. On cancel or timeout
+ * the helper kills the child's process group so any helper subprocesses go
+ * with it (the adapter is invoked via fork+exec, so child is the leader of
+ * its own process group). Caller still observes the child's exit status via
+ * the waitpid in the loop; *outTimedOut and *outCancelled are set so the
+ * caller can format the manifest + status events accordingly.
+ */
+static int waitForAdapterChild(const WtConfig *config, const char *agentName,
+                               const WtTaskSummary *task, pid_t child,
+                               int timeoutSeconds, int *outStatus,
+                               int *outTimedOut, int *outCancelled,
+                               long long *outFinalLeaseExpiry) {
+    *outTimedOut = 0;
+    *outCancelled = 0;
+    time_t start = time(NULL);
+    time_t lastRenewal = start;
+    time_t lastCancelCheck = start;
+    int renewalInterval = config->leaseRenewalIntervalSeconds > 0 ?
+                          config->leaseRenewalIntervalSeconds : 600;
+    int cancelInterval = config->cancelPollIntervalSeconds > 0 ?
+                         config->cancelPollIntervalSeconds : 5;
+    int leaseDuration = config->leaseDurationSeconds > 0 ?
+                        config->leaseDurationSeconds : 900;
+    long long currentLeaseExpiry = (long long)start * 1000LL + (long long)leaseDuration * 1000LL;
+    /*
+     * Configure the lease window to fit the chosen lease duration. The initial
+     * lease was recorded by handleAssignedTask with the same duration, so the
+     * first renewal extends rather than rewriting the original ceiling.
+     */
+    while (1) {
+        pid_t done = waitpid(child, outStatus, WNOHANG);
+        if (done == child) {
+            break;
+        }
+        if (done < 0) {
+            perror("wait adapter child");
+            return -1;
+        }
+        time_t now = time(NULL);
+        if ((int)(now - start) >= timeoutSeconds) {
+            kill(-child, SIGKILL);
+            waitpid(child, outStatus, 0);
+            *outTimedOut = 1;
+            break;
+        }
+        if ((int)(now - lastCancelCheck) >= cancelInterval) {
+            lastCancelCheck = now;
+            if (wtTaskCancelRequested(config->taskLedgerPath, task->taskId)) {
+                /* SIGTERM to the whole group first so the adapter can clean
+                 * up its own children; SIGKILL after a brief grace period. */
+                kill(-child, SIGTERM);
+                for (int waitTicks = 0; waitTicks < 3; waitTicks++) {
+                    sleep(1);
+                    pid_t reaped = waitpid(child, outStatus, WNOHANG);
+                    if (reaped == child) break;
+                }
+                pid_t reaped = waitpid(child, outStatus, WNOHANG);
+                if (reaped != child) {
+                    kill(-child, SIGKILL);
+                    waitpid(child, outStatus, 0);
+                }
+                *outCancelled = 1;
+                break;
+            }
+        }
+        if ((int)(now - lastRenewal) >= renewalInterval) {
+            lastRenewal = now;
+            currentLeaseExpiry = (long long)now * 1000LL + (long long)leaseDuration * 1000LL;
+            /* Attempt number is recovered from the original lease event by the
+             * projection; we pass 1 here because the API consumer (status,
+             * audit) reads attemptCount from the projection rather than from
+             * the renewal event. The renewal helper records the renewal
+             * irrespective of count so the audit shows the chain. */
+            wtTaskAppendLeaseRenewal(config->taskLedgerPath, task->taskId, agentName,
+                                     1, currentLeaseExpiry, config->fsyncEachMessage);
+        }
+        sleep(1);
+    }
+    *outFinalLeaseExpiry = currentLeaseExpiry;
+    return 0;
+}
+
 static int runCodexAdapter(const WtConfig *config, const char *agentName, const WtTaskSummary *task) {
     char workspace[512];
     char promptPath[768];
@@ -183,9 +345,18 @@ static int runCodexAdapter(const WtConfig *config, const char *agentName, const 
     if (timeoutSeconds <= 0) timeoutSeconds = 1800;
     int maxOutputBytes = task->maxOutputBytes > 0 ? task->maxOutputBytes : config->adapterMaxOutputBytes;
     if (maxOutputBytes <= 0) maxOutputBytes = 1048576;
-
     char actor[128];
     snprintf(actor, sizeof(actor), "wt-agent@%s", agentName);
+    char autonomyLevel[WT_TASK_POLICY_SIZE];
+    char autonomyReason[256];
+    int elevated = autonomyGrantActive(config, agentName, task, "codex", (long long)time(NULL) * 1000LL,
+                                       autonomyLevel, sizeof(autonomyLevel),
+                                       autonomyReason, sizeof(autonomyReason));
+    wtTaskAppendAutonomyEvent(config->taskLedgerPath, task->taskId, actor, "codex",
+                              elevated ? "adapter_invocation_elevated" : "adapter_invocation",
+                              "codex-cli", autonomyLevel, autonomyReason, elevated, -1,
+                              config->fsyncEachMessage);
+
     char runningMessage[512];
     snprintf(runningMessage, sizeof(runningMessage), "Codex adapter started for taskId=%s", task->taskId);
     wtTaskAppendStatusEvent(config->taskLedgerPath, task->taskId, "running", actor, runningMessage, config->fsyncEachMessage);
@@ -197,48 +368,56 @@ static int runCodexAdapter(const WtConfig *config, const char *agentName, const 
         return 1;
     }
     if (child == 0) {
+        /* Make this child the leader of its own process group so the wait
+         * helper can SIGTERM/SIGKILL the whole tree on cancel or timeout. */
+        setpgid(0, 0);
         int stdoutFd = open(stdoutPath, O_CREAT | O_TRUNC | O_WRONLY, 0644);
         int stderrFd = open(stderrPath, O_CREAT | O_TRUNC | O_WRONLY, 0644);
         if (stdoutFd >= 0) dup2(stdoutFd, STDOUT_FILENO);
         if (stderrFd >= 0) dup2(stderrFd, STDERR_FILENO);
         if (stdoutFd > 2) close(stdoutFd);
         if (stderrFd > 2) close(stderrFd);
-        execlp(config->gptCommand, config->gptCommand,
-               "exec",
-               "--ephemeral",
-               "--skip-git-repo-check",
-               "--cd", workspace,
-               "--sandbox", "workspace-write",
-               "--ask-for-approval", "never",
-               "--output-last-message", resultPath,
-               prompt,
-               (char *)NULL);
+        char *args[20];
+        int argc = 0;
+        args[argc++] = (char *)config->gptCommand;
+        args[argc++] = "exec";
+        args[argc++] = "--ephemeral";
+        args[argc++] = "--skip-git-repo-check";
+        args[argc++] = "--cd";
+        args[argc++] = workspace;
+        args[argc++] = "--sandbox";
+        args[argc++] = elevated ? "danger-full-access" : "workspace-write";
+        args[argc++] = "--ask-for-approval";
+        args[argc++] = elevated ? "never" : "on-request";
+        args[argc++] = "--output-last-message";
+        args[argc++] = resultPath;
+        args[argc++] = prompt;
+        args[argc] = NULL;
+        execvp(config->gptCommand, args);
         perror("exec codex");
         _exit(127);
     }
+    /* Also set the child's pgid from the parent in case the child raced past
+     * exec before its own setpgid; both call sites are idempotent. */
+    setpgid(child, child);
 
     int status = 0;
     int timedOut = 0;
-    time_t start = time(NULL);
-    while (1) {
-        pid_t done = waitpid(child, &status, WNOHANG);
-        if (done == child) {
-            break;
-        }
-        if (done < 0) {
-            perror("wait codex");
-            return 1;
-        }
-        if ((int)(time(NULL) - start) >= timeoutSeconds) {
-            kill(child, SIGKILL);
-            waitpid(child, &status, 0);
-            timedOut = 1;
-            break;
-        }
-        sleep(1);
+    int cancelled = 0;
+    long long finalLeaseExpiry = 0;
+    if (waitForAdapterChild(config, agentName, task, child, timeoutSeconds,
+                            &status, &timedOut, &cancelled, &finalLeaseExpiry) != 0) {
+        return 1;
     }
 
-    int exitCode = timedOut ? 124 : (WIFEXITED(status) ? WEXITSTATUS(status) : 125);
+    int exitCode;
+    if (cancelled) {
+        exitCode = 130; /* SIGTERM convention */
+    } else if (timedOut) {
+        exitCode = 124;
+    } else {
+        exitCode = WIFEXITED(status) ? WEXITSTATUS(status) : 125;
+    }
     capFileSize(stdoutPath, maxOutputBytes);
     capFileSize(stderrPath, maxOutputBytes);
     capFileSize(resultPath, maxOutputBytes);
@@ -270,16 +449,25 @@ static int runCodexAdapter(const WtConfig *config, const char *agentName, const 
     writeTextFile(manifestPath, manifest);
 
     char eventMessage[1024];
-    snprintf(eventMessage, sizeof(eventMessage), "Codex adapter exitCode=%d timedOut=%s; see task workspace manifest.",
-             exitCode, timedOut ? "true" : "false");
-    const char *finalStatus = exitCode == 0 ? "complete" : "failed";
+    snprintf(eventMessage, sizeof(eventMessage),
+             "Codex adapter exitCode=%d timedOut=%s cancelled=%s; see task workspace manifest.",
+             exitCode, timedOut ? "true" : "false", cancelled ? "true" : "false");
+    /* Cancelled runs land as "cancelled" so the artifact promotion path can
+     * filter them out (operator policy: cancelled output never gets promoted). */
+    const char *finalStatus = cancelled ? "cancelled" : (exitCode == 0 ? "complete" : "failed");
     /* Classify the failure so the operator can see why this attempt died. */
     const char *retryCause = NULL;
-    if (exitCode != 0) {
+    if (cancelled) {
+        retryCause = "operator_cancel";
+    } else if (exitCode != 0) {
         retryCause = timedOut ? "timeout" : (exitCode == 127 ? "adapter_unavailable" : "exit_nonzero");
     }
     wtTaskAppendStatusEventWithCause(config->taskLedgerPath, task->taskId, finalStatus, actor,
                                      eventMessage, retryCause, config->fsyncEachMessage);
+    wtTaskAppendAutonomyEvent(config->taskLedgerPath, task->taskId, actor, "codex",
+                              elevated ? "adapter_exit_elevated" : "adapter_exit",
+                              "codex-cli", autonomyLevel, autonomyReason, elevated, exitCode,
+                              config->fsyncEachMessage);
 
     char detail[1024];
     snprintf(detail, sizeof(detail), "codex adapter exitCode=%d workspace=%s", exitCode, workspace);
@@ -339,6 +527,17 @@ static int runCliArtifactAdapter(const WtConfig *config, const char *agentName,
 
     char actor[128];
     snprintf(actor, sizeof(actor), "wt-agent@%s", agentName);
+    char autonomyLevel[WT_TASK_POLICY_SIZE];
+    char autonomyReason[256];
+    int elevated = autonomyGrantActive(config, agentName, task, adapterName, (long long)time(NULL) * 1000LL,
+                                       autonomyLevel, sizeof(autonomyLevel),
+                                       autonomyReason, sizeof(autonomyReason));
+    char commandClass[128];
+    snprintf(commandClass, sizeof(commandClass), "%s-cli", adapterName);
+    wtTaskAppendAutonomyEvent(config->taskLedgerPath, task->taskId, actor, adapterName,
+                              elevated ? "adapter_invocation_elevated" : "adapter_invocation",
+                              commandClass, autonomyLevel, autonomyReason, elevated, -1,
+                              config->fsyncEachMessage);
     char runningMessage[512];
     snprintf(runningMessage, sizeof(runningMessage), "%s adapter started for taskId=%s", adapterName, task->taskId);
     wtTaskAppendStatusEvent(config->taskLedgerPath, task->taskId, "running", actor, runningMessage, config->fsyncEachMessage);
@@ -350,6 +549,8 @@ static int runCliArtifactAdapter(const WtConfig *config, const char *agentName,
         return 1;
     }
     if (child == 0) {
+        /* Process-group leader so the wait helper can SIGTERM/SIGKILL the tree. */
+        setpgid(0, 0);
         int stdoutFd = open(stdoutPath, O_CREAT | O_TRUNC | O_WRONLY, 0644);
         int stderrFd = open(stderrPath, O_CREAT | O_TRUNC | O_WRONLY, 0644);
         if (stdoutFd >= 0) dup2(stdoutFd, STDOUT_FILENO);
@@ -361,9 +562,12 @@ static int runCliArtifactAdapter(const WtConfig *config, const char *agentName,
             _exit(126);
         }
         if (strcmp(adapterName, "claude") == 0) {
+            if (elevated) {
+                execlp(command, command, "--dangerously-skip-permissions", "--bare", "--print", prompt, (char *)NULL);
+            }
             execlp(command, command, "--bare", "--print", prompt, (char *)NULL);
         } else if (strcmp(adapterName, "gemini") == 0) {
-            execlp(command, command, "--skip-trust", "--approval-mode", "plan",
+            execlp(command, command, "--skip-trust", "--approval-mode", elevated ? "yolo" : "plan",
                    "--output-format", "text", "--prompt", prompt, (char *)NULL);
         } else {
             execlp(command, command, prompt, (char *)NULL);
@@ -371,27 +575,25 @@ static int runCliArtifactAdapter(const WtConfig *config, const char *agentName,
         perror("exec cli artifact adapter");
         _exit(127);
     }
+    setpgid(child, child);
 
     int status = 0;
     int timedOut = 0;
-    time_t start = time(NULL);
-    while (1) {
-        pid_t done = waitpid(child, &status, WNOHANG);
-        if (done == child) break;
-        if (done < 0) {
-            perror("wait cli artifact adapter");
-            return 1;
-        }
-        if ((int)(time(NULL) - start) >= timeoutSeconds) {
-            kill(child, SIGKILL);
-            waitpid(child, &status, 0);
-            timedOut = 1;
-            break;
-        }
-        sleep(1);
+    int cancelled = 0;
+    long long finalLeaseExpiry = 0;
+    if (waitForAdapterChild(config, agentName, task, child, timeoutSeconds,
+                            &status, &timedOut, &cancelled, &finalLeaseExpiry) != 0) {
+        return 1;
     }
 
-    int exitCode = timedOut ? 124 : (WIFEXITED(status) ? WEXITSTATUS(status) : 125);
+    int exitCode;
+    if (cancelled) {
+        exitCode = 130;
+    } else if (timedOut) {
+        exitCode = 124;
+    } else {
+        exitCode = WIFEXITED(status) ? WEXITSTATUS(status) : 125;
+    }
     capFileSize(stdoutPath, maxOutputBytes);
     capFileSize(stderrPath, maxOutputBytes);
     char resultSnippet[2048];
@@ -425,15 +627,22 @@ static int runCliArtifactAdapter(const WtConfig *config, const char *agentName,
     writeTextFile(manifestPath, manifest);
 
     char eventMessage[1024];
-    snprintf(eventMessage, sizeof(eventMessage), "%s adapter exitCode=%d timedOut=%s; see task workspace manifest.",
-             adapterName, exitCode, timedOut ? "true" : "false");
-    const char *finalStatus = exitCode == 0 ? "complete" : "failed";
+    snprintf(eventMessage, sizeof(eventMessage),
+             "%s adapter exitCode=%d timedOut=%s cancelled=%s; see task workspace manifest.",
+             adapterName, exitCode, timedOut ? "true" : "false", cancelled ? "true" : "false");
+    const char *finalStatus = cancelled ? "cancelled" : (exitCode == 0 ? "complete" : "failed");
     const char *retryCause = NULL;
-    if (exitCode != 0) {
+    if (cancelled) {
+        retryCause = "operator_cancel";
+    } else if (exitCode != 0) {
         retryCause = timedOut ? "timeout" : (exitCode == 127 ? "adapter_unavailable" : "exit_nonzero");
     }
     wtTaskAppendStatusEventWithCause(config->taskLedgerPath, task->taskId, finalStatus, actor,
                                      eventMessage, retryCause, config->fsyncEachMessage);
+    wtTaskAppendAutonomyEvent(config->taskLedgerPath, task->taskId, actor, adapterName,
+                              elevated ? "adapter_exit_elevated" : "adapter_exit",
+                              commandClass, autonomyLevel, autonomyReason, elevated, exitCode,
+                              config->fsyncEachMessage);
 
     char detail[1024];
     snprintf(detail, sizeof(detail), "%s adapter exitCode=%d workspace=%s", adapterName, exitCode, workspace);
@@ -486,8 +695,11 @@ static int handleAssignedTask(const WtConfig *config, const char *agentName) {
         }
     }
     int leaseAttempt = previousAttempt + 1;
-    /* 15-minute lease window matches the stuck-task threshold used in projection. */
-    long long leaseExpiresAtUnixMs = nowUnixMs + 15LL * 60LL * 1000LL;
+    /* Lease window is configurable in Phase 3 Sprint 1; default 900s matches
+     * the prior hard-coded 15-minute value the projection uses for stuck-task
+     * detection. */
+    int leaseDuration = config->leaseDurationSeconds > 0 ? config->leaseDurationSeconds : 900;
+    long long leaseExpiresAtUnixMs = nowUnixMs + (long long)leaseDuration * 1000LL;
     if (wtTaskAppendLeaseEvent(config->taskLedgerPath, task.taskId, agentName, leaseAttempt,
                                leaseExpiresAtUnixMs, config->fsyncEachMessage) != 0) {
         perror("record task lease");
@@ -495,6 +707,14 @@ static int handleAssignedTask(const WtConfig *config, const char *agentName) {
     }
     char actor[128];
     snprintf(actor, sizeof(actor), "wt-agent@%s", agentName);
+    char effectiveLevel[WT_TASK_POLICY_SIZE];
+    effectiveAutonomyLevel(config, agentName, &task, effectiveLevel, sizeof(effectiveLevel));
+    if (strcmp(effectiveLevel, "autonomous") == 0) {
+        wtTaskAppendAutonomyEvent(config->taskLedgerPath, task.taskId, actor, agentName,
+                                  "grant_observed", "task-claim", effectiveLevel,
+                                  "agent claim entered autonomous policy path", 1, -1,
+                                  config->fsyncEachMessage);
+    }
     if (isCodexEligibleTask(config, agentName, &task)) {
         return runCodexAdapter(config, agentName, &task);
     }

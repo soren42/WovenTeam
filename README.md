@@ -140,7 +140,10 @@ eligible task for an isolated task workspace:
   --role backend_dev \
   --agent chatgpt \
   --tool-profile repo_branch \
-  --model openai/gpt-5.3-codex
+  --model openai/gpt-5.3-codex \
+  --autonomy-level autonomous \
+  --autonomy-ttl 3600 \
+  --autonomy-scope workspace
 ```
 
 Adapter behavior and artifacts are documented in `docs/adapters/codex-adapter.md`.
@@ -148,6 +151,12 @@ Task workspaces are visible through `GET /api/task-artifacts?taskId=...` and
 the web console task detail artifact viewer.
 The shared Phase 1 adapter contract, including the opt-in Claude and Gemini
 artifact adapters, is documented in `docs/adapters/adapter-contract-v0.1.md`.
+Phase 3 autonomy grants gate elevated adapter flags. Revoke a grant with:
+
+```sh
+./bin/wt-task autonomy revoke task_example_001 --reason "operator stop"
+```
+
 Sprint 3 routing, capacity, and review gate behavior is documented in
 `docs/orchestration/routing-and-gates.md`.
 Sprint 4 quota and operations behavior is documented in

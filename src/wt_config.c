@@ -68,6 +68,24 @@ void wtConfigInitDefaults(WtConfig *config) {
     copyString(config->blockedVendors, sizeof(config->blockedVendors), "deepseek");
     config->tokenBudgetPerInitiative = 0;
     config->tokenBudgetPerModelFamily = 0;
+    /* Phase 3 Sprint 1 defaults. heartbeatIntervalSeconds matches the plan
+     * (2 h); leaseRenewalIntervalSeconds is chosen so a renewal happens twice
+     * inside a default 15-min lease window. */
+    config->heartbeatIntervalSeconds = 7200;
+    config->leaseRenewalIntervalSeconds = 600;
+    config->leaseDurationSeconds = 900;
+    config->cancelPollIntervalSeconds = 5;
+    copyString(config->slackWebhookFile, sizeof(config->slackWebhookFile), "config/slack_webhook.txt");
+    config->notificationEscalateKey[0] = '\0';
+    config->notificationStuckKey[0] = '\0';
+    /*
+     * Phase 3 Sprint 2: empty defaults preserve profile-derived behavior while
+     * still giving operators config keys to pin autonomy per agent.
+     */
+    config->defaultAutonomyLevel[0] = '\0';
+    config->claudeDefaultAutonomyLevel[0] = '\0';
+    config->chatgptDefaultAutonomyLevel[0] = '\0';
+    config->geminiDefaultAutonomyLevel[0] = '\0';
 }
 
 int wtConfigSetValue(WtConfig *config, const char *key, const char *value) {
@@ -137,6 +155,28 @@ int wtConfigSetValue(WtConfig *config, const char *key, const char *value) {
         config->tokenBudgetPerInitiative = atol(value);
     } else if (strcmp(key, "tokenBudgetPerModelFamily") == 0) {
         config->tokenBudgetPerModelFamily = atol(value);
+    } else if (strcmp(key, "heartbeatIntervalSeconds") == 0) {
+        config->heartbeatIntervalSeconds = atoi(value);
+    } else if (strcmp(key, "leaseRenewalIntervalSeconds") == 0) {
+        config->leaseRenewalIntervalSeconds = atoi(value);
+    } else if (strcmp(key, "leaseDurationSeconds") == 0) {
+        config->leaseDurationSeconds = atoi(value);
+    } else if (strcmp(key, "cancelPollIntervalSeconds") == 0) {
+        config->cancelPollIntervalSeconds = atoi(value);
+    } else if (strcmp(key, "slackWebhookFile") == 0) {
+        copyString(config->slackWebhookFile, sizeof(config->slackWebhookFile), value);
+    } else if (strcmp(key, "notificationEscalateKey") == 0) {
+        copyString(config->notificationEscalateKey, sizeof(config->notificationEscalateKey), value);
+    } else if (strcmp(key, "notificationStuckKey") == 0) {
+        copyString(config->notificationStuckKey, sizeof(config->notificationStuckKey), value);
+    } else if (strcmp(key, "defaultAutonomyLevel") == 0) {
+        copyString(config->defaultAutonomyLevel, sizeof(config->defaultAutonomyLevel), value);
+    } else if (strcmp(key, "claudeDefaultAutonomyLevel") == 0) {
+        copyString(config->claudeDefaultAutonomyLevel, sizeof(config->claudeDefaultAutonomyLevel), value);
+    } else if (strcmp(key, "chatgptDefaultAutonomyLevel") == 0) {
+        copyString(config->chatgptDefaultAutonomyLevel, sizeof(config->chatgptDefaultAutonomyLevel), value);
+    } else if (strcmp(key, "geminiDefaultAutonomyLevel") == 0) {
+        copyString(config->geminiDefaultAutonomyLevel, sizeof(config->geminiDefaultAutonomyLevel), value);
     } else {
         return -1;
     }
@@ -208,7 +248,18 @@ int wtConfigWriteFile(const WtConfig *config, const char *path) {
         "geminiCommand=%s\n"
         "blockedVendors=%s\n"
         "tokenBudgetPerInitiative=%ld\n"
-        "tokenBudgetPerModelFamily=%ld\n",
+        "tokenBudgetPerModelFamily=%ld\n"
+        "heartbeatIntervalSeconds=%d\n"
+        "leaseRenewalIntervalSeconds=%d\n"
+        "leaseDurationSeconds=%d\n"
+        "cancelPollIntervalSeconds=%d\n"
+        "slackWebhookFile=%s\n"
+        "notificationEscalateKey=%s\n"
+        "notificationStuckKey=%s\n"
+        "defaultAutonomyLevel=%s\n"
+        "claudeDefaultAutonomyLevel=%s\n"
+        "chatgptDefaultAutonomyLevel=%s\n"
+        "geminiDefaultAutonomyLevel=%s\n",
         config->roomName,
         config->roomLogPath,
         config->taskLedgerPath,
@@ -241,7 +292,18 @@ int wtConfigWriteFile(const WtConfig *config, const char *path) {
         config->geminiCommand,
         config->blockedVendors,
         config->tokenBudgetPerInitiative,
-        config->tokenBudgetPerModelFamily) > 0;
+        config->tokenBudgetPerModelFamily,
+        config->heartbeatIntervalSeconds,
+        config->leaseRenewalIntervalSeconds,
+        config->leaseDurationSeconds,
+        config->cancelPollIntervalSeconds,
+        config->slackWebhookFile,
+        config->notificationEscalateKey,
+        config->notificationStuckKey,
+        config->defaultAutonomyLevel,
+        config->claudeDefaultAutonomyLevel,
+        config->chatgptDefaultAutonomyLevel,
+        config->geminiDefaultAutonomyLevel) > 0;
     return fclose(file) == 0 && ok ? 0 : -1;
 }
 
@@ -281,4 +343,16 @@ void wtConfigApplyEnvironment(WtConfig *config) {
     if ((value = getenv("WT_BLOCKED_VENDORS"))) wtConfigSetValue(config, "blockedVendors", value);
     if ((value = getenv("WT_TOKEN_BUDGET_PER_INITIATIVE"))) wtConfigSetValue(config, "tokenBudgetPerInitiative", value);
     if ((value = getenv("WT_TOKEN_BUDGET_PER_MODEL_FAMILY"))) wtConfigSetValue(config, "tokenBudgetPerModelFamily", value);
+    /* Phase 3 Sprint 1 environment overrides. */
+    if ((value = getenv("WT_HEARTBEAT_INTERVAL_SECONDS"))) wtConfigSetValue(config, "heartbeatIntervalSeconds", value);
+    if ((value = getenv("WT_LEASE_RENEWAL_INTERVAL_SECONDS"))) wtConfigSetValue(config, "leaseRenewalIntervalSeconds", value);
+    if ((value = getenv("WT_LEASE_DURATION_SECONDS"))) wtConfigSetValue(config, "leaseDurationSeconds", value);
+    if ((value = getenv("WT_CANCEL_POLL_INTERVAL_SECONDS"))) wtConfigSetValue(config, "cancelPollIntervalSeconds", value);
+    if ((value = getenv("WT_SLACK_WEBHOOK_FILE"))) wtConfigSetValue(config, "slackWebhookFile", value);
+    if ((value = getenv("WT_NOTIFICATION_ESCALATE_KEY"))) wtConfigSetValue(config, "notificationEscalateKey", value);
+    if ((value = getenv("WT_NOTIFICATION_STUCK_KEY"))) wtConfigSetValue(config, "notificationStuckKey", value);
+    if ((value = getenv("WT_DEFAULT_AUTONOMY_LEVEL"))) wtConfigSetValue(config, "defaultAutonomyLevel", value);
+    if ((value = getenv("WT_CLAUDE_DEFAULT_AUTONOMY_LEVEL"))) wtConfigSetValue(config, "claudeDefaultAutonomyLevel", value);
+    if ((value = getenv("WT_CHATGPT_DEFAULT_AUTONOMY_LEVEL"))) wtConfigSetValue(config, "chatgptDefaultAutonomyLevel", value);
+    if ((value = getenv("WT_GEMINI_DEFAULT_AUTONOMY_LEVEL"))) wtConfigSetValue(config, "geminiDefaultAutonomyLevel", value);
 }

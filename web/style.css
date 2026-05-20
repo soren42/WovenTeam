@@ -1108,6 +1108,84 @@ kbd {
 }
 
 /*
+ * Phase 3 Sprint 1: status board panel - heartbeats + recent milestones from
+ * /api/status. Sits alongside alerts in the status grid. Browser JS only per
+ * project directive; no external framework.
+ */
+.status-board-panel {
+  display: flex;
+  flex-direction: column;
+  min-height: 132px;
+}
+.status-board-heartbeats {
+  display: grid;
+  gap: 3px;
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--edge);
+}
+.status-board-row {
+  display: grid;
+  grid-template-columns: auto auto 1fr;
+  column-gap: 8px;
+  align-items: baseline;
+  font-size: 10.5px;
+}
+.status-board-row strong {
+  font-family: var(--mono);
+  color: var(--text);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.status-board-row .age {
+  font-family: var(--mono);
+  color: var(--text-dim);
+  font-size: 10px;
+}
+.status-board-row small {
+  color: var(--text-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.status-board-milestones {
+  display: grid;
+  gap: 2px;
+  padding: 6px 12px 10px;
+  max-height: 96px;
+  overflow-y: auto;
+}
+.status-board-milestone {
+  display: grid;
+  grid-template-columns: 64px auto 1fr;
+  column-gap: 6px;
+  align-items: baseline;
+  font-size: 10px;
+}
+.status-board-milestone b {
+  font-family: var(--mono);
+  font-size: 9.5px;
+  color: var(--text-dim);
+  letter-spacing: 0.04em;
+}
+.status-board-milestone[data-milestone="escalate"] b { color: var(--alert, #ef4444); }
+.status-board-milestone[data-milestone="complete"] b { color: var(--ok, #10b981); }
+.status-board-milestone[data-milestone="review"] b { color: var(--warn, #f59e0b); }
+.status-board-milestone strong {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.status-board-milestone small {
+  color: var(--text-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/*
  * Sprint 4 promoted-asset inventory panel - lists accepted artifacts under the
  * currently focused initiative.
  */
@@ -1643,6 +1721,12 @@ kbd {
   color: var(--text);
   font-family: var(--mono);
   font-size: 13px;
+}
+
+.autonomy-controls {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr) minmax(96px, .7fr);
+  gap: 8px;
 }
 
 .launch-row {
