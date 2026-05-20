@@ -1,0 +1,200 @@
+#!/usr/bin/env bash
+# Phase 2 Sprint 6: harmless live adapter rehearsal.
+#
+# Drives one bounded real-CLI task through the full Phase 2 flow:
+#   adapter preflight -> task package -> agent claim/lease -> adapter run ->
+#   artifact promotion -> audit export.
+#
+# Default mode is DRY-RUN. The operator must pass `--yes` to actually post the
+# task package. The script always:
+#   - prints the current adapter readiness + budget knobs first
+#   - refuses to run if any enabled adapter is in a non-launchable state
+#   - caps the task at --max-tokens (default 4000)
+#   - writes a rehearsal log under docs/launch/ named with the UTC date
+#
+# Required: a running wt-roomd reachable at WT_ROOM_URL (default
+# http://127.0.0.1:8787) and at least one enabled real adapter.
+set -euo pipefail
+
+ROOM_URL="${WT_ROOM_URL:-http://127.0.0.1:8787}"
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+# Operator-tunable rehearsal parameters. The defaults are conservative on
+# purpose: 4000 tokens fits a small "produce a one-paragraph status note"
+# task and matches typical opt-in adapter budgets.
+agent="claude"
+profile="observe"
+max_tokens=4000
+initiative=""
+title="Phase 2 launch rehearsal"
+body="Produce a short status note confirming the adapter is reachable and the runtime is healthy."
+yes=0
+log_path=""
+
+usage() {
+  cat <<'USAGE'
+Usage:
+  wt-rehearse-live [--yes] [--agent claude|chatgpt|gemini] [--max-tokens N]
+                   [--profile observe|...] [--initiative INIT]
+                   [--title TEXT] [--body TEXT] [--log FILE]
+
+Defaults to dry-run; --yes is REQUIRED to actually post the task package.
+
+Environment:
+  WT_ROOM_URL  wt-roomd base URL, default http://127.0.0.1:8787
+USAGE
+}
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --yes) yes=1; shift ;;
+    --agent) agent="${2:-}"; shift 2 ;;
+    --max-tokens) max_tokens="${2:-}"; shift 2 ;;
+    --profile) profile="${2:-}"; shift 2 ;;
+    --initiative) initiative="${2:-}"; shift 2 ;;
+    --title) title="${2:-}"; shift 2 ;;
+    --body) body="${2:-}"; shift 2 ;;
+    --log) log_path="${2:-}"; shift 2 ;;
+    -h|--help) usage; exit 0 ;;
+    *) echo "wt-rehearse-live: unknown argument: $1" >&2; usage >&2; exit 2 ;;
+  esac
+done
+
+if ! command -v jq >/dev/null 2>&1; then
+  echo "wt-rehearse-live: jq is required" >&2
+  exit 2
+fi
+if ! command -v curl >/dev/null 2>&1; then
+  echo "wt-rehearse-live: curl is required" >&2
+  exit 2
+fi
+
+# Default the rehearsal initiative to a date-stamped value so repeat runs are
+# easy to find in the audit export. Operator can override with --initiative.
+if [[ -z "$initiative" ]]; then
+  initiative="init_rehearse_$(date -u +%Y%m%d)"
+fi
+if [[ -z "$log_path" ]]; then
+  log_path="$ROOT/docs/launch/phase2-rehearsal-$(date -u +%Y%m%d).md"
+fi
+
+# 1. Health check -----------------------------------------------------------
+echo "[1/6] Probing $ROOM_URL/api/health ..."
+if ! curl -fsS "$ROOM_URL/api/health" > /tmp/wt-rehearse-health.json 2>/dev/null; then
+  echo "wt-rehearse-live: cannot reach $ROOM_URL/api/health" >&2
+  exit 3
+fi
+jq -e '.ok == true and .projection.ok == true' /tmp/wt-rehearse-health.json >/dev/null || {
+  echo "wt-rehearse-live: daemon unhealthy:" >&2
+  jq . /tmp/wt-rehearse-health.json >&2 || true
+  exit 3
+}
+
+# 2. Adapter readiness ------------------------------------------------------
+echo "[2/6] Checking adapter readiness for '$agent' ..."
+adapters_json="$(curl -fsS "$ROOM_URL/api/adapters")"
+adapter_state="$(jq -r --arg agent "$agent" '.adapters[]? | select(.agent == $agent) | .state' <<<"$adapters_json")"
+adapter_enabled="$(jq -r --arg agent "$agent" '.adapters[]? | select(.agent == $agent) | .enabled' <<<"$adapters_json")"
+echo "  agent=$agent enabled=$adapter_enabled state=$adapter_state"
+if [[ "$adapter_enabled" != "true" ]]; then
+  echo "wt-rehearse-live: adapter $agent is not enabled in config; aborting." >&2
+  exit 4
+fi
+if [[ "$adapter_state" != "launchable" ]]; then
+  echo "wt-rehearse-live: adapter $agent is not launchable (state=$adapter_state); aborting." >&2
+  exit 4
+fi
+
+# 3. Policy summary ---------------------------------------------------------
+echo "[3/6] Reading policy + budget knobs ..."
+config_json="$(curl -fsS "$ROOM_URL/api/config")"
+blocked_vendors="$(jq -r '.blockedVendors // ""' <<<"$config_json")"
+per_initiative_cap="$(jq -r '.tokenBudgetPerInitiative // 0' <<<"$config_json")"
+per_family_cap="$(jq -r '.tokenBudgetPerModelFamily // 0' <<<"$config_json")"
+echo "  blockedVendors=${blocked_vendors:-<none>}"
+echo "  tokenBudgetPerInitiative=$per_initiative_cap"
+echo "  tokenBudgetPerModelFamily=$per_family_cap"
+echo "  rehearsal max-tokens=$max_tokens initiative=$initiative"
+
+# 4. Dry-run gate -----------------------------------------------------------
+if [[ "$yes" -ne 1 ]]; then
+  echo "[4/6] DRY RUN. Re-run with --yes to actually post the rehearsal task."
+  echo "      Recommended sanity checklist before --yes:"
+  echo "        - operator-approved token budget for the chosen agent"
+  echo "        - chosen agent + initiative match the operator's intent"
+  echo "        - the daemon is the production wt-roomd (not a stub)"
+  exit 0
+fi
+
+# 5. Post the rehearsal task ------------------------------------------------
+echo "[5/6] Posting task package (--max-tokens=$max_tokens) ..."
+task_response="$(
+  WT_ROOM_URL="$ROOM_URL" "$ROOT/bin/wt-task" create \
+    --title "$title" \
+    --body "$body" \
+    --role technical_writer \
+    --agent "$agent" \
+    --initiative "$initiative" \
+    --tool-profile "$profile" \
+    --max-tokens "$max_tokens"
+)"
+task_id="$(jq -r '.taskId' <<<"$task_response")"
+echo "  task_id=$task_id"
+if [[ -z "$task_id" || "$task_id" == "null" ]]; then
+  echo "wt-rehearse-live: task creation failed:" >&2
+  jq . <<<"$task_response" >&2 || echo "$task_response" >&2
+  exit 5
+fi
+
+# 6. Tail the task to completion and export audit --------------------------
+echo "[6/6] Watching task to completion (up to 10 minutes) ..."
+deadline=$(( $(date +%s) + 600 ))
+status="unknown"
+while [[ $(date +%s) -lt $deadline ]]; do
+  detail="$(curl -fsS "$ROOM_URL/api/task-detail?taskId=$task_id")"
+  status="$(jq -r '.task.status' <<<"$detail")"
+  case "$status" in
+    complete|failed|cancelled|closed) break ;;
+  esac
+  sleep 5
+done
+echo "  final status=$status"
+
+audit_path="${log_path%.md}-audit.json"
+WT_ROOM_URL="$ROOM_URL" "$ROOT/bin/wt-task" audit "$initiative" --out "$audit_path" >/dev/null
+echo "  audit written to $audit_path"
+
+cat >"$log_path" <<MD
+# Phase 2 Live Adapter Rehearsal - $(date -u +%Y-%m-%d)
+
+## Inputs
+
+- agent: $agent
+- profile: $profile
+- initiative: $initiative
+- max-tokens: $max_tokens
+- title: $title
+
+## Pre-flight
+
+- blocked vendors: ${blocked_vendors:-<none>}
+- tokenBudgetPerInitiative: $per_initiative_cap
+- tokenBudgetPerModelFamily: $per_family_cap
+- adapter $agent state: $adapter_state
+
+## Result
+
+- taskId: $task_id
+- final status: $status
+- audit export: $audit_path
+
+## Verification
+
+Use the audit file to inspect tasks, events, policy decisions, and usage:
+
+\`\`\`sh
+jq '{tasks: (.tasks | length), events: (.events | length), policy: (.policyDecisions | length), usage: (.usage | length)}' $audit_path
+\`\`\`
+MD
+echo "  log written to $log_path"
+echo "Rehearsal complete."

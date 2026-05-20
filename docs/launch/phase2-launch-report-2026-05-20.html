@@ -1,0 +1,403 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>WovenTeam Phase 2 Launch Status Report</title>
+  <!--
+    Phase 2 launch status report. Self-contained (inline CSS/SVG/JS) so the
+    document archives cleanly under docs/launch/. Mirrors the style used by
+    the per-sprint closeouts (Sprint 3 / 4 / 5).
+  -->
+  <style>
+    :root {
+      color-scheme: light;
+      --ink: #17202a;
+      --muted: #5c6875;
+      --line: #d7dee6;
+      --paper: #f7f9fb;
+      --panel: #ffffff;
+      --blue: #2563a8;
+      --green: #1f7a5a;
+      --amber: #a16207;
+      --red: #b42318;
+      --violet: #6d4aff;
+      --teal: #0f766e;
+      --soft-blue: #e7f0fa;
+      --soft-green: #e7f5ee;
+      --soft-amber: #fff4db;
+      --soft-red: #fdeceb;
+      --soft-violet: #eeeafe;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      color: var(--ink);
+      background: var(--paper);
+      line-height: 1.48;
+    }
+    header.hero {
+      background: #11253a;
+      color: #fff;
+      padding: 38px clamp(18px, 5vw, 64px) 30px;
+    }
+    header.hero h1 {
+      margin: 0 0 10px;
+      max-width: 980px;
+      font-size: clamp(30px, 5vw, 54px);
+      line-height: 1.02;
+    }
+    header.hero p {
+      max-width: 900px;
+      margin: 0;
+      color: #dbe7f4;
+      font-size: 18px;
+    }
+    header.hero .meta {
+      margin-top: 14px;
+      color: #aac4dd;
+      font-size: 14px;
+    }
+    nav {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      padding: 14px clamp(18px, 5vw, 64px);
+      background: #fff;
+      border-bottom: 1px solid var(--line);
+      position: sticky;
+      top: 0;
+      z-index: 2;
+    }
+    nav a, button.filter {
+      border: 1px solid var(--line);
+      background: #fff;
+      color: var(--ink);
+      border-radius: 6px;
+      padding: 8px 10px;
+      font: inherit;
+      text-decoration: none;
+      cursor: pointer;
+    }
+    nav a:hover, button.filter:hover, button.filter.active {
+      border-color: var(--blue);
+      color: var(--blue);
+      background: var(--soft-blue);
+    }
+    main {
+      max-width: 1180px;
+      margin: 0 auto;
+      padding: 24px clamp(16px, 4vw, 28px) 48px;
+    }
+    section {
+      margin: 0 0 28px;
+      padding: 24px;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+    }
+    h2 { margin: 0 0 14px; font-size: 24px; }
+    h3 { margin: 0 0 8px; font-size: 18px; }
+    p { margin: 0 0 12px; }
+    ul, ol { margin: 0; padding-left: 22px; }
+    li + li { margin-top: 7px; }
+    code {
+      background: #eef2f6;
+      border: 1px solid #dfe6ee;
+      border-radius: 4px;
+      padding: 1px 4px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 0.95em;
+    }
+    pre {
+      margin: 12px 0;
+      padding: 12px 14px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: #fbfcfe;
+      overflow-x: auto;
+      font-size: 13px;
+      line-height: 1.45;
+    }
+    pre code { background: transparent; border: 0; padding: 0; }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(12, 1fr);
+      gap: 14px;
+    }
+    .card {
+      grid-column: span 4;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 16px;
+      background: #fbfcfe;
+    }
+    .wide { grid-column: span 6; }
+    .full { grid-column: 1 / -1; }
+    .status {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      margin-bottom: 10px;
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .04em;
+    }
+    .dot {
+      width: 9px;
+      height: 9px;
+      border-radius: 999px;
+      background: var(--blue);
+    }
+    .done .dot { background: var(--green); }
+    .next .dot { background: var(--blue); }
+    .risk .dot { background: var(--amber); }
+    .problem .dot { background: var(--red); }
+    .muted { color: var(--muted); }
+    .callout {
+      border-left: 4px solid var(--green);
+      padding: 12px 14px;
+      background: var(--soft-green);
+      border-radius: 6px;
+      margin: 12px 0 0;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 14px;
+    }
+    th, td {
+      text-align: left;
+      vertical-align: top;
+      padding: 10px;
+      border-bottom: 1px solid var(--line);
+    }
+    th { background: #f0f4f8; }
+    .diagram {
+      width: 100%;
+      height: auto;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+    }
+    .hide { display: none; }
+    .pill {
+      display: inline-block;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: 3px 8px;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      background: #f6f8fa;
+      color: var(--muted);
+    }
+    .pill.pass { color: var(--green); background: var(--soft-green); border-color: #b7dfcd; }
+    .pill.warn { color: var(--amber); background: var(--soft-amber); border-color: #f0d28c; }
+    .pill.held { color: var(--blue); background: var(--soft-blue); border-color: #b9d6f4; }
+    @media (max-width: 820px) {
+      nav { position: static; }
+      section { padding: 18px; }
+      .card, .wide { grid-column: 1 / -1; }
+    }
+  </style>
+</head>
+<body>
+  <header class="hero">
+    <h1>Phase 2 Launch Status Report</h1>
+    <p>Six sprints close the Phase 2 Functional Workbench plan. Adapter preflight, initiative model, workload control, artifact promotion, policy + audit, and launch rehearsal — each delivered, integration-tested, and folded into the CLI + console + operations runbook.</p>
+    <div class="meta">Generated 2026-05-20 · launch report · covers Sprints 1-6 against <code>docs/plans/phase2-functional-workbench-plan.html</code></div>
+  </header>
+
+  <nav aria-label="Report navigation">
+    <a href="#summary">Summary</a>
+    <a href="#sprints">Sprint Map</a>
+    <a href="#evidence">Test Evidence</a>
+    <a href="#parity">CLI / Console Parity</a>
+    <a href="#rehearsal">Rehearsal</a>
+    <a href="#risks">Risks</a>
+    <a href="#deferred">Deferred</a>
+    <button class="filter active" data-filter="all">All</button>
+    <button class="filter" data-filter="review">Review</button>
+    <button class="filter" data-filter="ops">Ops</button>
+    <button class="filter" data-filter="next">Next</button>
+  </nav>
+
+  <main>
+    <section id="summary" data-kind="review ops">
+      <h2>Definition Of Done — Phase 2</h2>
+      <div class="grid">
+        <article class="card done">
+          <span class="status"><span class="dot"></span>Met</span>
+          <h3>Functional workbench loop</h3>
+          <p>Initiative → tasks → routing → leasing → adapter → review → audit, in one operator surface (CLI + console) and one durable JSONL audit trail.</p>
+        </article>
+        <article class="card done">
+          <span class="status"><span class="dot"></span>Met</span>
+          <h3>Three model paths</h3>
+          <p>Claude, Codex (ChatGPT), and Gemini adapter paths land with preflight, opt-in enablement, and policy-classified failure modes.</p>
+        </article>
+        <article class="card done">
+          <span class="status"><span class="dot"></span>Met</span>
+          <h3>Zero silent failures</h3>
+          <p>Blocked vendors, budget overruns, capacity caps, lease expirations, and adapter timeouts all fail closed with a classified reason in the ledger, response, and UI.</p>
+        </article>
+      </div>
+      <div class="callout">
+        <strong>Result:</strong> 19/19 integration tests pass via <code>make test</code>, including <code>wt-phase1-e2e</code>, <code>wt-phase2-e2e</code>, and the new <code>wt-policy-audit</code> + <code>wt-artifact-promotion</code> harnesses. The launch rehearsal script (<code>bin/wt-rehearse-live</code>) is operator-gated and dry-runs by default.
+      </div>
+    </section>
+
+    <section id="sprints" data-kind="review">
+      <h2>Sprint Map</h2>
+      <table>
+        <thead><tr><th>Sprint</th><th>Theme</th><th>Key Deliverables</th><th>Closeout</th></tr></thead>
+        <tbody>
+          <tr>
+            <td>1</td>
+            <td>Adapter Hardening</td>
+            <td>Adapter preflight API + CLI, classified failure events, harmless live smoke task templates, adapter readiness in the UI.</td>
+            <td><code>docs/launch/phase2-spike1-adapter-preflight-2026-05-19.md</code></td>
+          </tr>
+          <tr>
+            <td>2</td>
+            <td>Initiatives</td>
+            <td>Initiative projection + APIs, <code>wt-task initiative</code> commands, initiative selector + summary + artifact layout.</td>
+            <td><code>docs/launch/phase2-spike2-initiatives-2026-05-19.md</code></td>
+          </tr>
+          <tr>
+            <td>3</td>
+            <td>Workload Control</td>
+            <td>Lease + reclaim events, classified retry causes, agent pause/resume, stuck-task detection, agent operations panel, operator reclaim CLI/API.</td>
+            <td><code>docs/launch/phase2-sprint3-closeout-2026-05-20.html</code></td>
+          </tr>
+          <tr>
+            <td>4</td>
+            <td>Artifact Promotion</td>
+            <td>Artifact state event (draft/reviewed/accepted/rejected/superseded), promotion + export CLI, accepted-asset inventory, console decision panel, alert feed, initiative + role filters, help overlay.</td>
+            <td><code>docs/launch/phase2-sprint4-closeout-2026-05-20.html</code></td>
+          </tr>
+          <tr>
+            <td>5</td>
+            <td>Policy + Audit</td>
+            <td>Central policy evaluator with stable reason codes, blocked-vendor + per-initiative + per-model-family + capacity enforcement, durable <code>policy_decision</code> events, combined audit export endpoint + CLI + Audit button.</td>
+            <td><code>docs/launch/phase2-sprint5-closeout-2026-05-20.html</code></td>
+          </tr>
+          <tr>
+            <td>6</td>
+            <td>Launch Rehearsal</td>
+            <td>Phase 2 E2E harness, opt-in <code>wt-rehearse-live</code> with dry-run default, Phase 2 sections in the operations runbook, cheat sheet refresh, this launch report.</td>
+            <td><em>this document</em></td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section id="evidence" data-kind="ops">
+      <h2>Test Evidence</h2>
+      <p><code>make test</code> runs every harness end-to-end in isolated tmp directories. Each test boots a fresh <code>wt-roomd</code>, exercises the contract, and tears down. No external CLI is invoked (live adapter coverage is operator-gated via <code>bin/wt-rehearse-live</code>).</p>
+      <pre><code>make all                       # build wt-roomd, wt-agent, wt-say, wt-tail
+make test                      # 19 integration tests
+make test-phase2-e2e           # just the Phase 2 launch-era harness</code></pre>
+      <table>
+        <thead><tr><th>Harness</th><th>Phase 2 surface exercised</th></tr></thead>
+        <tbody>
+          <tr><td><code>wt-adapter-preflight</code></td><td>Sprint 1: adapter readiness + classified failure modes.</td></tr>
+          <tr><td><code>wt-initiatives</code></td><td>Sprint 2: initiative projection, detail, close paths.</td></tr>
+          <tr><td><code>wt-agent-workload-control</code></td><td>Sprint 3: lease, pause/resume, attempt counts, stuck detection, reclaim (auto + operator), retry cause projection.</td></tr>
+          <tr><td><code>wt-artifact-promotion</code></td><td>Sprint 4: full draft → reviewed → accepted lifecycle, CLI verbs, export, per-initiative inventory, 400 validation.</td></tr>
+          <tr><td><code>wt-policy-audit</code></td><td>Sprint 5: blocked-vendor, model-agent mismatch, per-initiative + per-family budgets, policy_decision records, audit export contents, CLI parity, 404 on unknown.</td></tr>
+          <tr><td><code>wt-phase1-e2e</code></td><td>Phase 1 regression: routed adapter task, review gates, usage telemetry, backup/restore preview, restart recovery.</td></tr>
+          <tr><td><code>wt-phase2-e2e</code></td><td>Sprint 6: initiative + denial + lease + artifact + reclaim + audit + restart, all in one rehearsal harness.</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section id="parity" data-kind="review">
+      <h2>CLI / Console Parity</h2>
+      <p>Every Phase 2 deliverable lands in both the CLI and the console. The web composer's help overlay (<code>?</code>) lists the cross-map; this section restates it for the launch report:</p>
+      <table>
+        <thead><tr><th>Console action</th><th>CLI equivalent</th></tr></thead>
+        <tbody>
+          <tr><td>Task composer (EXECUTE)</td><td><code>wt-task create</code></td></tr>
+          <tr><td>Manager subtask composer (EXECUTE)</td><td><code>wt-task request</code></td></tr>
+          <tr><td>Initiative card focus</td><td><code>wt-task initiative show INIT</code></td></tr>
+          <tr><td>Initiative Audit button</td><td><code>wt-task audit INIT --out file.json</code></td></tr>
+          <tr><td>Task detail Retry / Cancel / Close</td><td><code>wt-task retry|cancel|close</code></td></tr>
+          <tr><td>Agent Pause / Resume</td><td><code>wt-task agent pause|resume AGENT</code></td></tr>
+          <tr><td>Agent Reclaim Task</td><td><code>wt-task reclaim TASK_ID --reason operator</code></td></tr>
+          <tr><td>Artifact Promote / Reject / Reviewed / Supersede</td><td><code>wt-task artifact promote|reject|review|supersede</code></td></tr>
+          <tr><td>Artifact Export</td><td><code>wt-task artifact export TASK_ID --out file</code></td></tr>
+          <tr><td>Promoted assets panel</td><td><code>wt-task artifact list INIT</code></td></tr>
+          <tr><td>Alert feed row → task</td><td>same task in <code>wt-task list</code> / <code>show</code></td></tr>
+          <tr><td>Composer policy line (blocked vendors, budgets)</td><td><code>jq .blockedVendors,.tokenBudgetPerInitiative,.tokenBudgetPerModelFamily &lt; /api/config</code></td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section id="rehearsal" data-kind="ops">
+      <h2>Live Adapter Rehearsal</h2>
+      <p><code>bin/wt-rehearse-live</code> drives one bounded real-CLI task end-to-end against an installed adapter. The script is operator-gated: <strong>default mode is dry-run</strong> and <strong><code>--yes</code> is required to actually post the task</strong>. The script writes a Markdown rehearsal log and a JSON audit dump under <code>docs/launch/phase2-rehearsal-&lt;UTC date&gt;.md</code>.</p>
+      <pre><code># Dry run: prints adapter readiness + policy knobs + planned task.
+./bin/wt-rehearse-live --agent claude --max-tokens 4000
+
+# Execute (operator-approved tokens, real CLI is invoked).
+./bin/wt-rehearse-live --yes --agent claude --max-tokens 4000 \
+  --initiative init_rehearse_$(date -u +%Y%m%d)</code></pre>
+      <p class="muted">Safety: the script refuses to run if the chosen adapter is not <code>enabled</code> + <code>launchable</code>, and refuses without <code>--yes</code>. It exits non-zero on any of: unreachable daemon, unhealthy projection, missing adapter readiness, or task creation failure.</p>
+    </section>
+
+    <section id="risks" data-kind="review ops">
+      <h2>Risks &amp; Mitigations</h2>
+      <table>
+        <thead><tr><th>Risk</th><th>Control</th><th>Status</th></tr></thead>
+        <tbody>
+          <tr><td>Real CLI adapters run without valid auth or safe mode.</td><td>Preflight runs at <code>/api/adapters</code> and refuses to mark a non-launchable adapter as <code>state="launchable"</code>. <code>wt-rehearse-live</code> aborts when adapter state is anything else.</td><td><span class="pill pass">Mitigated</span></td></tr>
+          <tr><td>Agents double-claim work after a daemon or agent restart.</td><td>Lease events + automatic reclaim on expiry + <code>wtTaskFindClaimableForAgent</code> route stuck work back through the same agent atomically.</td><td><span class="pill pass">Mitigated</span></td></tr>
+          <tr><td>The UI presents features the backend cannot support.</td><td>Disabled controls (topology, command palette, audit view) stay greyed-out with explicit tooltips; everything else maps 1:1 to an endpoint exercised by the test suite.</td><td><span class="pill pass">Mitigated</span></td></tr>
+          <tr><td>Blocked or removed vendors re-enter through routing or config.</td><td>Central policy evaluator runs on every <code>/api/task-package</code> and <code>/api/task-request</code>. DeepSeek default-blocked. Denials append durable <code>policy_decision</code> records.</td><td><span class="pill pass">Mitigated</span></td></tr>
+          <tr><td>Raw adapter output mistaken for accepted project output.</td><td>Artifact state lifecycle (draft → reviewed → accepted) + accepted-path latching column + per-initiative inventory.</td><td><span class="pill pass">Mitigated</span></td></tr>
+          <tr><td>Longer runs exceed token / budget caps.</td><td>Per-initiative + per-model-family + daily + monthly + per-agent caps; composer surfaces all active levers; denials carry classified reason codes.</td><td><span class="pill pass">Mitigated</span></td></tr>
+          <tr><td>Audit response too large for a single buffer.</td><td>Current cap is 1 MiB which fits realistic Phase 2 initiatives. Sprint 6 load testing notes pagination as the natural next step.</td><td><span class="pill warn">Watch</span></td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section id="deferred" data-kind="next">
+      <h2>Deferred Beyond Phase 2</h2>
+      <ul>
+        <li><strong>Topology view, command palette, audit query view.</strong> Each needs its own backend query endpoint; the disabled-control pattern in the console keeps them visible-but-inert until they land.</li>
+        <li><strong>Audit pagination.</strong> The 1 MiB single-buffer audit fits today's initiatives but should grow into a windowed model post-launch.</li>
+        <li><strong>Lease renewal for very long real-CLI runs.</strong> 15-minute leases are sufficient for current adapters; a heartbeat-based renewal is the next workload-control enhancement.</li>
+        <li><strong>Actual-usage budget enforcement.</strong> Per-model-family budgets today gate on allocated <code>maxTokens</code>; an optional actual-usage variant is a small addition.</li>
+        <li><strong>Bulk reclaim / bulk promotion CLI verbs.</strong> Operator workflow data from the first real rehearsal will tell us if these are needed.</li>
+      </ul>
+      <p class="muted">No new risks introduced by Sprint 6. The launch rehearsal harness reuses every Phase 2 endpoint that existed at the close of Sprint 5; the only new artifact is the operator-gated <code>wt-rehearse-live</code> script and the additive Phase 2 sections in the runbook + cheat sheet.</p>
+    </section>
+  </main>
+
+  <script>
+    /*
+     * Single-file inline filter wiring (same pattern as the per-sprint
+     * closeouts). Each filter button toggles a 'hide' class on sections whose
+     * data-kind does not intersect the chosen filter.
+     */
+    const filterButtons = document.querySelectorAll("button.filter");
+    const sections = document.querySelectorAll("section[data-kind]");
+    filterButtons.forEach(button => {
+      button.addEventListener("click", () => {
+        filterButtons.forEach(item => item.classList.toggle("active", item === button));
+        const filter = button.dataset.filter;
+        sections.forEach(section => {
+          const kinds = (section.dataset.kind || "").split(/\s+/);
+          const visible = filter === "all" || kinds.includes(filter);
+          section.classList.toggle("hide", !visible);
+        });
+      });
+    });
+  </script>
+</body>
+</html>
