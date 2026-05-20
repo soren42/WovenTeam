@@ -1239,6 +1239,105 @@ kbd {
 }
 
 /*
+ * Sprint 3 (Phase 3) deliverables UI. Three additions:
+ *   1. .deliverable-ship-strip - inline on the task detail panel, lets the
+ *      operator pick a packaging mode + repo path and trigger a ship.
+ *   2. .initiative-deliverables-panel - list of shipped deliverables for the
+ *      focused initiative; matches .initiative-assets-panel sibling.
+ *   3. Scan pills - green when no patterns matched, red when secret-scan
+ *      recorded one or more hits.
+ */
+.deliverable-ship-strip {
+  margin-top: 8px;
+  padding: 8px;
+  border: 1px solid var(--edge);
+  background: var(--panel-alt);
+}
+.deliverable-ship-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.deliverable-ship-row label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+.deliverable-ship-row select,
+.deliverable-ship-row input[type="text"] {
+  font-family: var(--mono);
+  font-size: 11px;
+  padding: 2px 4px;
+  background: var(--panel);
+  color: var(--text);
+  border: 1px solid var(--edge);
+}
+.deliverable-ship-status {
+  margin-top: 6px;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text-dim);
+}
+.deliverable-ship-status.ok    { color: var(--ok, #10b981); }
+.deliverable-ship-status.error { color: var(--alert, #ef4444); }
+
+.initiative-deliverables-panel { margin-top: 12px; }
+.initiative-deliverables-list {
+  display: grid;
+  gap: 6px;
+  padding: 8px 12px 12px;
+}
+.initiative-deliverable-row {
+  display: grid;
+  grid-template-columns: 1fr auto auto auto;
+  gap: 8px;
+  align-items: baseline;
+  padding: 8px 10px;
+  border: 1px solid var(--edge);
+  background: var(--panel-alt);
+}
+.initiative-deliverable-row strong {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.initiative-deliverable-row small {
+  font-size: 10px;
+  color: var(--text-dim);
+}
+.initiative-deliverable-row .deliverable-mode {
+  font-family: var(--mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 2px 6px;
+  border: 1px solid var(--edge);
+  color: var(--text-dim);
+}
+.initiative-deliverable-row .deliverable-scan {
+  font-family: var(--mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 2px 6px;
+  border: 1px solid var(--edge);
+}
+.initiative-deliverable-row .deliverable-scan.clean { color: var(--ok, #10b981); border-color: var(--ok, #10b981); }
+.initiative-deliverable-row .deliverable-scan.hit   { color: var(--alert, #ef4444); border-color: var(--alert, #ef4444); }
+.initiative-deliverable-row .deliverable-supersedes {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--text-dim);
+  font-style: italic;
+}
+
+/*
  * Sprint 5 audit button on initiative cards. Pinned to the bottom-right corner
  * so the rest of the card click area still focuses the initiative; the audit
  * button uses stopPropagation in JS to avoid double-handling.

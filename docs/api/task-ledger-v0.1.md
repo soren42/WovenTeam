@@ -435,3 +435,100 @@ approval flags after revocation.
 Empty initiatives return HTTP 404 with `{"ok": false, "error": "initiative not
 found"}`. The `wt-task audit INIT [--out FILE]` CLI streams the same payload
 to stdout (or to a file with `--out`).
+
+## Phase 3 deliverables pipeline
+
+Sprint 3 of the v1.0 phase defines where accepted work product lands. An
+accepted artifact (its `accepted_artifact_path` row in the projection) can be
+shipped through `POST /api/task-deliverable` or `wt-task artifact ship`,
+which copies, packages, or publishes the file out of the per-task workspace
+into a stable per-initiative `deliverableRoot` (default
+`data/deliverables/<initiativeId>/`).
+
+Each ship appends a `woventeam.deliverable.v0.1` record:
+
+```json
+{
+  "schema": "woventeam.deliverable.v0.1",
+  "deliverableId": "deliv_018f6a...",
+  "taskId": "task_example_001",
+  "initiativeId": "init_example",
+  "sourceWorkspacePath": "/woventeam/runtime/task_example_001/result.md",
+  "deliverablePath": "data/deliverables/init_example/result.md",
+  "packagingMode": "copy",
+  "sizeBytes": 8421,
+  "sha256": "9a0b8c...",
+  "reviewer": "operator",
+  "supersedes": null,
+  "autonomyProvenance": {
+    "elevated": false,
+    "autonomyLevel": "ask-each"
+  },
+  "createdBy": "operator",
+  "createdAtUnixMs": 1779260000000
+}
+```
+
+`packagingMode` is one of:
+
+- `copy` — straight file copy into the deliverable root. Default.
+- `tarball` — gzipped tarball under the deliverable root; `deliverablePath`
+  points at the tarball, and the manifest records `sourceWorkspacePath`
+  for the original.
+- `branch` — commit the file to a `deliverables/<initiativeId>` branch in
+  the project repo and push. Requires a clean worktree on that branch.
+- `pull-request` — same as `branch`, then opens a PR via `gh`. Operator-gated
+  by an explicit `"yes": true` (or `--yes` on the CLI); refuses otherwise.
+
+The `supersedes` field, if non-null, points to a prior `deliverableId`. The
+ledger and projection preserve the predecessor's `sha256` + `createdAtUnixMs`
+so audit consumers can trace a deliverable's revision history.
+
+`autonomyProvenance` is filled in at ship time by looking up the most recent
+`woventeam.autonomy_event.v0.1` for `taskId`. It records whether the task
+ran under elevation and what `autonomyLevel` was in effect. The field is
+optional; if no autonomy_event exists for the task, the daemon omits it.
+
+### Pre-ship secret scan
+
+`branch` and `pull-request` modes refuse to ship if the staged content matches
+any of the configured `secretScanPatterns` (regex strings; defaults cover
+GitHub PATs, AWS keys, generic high-entropy `AKIA…` patterns, OpenSSH private
+keys, and a small set of API-token shapes). The scan result lands as:
+
+```json
+{
+  "schema": "woventeam.secret_scan.v0.1",
+  "scanId": "scan_018f6a...",
+  "deliverableId": "deliv_018f6a...",
+  "taskId": "task_example_001",
+  "scannedPath": "/woventeam/runtime/task_example_001/result.md",
+  "matched": true,
+  "hitCount": 2,
+  "patternHits": [
+    {"pattern": "github-pat", "count": 1},
+    {"pattern": "aws-akia",   "count": 1}
+  ],
+  "packagingMode": "branch",
+  "createdAtUnixMs": 1779260000050
+}
+```
+
+Scans run on `copy` and `tarball` too — they record but do not block, so the
+audit trail has a record on every ship. Only `branch` and `pull-request`
+block on a positive match (with policy reason `secret_scan_block`).
+
+### Audit export
+
+`GET /api/initiative-audit` gains two arrays alongside the existing ones:
+
+```json
+{
+  "deliverables": [ /* every woventeam.deliverable.v0.1 row */ ],
+  "secretScans":  [ /* every woventeam.secret_scan.v0.1 row */ ]
+}
+```
+
+The arrays honor the same `?since=<ms>&limit=<N>` cursor as the base export.
+Older audit consumers that don't know about these fields ignore them; the
+schema is additive.

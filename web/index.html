@@ -345,6 +345,34 @@
                 <button type="button" data-artifact-action="superseded">Supersede</button>
                 <button type="button" id="artifactExportButton" class="ghost" title="Copy accepted artifact text to clipboard">Export</button>
               </div>
+              <!--
+                Sprint 3: ship-to-deliverable strip. Visible only when the
+                current task has an accepted artifact. The mode dropdown maps
+                to the four packaging modes; branch/pr modes reveal additional
+                fields (repo path + optional --yes confirm for pr).
+              -->
+              <div id="deliverableShipStrip" class="deliverable-ship-strip" hidden>
+                <div class="deliverable-ship-row">
+                  <label>
+                    <span>Send to deliverable as</span>
+                    <select id="deliverableShipMode">
+                      <option value="copy">copy</option>
+                      <option value="tarball">tarball</option>
+                      <option value="branch">branch</option>
+                      <option value="pr">pull request</option>
+                    </select>
+                  </label>
+                  <label class="deliverable-ship-repo" hidden>
+                    <span>Repo path</span>
+                    <input id="deliverableShipRepo" type="text" placeholder="/path/to/project/repo">
+                  </label>
+                  <label class="deliverable-ship-yes" hidden>
+                    <input id="deliverableShipYes" type="checkbox"> I confirm PR creation
+                  </label>
+                  <button type="button" id="deliverableShipButton" class="accent">Send</button>
+                </div>
+                <div id="deliverableShipStatus" class="deliverable-ship-status"></div>
+              </div>
             </div>
             <div id="detailEvents" class="detail-events"></div>
           </div>
@@ -362,6 +390,21 @@
           <small id="initiativeAssetsMeta">Focus an initiative to see promoted artifacts.</small>
         </header>
         <div id="initiativeAssetsList" class="initiative-assets-list"></div>
+      </section>
+
+      <!--
+        Sprint 3: deliverables sub-panel. Lists ships for the focused
+        initiative pulled from /api/initiative-audit. Each row shows
+        the deliverable id (with supersedes chain), packaging mode, sha256
+        prefix, size, reviewer, and a "scan" pill that surfaces secret-scan
+        records when any pattern matched.
+      -->
+      <section id="initiativeDeliverablesPanel" class="panel initiative-deliverables-panel" hidden>
+        <header>
+          <span>Deliverables · <b id="initiativeDeliverablesCount">0</b> shipped</span>
+          <small id="initiativeDeliverablesMeta">Focus an initiative to see shipped deliverables.</small>
+        </header>
+        <div id="initiativeDeliverablesList" class="initiative-deliverables-list"></div>
       </section>
 
       <section class="workspace">

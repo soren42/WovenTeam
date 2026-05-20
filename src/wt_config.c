@@ -86,6 +86,17 @@ void wtConfigInitDefaults(WtConfig *config) {
     config->claudeDefaultAutonomyLevel[0] = '\0';
     config->chatgptDefaultAutonomyLevel[0] = '\0';
     config->geminiDefaultAutonomyLevel[0] = '\0';
+    /*
+     * Phase 3 Sprint 3 (deliverables pipeline). Defaults chosen so a fresh
+     * install ships into data/deliverables/<initiativeId>/ as a plain copy
+     * with a conservative secret scan that protects branch + pull-request
+     * modes. Operators can tighten or extend via woventeam.conf.
+     */
+    copyString(config->deliverableRoot, sizeof(config->deliverableRoot), "data/deliverables");
+    copyString(config->deliverableDefaultMode, sizeof(config->deliverableDefaultMode), "copy");
+    copyString(config->deliverableBranchPrefix, sizeof(config->deliverableBranchPrefix), "deliverables");
+    copyString(config->secretScanPatternsFile, sizeof(config->secretScanPatternsFile),
+               "config/secret-scan-patterns.txt");
 }
 
 int wtConfigSetValue(WtConfig *config, const char *key, const char *value) {
@@ -177,6 +188,14 @@ int wtConfigSetValue(WtConfig *config, const char *key, const char *value) {
         copyString(config->chatgptDefaultAutonomyLevel, sizeof(config->chatgptDefaultAutonomyLevel), value);
     } else if (strcmp(key, "geminiDefaultAutonomyLevel") == 0) {
         copyString(config->geminiDefaultAutonomyLevel, sizeof(config->geminiDefaultAutonomyLevel), value);
+    } else if (strcmp(key, "deliverableRoot") == 0) {
+        copyString(config->deliverableRoot, sizeof(config->deliverableRoot), value);
+    } else if (strcmp(key, "deliverableDefaultMode") == 0) {
+        copyString(config->deliverableDefaultMode, sizeof(config->deliverableDefaultMode), value);
+    } else if (strcmp(key, "deliverableBranchPrefix") == 0) {
+        copyString(config->deliverableBranchPrefix, sizeof(config->deliverableBranchPrefix), value);
+    } else if (strcmp(key, "secretScanPatternsFile") == 0) {
+        copyString(config->secretScanPatternsFile, sizeof(config->secretScanPatternsFile), value);
     } else {
         return -1;
     }
@@ -259,7 +278,11 @@ int wtConfigWriteFile(const WtConfig *config, const char *path) {
         "defaultAutonomyLevel=%s\n"
         "claudeDefaultAutonomyLevel=%s\n"
         "chatgptDefaultAutonomyLevel=%s\n"
-        "geminiDefaultAutonomyLevel=%s\n",
+        "geminiDefaultAutonomyLevel=%s\n"
+        "deliverableRoot=%s\n"
+        "deliverableDefaultMode=%s\n"
+        "deliverableBranchPrefix=%s\n"
+        "secretScanPatternsFile=%s\n",
         config->roomName,
         config->roomLogPath,
         config->taskLedgerPath,
@@ -303,7 +326,11 @@ int wtConfigWriteFile(const WtConfig *config, const char *path) {
         config->defaultAutonomyLevel,
         config->claudeDefaultAutonomyLevel,
         config->chatgptDefaultAutonomyLevel,
-        config->geminiDefaultAutonomyLevel) > 0;
+        config->geminiDefaultAutonomyLevel,
+        config->deliverableRoot,
+        config->deliverableDefaultMode,
+        config->deliverableBranchPrefix,
+        config->secretScanPatternsFile) > 0;
     return fclose(file) == 0 && ok ? 0 : -1;
 }
 
@@ -355,4 +382,8 @@ void wtConfigApplyEnvironment(WtConfig *config) {
     if ((value = getenv("WT_CLAUDE_DEFAULT_AUTONOMY_LEVEL"))) wtConfigSetValue(config, "claudeDefaultAutonomyLevel", value);
     if ((value = getenv("WT_CHATGPT_DEFAULT_AUTONOMY_LEVEL"))) wtConfigSetValue(config, "chatgptDefaultAutonomyLevel", value);
     if ((value = getenv("WT_GEMINI_DEFAULT_AUTONOMY_LEVEL"))) wtConfigSetValue(config, "geminiDefaultAutonomyLevel", value);
+    if ((value = getenv("WT_DELIVERABLE_ROOT"))) wtConfigSetValue(config, "deliverableRoot", value);
+    if ((value = getenv("WT_DELIVERABLE_DEFAULT_MODE"))) wtConfigSetValue(config, "deliverableDefaultMode", value);
+    if ((value = getenv("WT_DELIVERABLE_BRANCH_PREFIX"))) wtConfigSetValue(config, "deliverableBranchPrefix", value);
+    if ((value = getenv("WT_SECRET_SCAN_PATTERNS_FILE"))) wtConfigSetValue(config, "secretScanPatternsFile", value);
 }

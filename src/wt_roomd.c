@@ -7,6 +7,7 @@
  * requests in the parent accept loop.
  */
 #include "wt_config.h"
+#include "wt_deliverable.h"
 #include "wt_http.h"
 #include "wt_json.h"
 #include "wt_message.h"
@@ -1584,6 +1585,190 @@ static int handlePostTaskArtifact(int clientFd, const WtConfig *config, const ch
 }
 
 /*
+ * Phase 3 Sprint 3: POST /api/task-deliverable.
+ *
+ * Ships an accepted artifact through one of four packaging modes (copy,
+ * tarball, branch, pull-request). The endpoint resolves the source workspace
+ * path from the task projection, then delegates to wt_deliverable for the
+ * scan + package + ledger-append flow.
+ *
+ * Body:
+ *   { "taskId":      "task_abc",                  required
+ *     "mode":        "copy|tarball|branch|pr",    default: deliverableDefaultMode
+ *     "reviewer":    "operator",                  optional
+ *     "createdBy":   "ceo",                       optional, default "ceo"
+ *     "supersedes":  "deliv_...",                 optional
+ *     "repoPath":    "/path/to/project/repo",     required for branch + pr
+ *     "yes":         true,                        required for pr only
+ *     "prTitle":     "...",                       optional, pr only
+ *     "prBody":      "...",                       optional, pr only
+ *     "destBasename":"renamed.md" }               optional rename in the dest
+ *
+ * On success returns
+ *   { "ok": true, "deliverableId": "...", "deliverablePath": "...",
+ *     "sha256": "...", "sizeBytes": N,
+ *     "packagingMode": "...", "scan": { "ran": true, "matched": false,
+ *     "hitCount": 0 } }
+ *
+ * On failure returns HTTP 4xx/5xx with a classified error reason such as
+ * "secret_scan_block", "missing_yes_gate", "repo_path_missing",
+ * "task_not_accepted".
+ */
+static int handlePostTaskDeliverable(int clientFd, const WtConfig *config, const char *request) {
+    const char *body = strstr(request, "\r\n\r\n");
+    if (!body) {
+        return wtHttpSendText(clientFd, 400, "Bad Request", "application/json",
+                              "{\"ok\":false,\"error\":\"missing body\"}\n");
+    }
+    body += 4;
+    char taskId[WT_TASK_ID_SIZE];
+    if (wtJsonReadString(body, "taskId", taskId, sizeof(taskId)) != 0) {
+        return wtHttpSendText(clientFd, 400, "Bad Request", "application/json",
+                              "{\"ok\":false,\"error\":\"taskId required\"}\n");
+    }
+    char modeStr[WT_NAME_SIZE];
+    if (wtJsonReadString(body, "mode", modeStr, sizeof(modeStr)) != 0) {
+        snprintf(modeStr, sizeof(modeStr), "%s", config->deliverableDefaultMode);
+    }
+    WtDeliverableMode mode;
+    if (wtDeliverableModeFromString(modeStr, &mode) != 0) {
+        return wtHttpSendText(clientFd, 400, "Bad Request", "application/json",
+                              "{\"ok\":false,\"error\":\"invalid mode\"}\n");
+    }
+    /*
+     * Rebuild the projection so a freshly-promoted artifact (whose acceptance
+     * lives only in the ledger until the next rebuild) is visible to the
+     * resolver below. POST handlers normally skip the rebuild, but here we
+     * read projection state, so we must refresh first.
+     */
+    if (rebuildProjection(config) != 0) {
+        return wtHttpSendText(clientFd, 500, "Internal Server Error", "application/json",
+                              "{\"ok\":false,\"error\":\"projection rebuild failed\"}\n");
+    }
+    /* Resolve initiativeId + accepted artifact path from the projection. */
+    char initiativeId[WT_TASK_ID_SIZE] = "";
+    char artifactRel[512] = "";
+    int rc = wtTaskProjectionResolveAcceptedArtifact(config->taskProjectionDbPath, taskId,
+                                                     initiativeId, sizeof(initiativeId),
+                                                     artifactRel, sizeof(artifactRel));
+    if (rc < 0) {
+        return wtHttpSendText(clientFd, 404, "Not Found", "application/json",
+                              "{\"ok\":false,\"error\":\"task_not_found\"}\n");
+    }
+    if (rc == 1) {
+        return wtHttpSendText(clientFd, 409, "Conflict", "application/json",
+                              "{\"ok\":false,\"error\":\"task_not_accepted\"}\n");
+    }
+    /* Compose the absolute source path. The accepted artifact path is
+     * workspace-relative; the workspace lives under runtimeRootPath/taskId/. */
+    char sourcePath[WT_DELIVERABLE_PATH_SIZE];
+    snprintf(sourcePath, sizeof(sourcePath), "%s/%s/%s",
+             config->runtimeRootPath, taskId, artifactRel);
+    /* Optional body fields. */
+    char reviewer[WT_TASK_AGENT_SIZE] = "";
+    char createdBy[WT_TASK_AGENT_SIZE] = "";
+    char supersedes[WT_DELIVERABLE_ID_SIZE] = "";
+    char repoPath[WT_DELIVERABLE_PATH_SIZE] = "";
+    char prTitle[256] = "";
+    char prBody[1024] = "";
+    char destBasename[256] = "";
+    char autonomyLevel[64] = "";
+    wtJsonReadString(body, "reviewer",    reviewer,    sizeof(reviewer));
+    wtJsonReadString(body, "createdBy",   createdBy,   sizeof(createdBy));
+    wtJsonReadString(body, "supersedes",  supersedes,  sizeof(supersedes));
+    wtJsonReadString(body, "repoPath",    repoPath,    sizeof(repoPath));
+    wtJsonReadString(body, "prTitle",     prTitle,     sizeof(prTitle));
+    wtJsonReadString(body, "prBody",      prBody,      sizeof(prBody));
+    wtJsonReadString(body, "destBasename",destBasename,sizeof(destBasename));
+    wtJsonReadString(body, "autonomyLevel", autonomyLevel, sizeof(autonomyLevel));
+    /* `"yes": true` parsing: tolerate whitespace between key and value. */
+    int yesGate = 0;
+    {
+        const char *yesKey = strstr(body, "\"yes\"");
+        if (yesKey) {
+            const char *colon = strchr(yesKey, ':');
+            if (colon) {
+                const char *v = colon + 1;
+                while (*v == ' ' || *v == '\t') v++;
+                if (strncmp(v, "true", 4) == 0) yesGate = 1;
+            }
+        }
+    }
+    int autonomyElevated = 0;
+    {
+        const char *aKey = strstr(body, "\"autonomyElevated\"");
+        if (aKey) {
+            const char *colon = strchr(aKey, ':');
+            if (colon) {
+                const char *v = colon + 1;
+                while (*v == ' ' || *v == '\t') v++;
+                if (strncmp(v, "true", 4) == 0) autonomyElevated = 1;
+            }
+        }
+    }
+    WtDeliverableRequest req;
+    memset(&req, 0, sizeof(req));
+    req.taskId = taskId;
+    req.initiativeId = initiativeId;
+    req.sourcePath = sourcePath;
+    req.destBasename = destBasename[0] ? destBasename : NULL;
+    req.mode = mode;
+    req.reviewer = reviewer[0] ? reviewer : NULL;
+    req.createdBy = createdBy[0] ? createdBy : "ceo";
+    req.supersedes = supersedes[0] ? supersedes : NULL;
+    req.repoPath = repoPath[0] ? repoPath : NULL;
+    req.yesGate = yesGate ? true : false;
+    req.prTitle = prTitle[0] ? prTitle : NULL;
+    req.prBody  = prBody[0]  ? prBody  : NULL;
+    req.autonomyElevated = autonomyElevated;
+    req.autonomyLevel = autonomyLevel[0] ? autonomyLevel : NULL;
+    req.fsyncRecord = config->fsyncEachMessage;
+
+    WtDeliverableResult result;
+    int shipRc = wtDeliverableShip(config, &req, &result);
+    if (shipRc != 0) {
+        /* Map known reasons to HTTP status codes. */
+        int status = 500;
+        const char *statusText = "Internal Server Error";
+        if (strcmp(result.errorReason, "secret_scan_block") == 0 ||
+            strcmp(result.errorReason, "missing_yes_gate") == 0 ||
+            strcmp(result.errorReason, "repo_path_missing") == 0 ||
+            strcmp(result.errorReason, "repo_not_git") == 0) {
+            status = 400;
+            statusText = "Bad Request";
+        } else if (strcmp(result.errorReason, "source_missing") == 0) {
+            status = 404;
+            statusText = "Not Found";
+        }
+        char response[512];
+        snprintf(response, sizeof(response),
+                 "{\"ok\":false,\"error\":\"%s\",\"scanMatched\":%s,\"hitCount\":%d}\n",
+                 result.errorReason[0] ? result.errorReason : "unknown",
+                 result.scanMatched ? "true" : "false", result.scanHitCount);
+        /* Always rebuild the projection so any partial ledger writes
+         * (e.g. a secret_scan record appended before block) are visible. */
+        rebuildProjection(config);
+        return wtHttpSendText(clientFd, status, statusText,
+                              "application/json; charset=utf-8", response);
+    }
+    /* Project the new records into SQLite so subsequent reads see them. */
+    rebuildProjection(config);
+    appendTaskRoomEvent(config, taskId, "all", "task.deliverable", "shipped", result.deliverablePath);
+    char response[2048];
+    snprintf(response, sizeof(response),
+             "{\"ok\":true,\"deliverableId\":\"%s\",\"deliverablePath\":\"%s\","
+             "\"sha256\":\"%s\",\"sizeBytes\":%lld,\"packagingMode\":\"%s\","
+             "\"scan\":{\"ran\":%s,\"matched\":%s,\"hitCount\":%d}}\n",
+             result.deliverableId, result.deliverablePath,
+             result.sha256, result.sizeBytes,
+             wtDeliverableModeToString(mode),
+             result.scanRan ? "true" : "false",
+             result.scanMatched ? "true" : "false",
+             result.scanHitCount);
+    return wtHttpSendText(clientFd, 200, "OK", "application/json; charset=utf-8", response);
+}
+
+/*
  * Phase 3 Sprint 1: GET /api/status.
  *
  * Aggregates initiatives + tasks + agents + heartbeats + recent milestones +
@@ -2238,6 +2423,8 @@ static void handleClient(int clientFd, WtConfig *config) {
         handlePostAutonomyRevoke(clientFd, config, request);
     } else if (strcmp(method, "POST") == 0 && strcmp(path, "/api/task-artifact") == 0) {
         handlePostTaskArtifact(clientFd, config, request);
+    } else if (strcmp(method, "POST") == 0 && strcmp(path, "/api/task-deliverable") == 0) {
+        handlePostTaskDeliverable(clientFd, config, request);
     } else if (strcmp(method, "GET") == 0 && strncmp(path, "/api/initiative-artifacts", 25) == 0) {
         char initiativeId[WT_TASK_ID_SIZE] = "";
         char *idText = strstr(path, "initiativeId=");

@@ -100,6 +100,35 @@ typedef struct {
     char claudeDefaultAutonomyLevel[WT_NAME_SIZE];
     char chatgptDefaultAutonomyLevel[WT_NAME_SIZE];
     char geminiDefaultAutonomyLevel[WT_NAME_SIZE];
+    /*
+     * Phase 3 Sprint 3 (deliverables pipeline).
+     *   deliverableRoot            - directory root for shipped deliverables.
+     *                                Each ship lands under
+     *                                <deliverableRoot>/<initiativeId>/. The
+     *                                daemon mkdir -p's the per-initiative
+     *                                subdirectory on first use.
+     *                                Default: data/deliverables.
+     *   deliverableDefaultMode     - packaging mode when the operator does
+     *                                not specify one. One of copy, tarball,
+     *                                branch, pull-request. Default: copy.
+     *   deliverableBranchPrefix    - branch + pull-request modes commit to
+     *                                <prefix>/<initiativeId>. Default:
+     *                                deliverables.
+     *   secretScanPatternsFile     - path to a patterns file (one
+     *                                NAME=REGEX line per pattern, # comments).
+     *                                Empty disables scan-on-ship. When set,
+     *                                copy/tarball scan and record (do not
+     *                                block); branch/pull-request refuse to
+     *                                ship on a positive match. Defaults to
+     *                                config/secret-scan-patterns.txt which
+     *                                ships with conservative coverage for
+     *                                GitHub PATs, AWS keys, OpenSSH private
+     *                                keys, and a few API-token shapes.
+     */
+    char deliverableRoot[WT_PATH_SIZE];
+    char deliverableDefaultMode[WT_NAME_SIZE];
+    char deliverableBranchPrefix[WT_NAME_SIZE];
+    char secretScanPatternsFile[WT_PATH_SIZE];
 } WtConfig;
 
 void wtConfigInitDefaults(WtConfig *config);

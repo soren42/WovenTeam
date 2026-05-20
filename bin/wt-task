@@ -25,6 +25,7 @@ Usage:
   wt-task artifact note TASK_ID --notes TEXT [--reviewer NAME]
   wt-task artifact list INIT
   wt-task artifact export TASK_ID [--out FILE]
+  wt-task artifact ship TASK_ID [--mode copy|tarball|branch|pr] [--reviewer NAME] [--supersedes ID] [--repo PATH] [--yes] [--pr-title T] [--pr-body B] [--dest-basename NAME]
   wt-task audit INIT [--out FILE]
   wt-task autonomy revoke TASK_ID [--reason TEXT]
   wt-task list
@@ -490,6 +491,42 @@ cmd_artifact() {
             else
                 printf '%s' "$text"
             fi
+            ;;
+        ship)
+            # Phase 3 Sprint 3: ship an accepted artifact through one of
+            # four packaging modes: copy (default), tarball, branch,
+            # pull-request. branch/pr require --repo PATH; pr also requires
+            # --yes.
+            local task_id="${1:-}"
+            shift || true
+            local mode="copy" reviewer="ceo" supersedes="" repo="" yes="" prTitle="" prBody="" dest=""
+            while [[ $# -gt 0 ]]; do
+                case "$1" in
+                    --mode) mode="${2:-}"; shift 2 ;;
+                    --reviewer) reviewer="${2:-}"; shift 2 ;;
+                    --supersedes) supersedes="${2:-}"; shift 2 ;;
+                    --repo) repo="${2:-}"; shift 2 ;;
+                    --yes) yes="1"; shift ;;
+                    --pr-title) prTitle="${2:-}"; shift 2 ;;
+                    --pr-body) prBody="${2:-}"; shift 2 ;;
+                    --dest-basename) dest="${2:-}"; shift 2 ;;
+                    *) echo "wt-task artifact ship: unknown argument: $1" >&2; usage >&2; exit 2 ;;
+                esac
+            done
+            if [[ -z "$task_id" ]]; then
+                echo "wt-task artifact ship: TASK_ID is required" >&2
+                exit 2
+            fi
+            case "$mode" in copy|tarball|branch|pr|pull-request) ;; *) echo "wt-task artifact ship: invalid --mode" >&2; exit 2 ;; esac
+            local yes_json="false"
+            [[ -n "$yes" ]] && yes_json="true"
+            jq -cn --arg taskId "$task_id" --arg mode "$mode" --arg reviewer "$reviewer" \
+                --arg supersedes "$supersedes" --arg repoPath "$repo" \
+                --arg prTitle "$prTitle" --arg prBody "$prBody" --arg destBasename "$dest" \
+                --argjson yes "$yes_json" \
+                '{taskId:$taskId,mode:$mode,reviewer:$reviewer,supersedes:$supersedes,
+                  repoPath:$repoPath,prTitle:$prTitle,prBody:$prBody,destBasename:$destBasename,yes:$yes}' |
+              http_post_json "/api/task-deliverable" "$(cat)"
             ;;
         -h|--help|help|"")
             usage

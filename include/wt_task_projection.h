@@ -54,6 +54,16 @@ int wtTaskProjectionReadCapacityJson(const char *dbPath, char *buffer, size_t bu
 int wtTaskProjectionReadHeartbeatsJson(const char *dbPath, char *buffer, size_t bufferSize);
 int wtTaskProjectionReadRecentMilestonesJson(const char *dbPath, int limit, char *buffer, size_t bufferSize);
 
+/*
+ * Phase 3 Sprint 3: resolve a task to its accepted artifact path and
+ * initiative. Returns 0 when an accepted artifact exists (out params filled),
+ * 1 when the task exists but has no accepted artifact yet (out params empty),
+ * -1 on missing task or hard error.
+ */
+int wtTaskProjectionResolveAcceptedArtifact(const char *dbPath, const char *taskId,
+                                            char *initiativeId, size_t initiativeIdSize,
+                                            char *artifactPath, size_t artifactPathSize);
+
 int wtTaskProjectionCountActiveForAgent(const char *dbPath, const char *agent);
 int wtTaskProjectionCountActiveForParent(const char *dbPath, const char *parentTaskId);
 int wtTaskProjectionCountActiveForInitiative(const char *dbPath, const char *initiativeId);
