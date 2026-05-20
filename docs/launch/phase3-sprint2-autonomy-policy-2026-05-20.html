@@ -1,0 +1,402 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>WovenTeam Phase 3 Sprint 2 Closeout</title>
+  <!--
+    Phase 3 Sprint 2 closeout report. Self-contained: every byte of CSS/SVG
+    is inline so the file archives cleanly under docs/launch/. Matches the
+    style established by the Phase 2 / Sprint 1 closeout series.
+  -->
+  <style>
+    :root {
+      color-scheme: light;
+      --ink: #17202a;
+      --muted: #5c6875;
+      --line: #d7dee6;
+      --paper: #f7f9fb;
+      --panel: #ffffff;
+      --blue: #2563a8;
+      --green: #1f7a5a;
+      --amber: #a16207;
+      --red: #b42318;
+      --violet: #6d4aff;
+      --teal: #0f766e;
+      --soft-blue: #e7f0fa;
+      --soft-green: #e7f5ee;
+      --soft-amber: #fff4db;
+      --soft-red: #fdeceb;
+      --soft-violet: #eeeafe;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      color: var(--ink);
+      background: var(--paper);
+      line-height: 1.48;
+    }
+    header.hero {
+      background: #11253a;
+      color: #fff;
+      padding: 38px clamp(18px, 5vw, 64px) 30px;
+    }
+    header.hero h1 {
+      margin: 0 0 10px;
+      max-width: 980px;
+      font-size: clamp(30px, 5vw, 54px);
+      line-height: 1.02;
+    }
+    header.hero p {
+      max-width: 900px;
+      margin: 0;
+      color: #dbe7f4;
+      font-size: 18px;
+    }
+    header.hero .meta {
+      margin-top: 14px;
+      color: #aac4dd;
+      font-size: 14px;
+    }
+    nav {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      padding: 14px clamp(18px, 5vw, 64px);
+      background: #fff;
+      border-bottom: 1px solid var(--line);
+      position: sticky;
+      top: 0;
+      z-index: 2;
+    }
+    nav a, button.filter {
+      border: 1px solid var(--line);
+      background: #fff;
+      color: var(--ink);
+      border-radius: 6px;
+      padding: 8px 10px;
+      font: inherit;
+      text-decoration: none;
+      cursor: pointer;
+    }
+    nav a:hover, button.filter:hover, button.filter.active {
+      border-color: var(--blue);
+      color: var(--blue);
+      background: var(--soft-blue);
+    }
+    main {
+      max-width: 1180px;
+      margin: 0 auto;
+      padding: 24px clamp(16px, 4vw, 28px) 48px;
+    }
+    section {
+      margin: 0 0 28px;
+      padding: 24px;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+    }
+    h2 { margin: 0 0 14px; font-size: 24px; }
+    h3 { margin: 0 0 8px; font-size: 18px; }
+    p { margin: 0 0 12px; }
+    ul, ol { margin: 0; padding-left: 22px; }
+    li + li { margin-top: 7px; }
+    code {
+      background: #eef2f6;
+      border: 1px solid #dfe6ee;
+      border-radius: 4px;
+      padding: 1px 4px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 0.95em;
+    }
+    pre {
+      margin: 12px 0;
+      padding: 12px 14px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: #fbfcfe;
+      overflow-x: auto;
+      font-size: 13px;
+      line-height: 1.45;
+    }
+    pre code { background: transparent; border: 0; padding: 0; }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(12, 1fr);
+      gap: 14px;
+    }
+    .card {
+      grid-column: span 4;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 16px;
+      background: #fbfcfe;
+    }
+    .wide { grid-column: span 6; }
+    .full { grid-column: 1 / -1; }
+    .status {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      margin-bottom: 10px;
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .04em;
+    }
+    .dot {
+      width: 9px;
+      height: 9px;
+      border-radius: 999px;
+      background: var(--blue);
+    }
+    .done .dot { background: var(--green); }
+    .next .dot { background: var(--blue); }
+    .risk .dot { background: var(--amber); }
+    .problem .dot { background: var(--red); }
+    .muted { color: var(--muted); }
+    .callout {
+      border-left: 4px solid var(--green);
+      padding: 12px 14px;
+      background: var(--soft-green);
+      border-radius: 6px;
+      margin: 12px 0 0;
+    }
+    .callout.warn {
+      border-left-color: var(--amber);
+      background: var(--soft-amber);
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 14px;
+    }
+    th, td {
+      text-align: left;
+      vertical-align: top;
+      padding: 10px;
+      border-bottom: 1px solid var(--line);
+    }
+    th { background: #f0f4f8; }
+    .pill {
+      display: inline-block;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: 3px 8px;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      background: #f6f8fa;
+      color: var(--muted);
+    }
+    .pill.pass { color: var(--green); background: var(--soft-green); border-color: #b7dfcd; }
+    .pill.deny { color: var(--red); background: var(--soft-red); border-color: #f0c2bd; }
+    .diagram {
+      width: 100%;
+      height: auto;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+    }
+    .hide { display: none; }
+    @media (max-width: 820px) {
+      nav { position: static; }
+      section { padding: 18px; }
+      .card, .wide { grid-column: 1 / -1; }
+    }
+  </style>
+</head>
+<body>
+  <header class="hero">
+    <h1>Phase 3 Sprint 2 Closeout</h1>
+    <p>Autonomy &amp; policy contract: bounded autonomy grants on task packages, adapter elevation gating, three new policy-denial reasons, <code>autonomy_event</code> ledger emission, operator revoke through CLI and web. Built on top of the Sprint 1 lease-renewal and kill-event substrate.</p>
+    <div class="meta">Generated 2026-05-20 · closes Sprint 2 of <code>docs/plans/phase3-self-improvement-plan.html</code></div>
+  </header>
+
+  <nav>
+    <a href="#status">Status</a>
+    <a href="#technical">Technical</a>
+    <a href="#flow">Flow</a>
+    <a href="#validation">Validation</a>
+    <a href="#review">Review Notes</a>
+    <a href="#followups">Follow-ups</a>
+  </nav>
+
+  <main>
+    <section id="status">
+      <h2>Executive Status</h2>
+      <div class="grid">
+        <article class="card done">
+          <span class="status"><span class="dot"></span>Delivered</span>
+          <h3>Autonomy Grant Schema</h3>
+          <p><code>autonomyLevel</code> and <code>autonomyGrant</code> accepted on task packages and manager requests. CLI flags on <code>wt-task create</code> / <code>request</code>: <code>--autonomy-level</code>, <code>--autonomy-ttl</code>, <code>--autonomy-scope</code>, <code>--autonomy-network</code>, <code>--credential-class</code>, <code>--requires-clean-worktree</code>.</p>
+        </article>
+        <article class="card done">
+          <span class="status"><span class="dot"></span>Delivered</span>
+          <h3>Adapter Elevation Gating</h3>
+          <p>Codex elevation maps to <code>--sandbox danger-full-access</code> + <code>--ask-for-approval never</code> only when a valid grant is active; otherwise downgrades to <code>workspace-write</code> + <code>on-request</code>. Claude and Gemini elevation flags are gated the same way.</p>
+        </article>
+        <article class="card done">
+          <span class="status"><span class="dot"></span>Delivered</span>
+          <h3>Revoke + Policy Reasons</h3>
+          <p>New <code>POST /api/autonomy-revoke</code> appends an autonomy-revoke event plus a Sprint 1 <code>kill_event</code> so the running adapter tears down. Three new stable policy-denial reasons: <code>autonomy_required</code>, <code>autonomy_expired</code>, <code>autonomy_revoked</code>.</p>
+        </article>
+      </div>
+      <div class="callout">
+        <strong>Definition of Done for Sprint 2:</strong> autonomy schema, config defaults, policy classification, adapter gating, autonomy_event emission, revoke endpoint + CLI verb, web UI parity, and a focused <code>make test-autonomy</code> covering elevated flags, event chain, denial reasons, revocation, kill-event emission, and downgrade.
+      </div>
+    </section>
+
+    <section id="technical">
+      <h2>Detailed Technical Status</h2>
+      <div class="grid">
+        <article class="card wide">
+          <h3>Schema &amp; Config</h3>
+          <ul>
+            <li><code>autonomyLevel</code>: <code>none</code> | <code>request</code> | <code>autonomous</code>. <code>autonomyGrant</code>: <code>scope</code>, <code>ttlSeconds</code>, <code>maxWallClockSeconds</code>, <code>network</code>, <code>credentialClass</code>, <code>requiresCleanWorktree</code>, <code>revokedAtUnixMs</code>.</li>
+            <li>Config defaults: <code>defaultAutonomyLevel</code> plus per-agent <code>claudeDefaultAutonomyLevel</code>, <code>chatgptDefaultAutonomyLevel</code>, <code>geminiDefaultAutonomyLevel</code>.</li>
+            <li>Resolution order in wt-agent: per-task override &gt; per-initiative &gt; per-agent config &gt; toolPolicy profile default.</li>
+          </ul>
+        </article>
+        <article class="card wide">
+          <h3>Policy Evaluator</h3>
+          <ul>
+            <li>New stable denial reasons in <code>wt_policy.c</code>: <code>autonomy_required</code> (unknown level / missing grant for non-default), <code>autonomy_expired</code> (grant TTL exhausted), <code>autonomy_revoked</code> (operator revoked).</li>
+            <li>Denials feed the same <code>wt_notify</code> module Sprint 1 added — autonomy denials surface on the Slack webhook with the policy decision body.</li>
+          </ul>
+        </article>
+        <article class="card wide">
+          <h3>Ledger Event</h3>
+          <ul>
+            <li><code>woventeam.autonomy_event.v0.1</code> emitted at four points: grant observation on claim, adapter invocation, elevated adapter invocation, adapter exit. <code>wtTaskAppendAutonomyEvent()</code> in <code>wt_task_store.c</code>.</li>
+            <li>Revocation appends both an autonomy_event (reason: <code>revoke</code>) and a <code>woventeam.kill_event.v0.1</code> with <code>reason:"autonomy-revoke"</code> so the Sprint 1 wait loop tears the adapter down.</li>
+          </ul>
+        </article>
+        <article class="card wide">
+          <h3>Endpoints + CLI</h3>
+          <ul>
+            <li><code>POST /api/autonomy-revoke</code> in <code>wt_roomd.c</code> — body <code>{ taskId, reason }</code>. Wires through to Sprint 1's kill-event semantics.</li>
+            <li><code>wt-task autonomy revoke TASK_ID [--reason TEXT]</code> wraps the endpoint.</li>
+            <li><code>wt-task create</code> / <code>request</code> gain the six autonomy flags listed above; values flow into the task package's <code>autonomyGrant</code> block.</li>
+          </ul>
+        </article>
+        <article class="card wide">
+          <h3>Web UI Parity</h3>
+          <ul>
+            <li>Settings panel exposes the per-agent autonomy defaults so operators can see what's in <code>woventeam.conf</code>.</li>
+            <li>Task composer adds grant controls (level + TTL + scope + network + credential class + clean-worktree).</li>
+            <li>Task detail surfaces the grant block plus expiry countdown.</li>
+            <li>Revoke Autonomy action button on tasks with an active grant; calls <code>/api/autonomy-revoke</code>.</li>
+          </ul>
+        </article>
+        <article class="card wide">
+          <h3>Adapter Wiring</h3>
+          <ul>
+            <li>Codex: elevated path adds <code>--sandbox danger-full-access</code> and <code>--ask-for-approval never</code>; non-elevated stays on <code>workspace-write</code> + <code>on-request</code>.</li>
+            <li>Claude / Gemini: equivalent skip-permission / non-interactive flags are appended only when the grant is valid at fork time.</li>
+            <li>Grant is re-checked at each adapter invocation; revocation between invocations downgrades the next call.</li>
+          </ul>
+        </article>
+      </div>
+    </section>
+
+    <section id="flow">
+      <h2>Autonomy Grant Lifecycle</h2>
+      <svg class="diagram" viewBox="0 0 1040 320" role="img" aria-label="Autonomy grant lifecycle">
+        <defs>
+          <marker id="arr2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M 0 0 L 10 5 L 0 10 z" fill="#2563a8"></path>
+          </marker>
+          <style>
+            .node { fill: #fff; stroke: #b9c3cc; stroke-width: 1.5; }
+            .blue { fill: #e7f0fa; stroke: #2563a8; }
+            .green { fill: #e7f5ee; stroke: #1f7a5a; }
+            .red { fill: #fdeceb; stroke: #b42318; }
+            .amber { fill: #fff4db; stroke: #a16207; }
+            .violet { fill: #eeeafe; stroke: #6d4aff; }
+            .label { fill: #1f2933; font: 700 14px system-ui, sans-serif; }
+            .small { fill: #5c6875; font: 12px system-ui, sans-serif; }
+            .line { stroke: #2563a8; stroke-width: 2; fill: none; marker-end: url(#arr2); }
+            .dash { stroke: #64717d; stroke-width: 2; fill: none; stroke-dasharray: 5 5; }
+          </style>
+        </defs>
+        <rect class="node blue" x="20" y="30" width="190" height="60" rx="8"></rect>
+        <text class="label" x="115" y="56" text-anchor="middle">wt-task create</text>
+        <text class="small" x="115" y="76" text-anchor="middle">--autonomy-level autonomous</text>
+        <rect class="node violet" x="240" y="30" width="200" height="60" rx="8"></rect>
+        <text class="label" x="340" y="56" text-anchor="middle">policy evaluator</text>
+        <text class="small" x="340" y="76" text-anchor="middle">classify grant</text>
+        <rect class="node green" x="470" y="30" width="200" height="60" rx="8"></rect>
+        <text class="label" x="570" y="56" text-anchor="middle">wt-agent claim</text>
+        <text class="small" x="570" y="76" text-anchor="middle">resolve + emit autonomy_event</text>
+        <rect class="node green" x="700" y="30" width="200" height="60" rx="8"></rect>
+        <text class="label" x="800" y="56" text-anchor="middle">adapter forked</text>
+        <text class="small" x="800" y="76" text-anchor="middle">elevated flags applied</text>
+        <rect class="node red" x="240" y="170" width="200" height="60" rx="8"></rect>
+        <text class="label" x="340" y="196" text-anchor="middle">autonomy_required</text>
+        <text class="small" x="340" y="216" text-anchor="middle">denial reason</text>
+        <rect class="node amber" x="470" y="170" width="200" height="60" rx="8"></rect>
+        <text class="label" x="570" y="196" text-anchor="middle">autonomy_expired</text>
+        <text class="small" x="570" y="216" text-anchor="middle">TTL elapsed before claim</text>
+        <rect class="node red" x="700" y="170" width="200" height="60" rx="8"></rect>
+        <text class="label" x="800" y="196" text-anchor="middle">autonomy_revoked</text>
+        <text class="small" x="800" y="216" text-anchor="middle">POST /api/autonomy-revoke</text>
+        <rect class="node red" x="700" y="240" width="200" height="60" rx="8"></rect>
+        <text class="label" x="800" y="266" text-anchor="middle">kill_event appended</text>
+        <text class="small" x="800" y="286" text-anchor="middle">Sprint 1 wait loop tears down</text>
+        <path class="line" d="M210 60 H236"></path>
+        <path class="line" d="M440 60 H466"></path>
+        <path class="line" d="M670 60 H696"></path>
+        <path class="line" d="M340 90 V166"></path>
+        <path class="line" d="M570 90 V166"></path>
+        <path class="line" d="M800 90 V166"></path>
+        <path class="line" d="M800 230 V236"></path>
+      </svg>
+    </section>
+
+    <section id="validation">
+      <h2>Validation</h2>
+      <pre><code>make test-autonomy        # new in Sprint 2
+make test                 # 21 integration tests; both new + all prior pass</code></pre>
+      <table>
+        <thead><tr><th>Coverage</th><th>Mechanism</th><th>Result</th></tr></thead>
+        <tbody>
+          <tr><td>Elevated Codex flags appear only with a valid grant</td><td>fake-codex argv capture; assert <code>--sandbox danger-full-access</code> + <code>--ask-for-approval never</code> present.</td><td><span class="pill pass">Pass</span></td></tr>
+          <tr><td>Downgrade without a grant</td><td>Same fake-codex; assert <code>workspace-write</code> + <code>on-request</code> are used and the dangerous flags are absent.</td><td><span class="pill pass">Pass</span></td></tr>
+          <tr><td>autonomy_event chain on a successful run</td><td>Ledger inspection: grant observation, adapter invocation, elevated invocation, adapter exit.</td><td><span class="pill pass">Pass</span></td></tr>
+          <tr><td>Missing grant denied with <code>autonomy_required</code></td><td>POST a task with <code>autonomyLevel:"autonomous"</code> and no grant; assert policy denial reason.</td><td><span class="pill deny">autonomy_required</span></td></tr>
+          <tr><td>Expired grant denied with <code>autonomy_expired</code></td><td>POST with <code>ttlSeconds:1</code>; sleep; claim; assert reason.</td><td><span class="pill deny">autonomy_expired</span></td></tr>
+          <tr><td>Revocation denies further elevation</td><td>POST /api/autonomy-revoke during a task; assert kill_event + downgraded next invocation.</td><td><span class="pill deny">autonomy_revoked</span></td></tr>
+          <tr><td>Full regression sweep</td><td><code>make test</code> — 21 integration tests; <code>make test-codex-adapter test-cli-artifact-adapter test-agent-workload-control test-policy-audit</code> pass.</td><td><span class="pill pass">Pass</span></td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section id="review">
+      <h2>Review Notes</h2>
+      <ul>
+        <li>Revocation uses Sprint 1's kill-event substrate. If Sprint 1's <code>wt_agent.c</code> wait loop or cancel semantics change, rebase and re-run <code>make test-autonomy test-agent-workload-control test-codex-adapter</code>.</li>
+        <li>Grant scope is deliberately small for v1.0: <code>workspace</code>, <code>adapter</code>, or <code>*</code> authorizes elevated adapter invocation. It does <em>not</em> claim per-syscall or per-file observability after a vendor CLI receives skip-permission flags — the trust boundary is at fork time.</li>
+        <li><code>requiresCleanWorktree</code> is enforced agent-side before elevation, not in the daemon admission check. The daemon may later run on a different host than the worker (Sprint 4 remote execution), and only the worker can observe its own tree.</li>
+        <li>The autonomy_event chain is granular enough to reconstruct elevated-vs-downgraded decisions post-hoc from the ledger alone — useful for incident review.</li>
+      </ul>
+      <div class="callout warn">
+        <strong>Trust-boundary caveat:</strong> once an adapter is forked with skip-permission flags, WovenTeam relinquishes per-action visibility into that adapter's tree. Autonomy bounding is a fork-time admission control, not a per-call sandbox.
+      </div>
+    </section>
+
+    <section id="followups">
+      <h2>Follow-ups</h2>
+      <ul>
+        <li>Fold autonomy_events into the combined audit export now that Sprint 1's <code>?since</code>/<code>?limit</code> windowing has landed.</li>
+        <li>Replace static grant <code>scope</code> strings with a structured allowlist before Sprint 4's remote worker execution. Free-form strings invite drift once multiple hosts share a grant vocabulary.</li>
+        <li>Gate <code>POST /api/autonomy-revoke</code> behind operator auth in Sprint 4 (remote execution) — currently relies on local-trust like other endpoints.</li>
+        <li>Wire Sprint 1's escalate-milestone and stuck-lease notification hooks (callouts in the Sprint 1 follow-ups) alongside the new <code>autonomy_required</code> denial reason so escalations and admission failures land in the same channel.</li>
+      </ul>
+      <p class="muted">No new schemas are breaking; <code>autonomyLevel</code> and <code>autonomyGrant</code> are optional and pre-existing ledgers project without autonomy_event rows. Adapter elevation is additive — the dangerous flags only appear when explicitly granted, so the default behavior is unchanged from Phase 2.</p>
+    </section>
+  </main>
+</body>
+</html>
