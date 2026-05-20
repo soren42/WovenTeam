@@ -1,0 +1,1300 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>WovenTeam Phase 3 Self-Improvement and Release Plan</title>
+  <!--
+    Phase 3 plan. Self-contained: every byte of CSS/SVG/JS is inline so the
+    document archives cleanly under docs/plans/ and renders with nothing more
+    than a browser. Style mirrors docs/plans/phase2-functional-workbench-plan.html.
+  -->
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f5f7f8;
+      --paper: #ffffff;
+      --ink: #1f2933;
+      --muted: #64717d;
+      --line: #d8dee4;
+      --line-strong: #b9c3cc;
+      --blue: #2563a8;
+      --green: #1f7a5a;
+      --amber: #a16207;
+      --red: #b42318;
+      --violet: #6d4aff;
+      --teal: #0f766e;
+      --soft-blue: #e7f0fa;
+      --soft-green: #e7f5ee;
+      --soft-amber: #fff4db;
+      --soft-red: #fdeceb;
+      --soft-violet: #eeeafe;
+      --soft-teal: #e4f5f2;
+      --shadow: 0 16px 40px rgba(31, 41, 51, 0.08);
+      --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      --sans: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--ink);
+      font-family: var(--sans);
+      line-height: 1.5;
+    }
+    a { color: var(--blue); }
+    code {
+      font-family: var(--mono);
+      font-size: 0.92em;
+      background: #eef2f5;
+      border: 1px solid var(--line);
+      border-radius: 5px;
+      padding: 1px 5px;
+    }
+    pre {
+      margin: 12px 0;
+      padding: 12px 14px;
+      border: 1px solid var(--line);
+      background: #fbfcfd;
+      border-radius: 6px;
+      overflow-x: auto;
+      font-size: 13px;
+      line-height: 1.5;
+    }
+    pre code { background: transparent; border: 0; padding: 0; }
+    .shell {
+      max-width: 1180px;
+      margin: 0 auto;
+      padding: 28px 18px 64px;
+    }
+    .hero {
+      display: grid;
+      grid-template-columns: minmax(0, 1.1fr) minmax(330px, 0.9fr);
+      gap: 22px;
+      align-items: center;
+      padding: 28px;
+      background: var(--paper);
+      border: 1px solid var(--line);
+      box-shadow: var(--shadow);
+    }
+    .eyebrow {
+      margin: 0 0 8px;
+      color: var(--blue);
+      font-size: 12px;
+      font-weight: 800;
+      letter-spacing: 0.16em;
+      text-transform: uppercase;
+    }
+    h1, h2, h3, h4 { line-height: 1.16; letter-spacing: 0; }
+    h1 { margin: 0; font-size: clamp(32px, 4vw, 52px); }
+    h2 { margin: 0 0 12px; font-size: 25px; }
+    h3 { margin: 0 0 8px; font-size: 17px; }
+    h4 { margin: 12px 0 4px; font-size: 14px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em; }
+    p { margin: 8px 0; }
+    .subtitle { max-width: 760px; color: var(--muted); font-size: 18px; }
+    .meta-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 18px;
+    }
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: #f9fafb;
+      color: var(--muted);
+      padding: 6px 10px;
+      font-size: 12px;
+      font-weight: 700;
+    }
+    .pill.live { color: var(--green); background: var(--soft-green); border-color: #b7dfcd; }
+    .pill.next { color: var(--blue); background: var(--soft-blue); border-color: #b9d6f4; }
+    .pill.risk { color: var(--amber); background: var(--soft-amber); border-color: #f0d28c; }
+    .pill.violet { color: var(--violet); background: var(--soft-violet); border-color: #cfc4ff; }
+    .hero-card {
+      border: 1px solid var(--line);
+      background: #fbfcfd;
+      padding: 14px;
+    }
+    .hero-card svg {
+      width: 100%;
+      height: auto;
+      display: block;
+    }
+    .nav {
+      position: sticky;
+      top: 0;
+      z-index: 4;
+      display: flex;
+      gap: 8px;
+      overflow-x: auto;
+      margin: 14px 0 18px;
+      padding: 10px 0;
+      background: rgba(245, 247, 248, 0.92);
+      backdrop-filter: blur(10px);
+    }
+    .nav a, .filter button {
+      white-space: nowrap;
+      border: 1px solid var(--line);
+      background: var(--paper);
+      color: var(--ink);
+      text-decoration: none;
+      padding: 8px 10px;
+      font-weight: 700;
+      font-size: 13px;
+    }
+    .nav a:hover, .filter button:hover, .filter button.active {
+      border-color: var(--blue);
+      color: var(--blue);
+      background: var(--soft-blue);
+    }
+    section {
+      margin-top: 18px;
+      background: var(--paper);
+      border: 1px solid var(--line);
+      padding: 22px;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 12px;
+    }
+    .grid.two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .card {
+      border: 1px solid var(--line);
+      background: #fbfcfd;
+      padding: 14px;
+    }
+    .card strong {
+      display: block;
+      margin-bottom: 5px;
+      font-size: 15px;
+    }
+    .metric { display: grid; gap: 4px; }
+    .metric b {
+      font-size: 30px;
+      line-height: 1;
+      color: var(--blue);
+      font-family: var(--mono);
+    }
+    .muted { color: var(--muted); }
+    .flow {
+      width: 100%;
+      min-height: 260px;
+      border: 1px solid var(--line);
+      background: #fbfcfd;
+      margin-top: 10px;
+    }
+    .workstreams { display: grid; gap: 10px; }
+    .stream {
+      border: 1px solid var(--line);
+      background: #fbfcfd;
+      padding: 14px;
+    }
+    .stream header {
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: start;
+      margin-bottom: 8px;
+    }
+    .stream h3 { margin: 0; }
+    .stream ul { margin: 8px 0 0; padding-left: 20px; }
+    .tag {
+      display: inline-block;
+      border: 1px solid var(--line);
+      background: #f6f8fa;
+      color: var(--muted);
+      padding: 3px 7px;
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+    }
+    .tag.must { color: var(--red); background: var(--soft-red); border-color: #f2b8b5; }
+    .tag.core { color: var(--blue); background: var(--soft-blue); border-color: #b9d6f4; }
+    .tag.ops { color: var(--green); background: var(--soft-green); border-color: #b7dfcd; }
+    .tag.ui { color: var(--violet); background: var(--soft-violet); border-color: #cfc4ff; }
+    .tag.policy { color: var(--teal); background: var(--soft-teal); border-color: #a9d9d1; }
+    .tag.release { color: var(--amber); background: var(--soft-amber); border-color: #f0d28c; }
+    .timeline {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 14px;
+    }
+    .sprint {
+      border-top: 5px solid var(--blue);
+      background: #fbfcfd;
+      border-left: 1px solid var(--line);
+      border-right: 1px solid var(--line);
+      border-bottom: 1px solid var(--line);
+      padding: 14px;
+    }
+    .sprint h3 { margin: 0 0 6px; font-size: 18px; }
+    .sprint:nth-child(2) { border-top-color: var(--green); }
+    .sprint:nth-child(3) { border-top-color: var(--amber); }
+    .sprint:nth-child(4) { border-top-color: var(--violet); }
+    .sprint:nth-child(5) { border-top-color: var(--teal); }
+    .sprint:nth-child(6) { border-top-color: var(--red); }
+    .sprint:nth-child(7) { border-top-color: #4f46e5; }
+    .sprint ol, .sprint ul { padding-left: 20px; margin: 8px 0 0; }
+    .sprint .accept {
+      margin-top: 10px;
+      padding: 8px 10px;
+      background: #f0f5fb;
+      border-left: 3px solid var(--blue);
+      font-size: 13px;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 10px;
+      background: #fbfcfd;
+    }
+    th, td {
+      border: 1px solid var(--line);
+      padding: 9px 10px;
+      text-align: left;
+      vertical-align: top;
+    }
+    th {
+      background: #eef2f5;
+      font-size: 12px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+    }
+    .checklist {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px 14px;
+      margin-top: 8px;
+    }
+    .check {
+      display: grid;
+      grid-template-columns: 22px 1fr;
+      gap: 8px;
+      align-items: start;
+      color: var(--muted);
+    }
+    .box {
+      width: 18px;
+      height: 18px;
+      border: 2px solid var(--green);
+      margin-top: 2px;
+    }
+    .filter {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin: 8px 0 12px;
+    }
+    .hidden { display: none; }
+    .twocol {
+      display: grid;
+      grid-template-columns: 1.1fr 0.9fr;
+      gap: 14px;
+    }
+    .twocol.swap { grid-template-columns: 0.9fr 1.1fr; }
+    .legend {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      font-size: 12px;
+      color: var(--muted);
+      margin-top: 8px;
+    }
+    .legend span { display: inline-flex; align-items: center; gap: 6px; }
+    .swatch {
+      width: 14px;
+      height: 14px;
+      border: 1px solid var(--line);
+      display: inline-block;
+    }
+    footer {
+      margin-top: 18px;
+      color: var(--muted);
+      font-size: 13px;
+      text-align: center;
+    }
+    @media (max-width: 980px) {
+      .hero, .grid, .grid.two, .timeline, .checklist, .twocol, .twocol.swap {
+        grid-template-columns: 1fr;
+      }
+      .shell { padding: 14px 10px 40px; }
+      section, .hero { padding: 18px; }
+    }
+  </style>
+</head>
+<body>
+  <main class="shell">
+    <header class="hero">
+      <div>
+        <p class="eyebrow">WovenTeam Phase 3</p>
+        <h1>Self-Improvement and Release</h1>
+        <p class="subtitle">The final phase before WovenTeam v1.0. Phase 3 gives agents enough autonomy to do real work safely, surfaces deep status at a glance, lets the operator drive in-flight work in real time, distributes execution across the network, and ends with WovenTeam using itself to ship its own next feature.</p>
+        <div class="meta-row">
+          <span class="pill live">Phase 2 shipped</span>
+          <span class="pill next">Phase 3 target: v1.0 release</span>
+          <span class="pill violet">Self-improvement loop</span>
+          <span class="pill risk">Scope: single-tenant intranet, optional remote agents</span>
+        </div>
+      </div>
+      <div class="hero-card">
+        <svg viewBox="0 0 540 320" role="img" aria-label="Phase 3 flow diagram">
+          <defs>
+            <marker id="arrow" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+              <path d="M 0 0 L 10 5 L 0 10 z" fill="#2563a8"></path>
+            </marker>
+            <style>
+              .b { fill: #fff; stroke: #b9c3cc; stroke-width: 1.5; }
+              .t { fill: #1f2933; font: 700 13px system-ui, sans-serif; }
+              .s { fill: #64717d; font: 11px system-ui, sans-serif; }
+              .a { stroke: #2563a8; stroke-width: 2; fill: none; marker-end: url(#arrow); }
+              .g { fill: #e7f5ee; stroke: #1f7a5a; }
+              .y { fill: #fff4db; stroke: #a16207; }
+              .v { fill: #eeeafe; stroke: #6d4aff; }
+              .q { fill: #e4f5f2; stroke: #0f766e; }
+              .r { fill: #fdeceb; stroke: #b42318; }
+              .dash { stroke: #64717d; stroke-width: 1.5; fill: none; stroke-dasharray: 4 4; }
+            </style>
+          </defs>
+          <rect class="b" x="20" y="20" width="120" height="48" rx="6"></rect>
+          <text class="t" x="80" y="42" text-anchor="middle">Operator</text>
+          <text class="s" x="80" y="58" text-anchor="middle">web + CLI</text>
+
+          <rect class="v" x="200" y="20" width="140" height="48" rx="6"></rect>
+          <text class="t" x="270" y="42" text-anchor="middle">Initiative</text>
+          <text class="s" x="270" y="58" text-anchor="middle">+ autonomy level</text>
+
+          <rect class="q" x="400" y="20" width="120" height="48" rx="6"></rect>
+          <text class="t" x="460" y="42" text-anchor="middle">Policy</text>
+          <text class="s" x="460" y="58" text-anchor="middle">+ deliverables</text>
+
+          <rect class="b" x="20" y="106" width="120" height="56" rx="6"></rect>
+          <text class="t" x="80" y="130" text-anchor="middle">wt-roomd</text>
+          <text class="s" x="80" y="148" text-anchor="middle">audit + auth</text>
+
+          <rect class="g" x="200" y="106" width="140" height="56" rx="6"></rect>
+          <text class="t" x="270" y="130" text-anchor="middle">Agents</text>
+          <text class="s" x="270" y="148" text-anchor="middle">local + remote</text>
+
+          <rect class="y" x="400" y="106" width="120" height="56" rx="6"></rect>
+          <text class="t" x="460" y="130" text-anchor="middle">Adapters</text>
+          <text class="s" x="460" y="148" text-anchor="middle">CLI invocations</text>
+
+          <rect class="b" x="20" y="198" width="120" height="48" rx="6"></rect>
+          <text class="t" x="80" y="220" text-anchor="middle">Heartbeats</text>
+          <text class="s" x="80" y="236" text-anchor="middle">every ~2h</text>
+
+          <rect class="v" x="200" y="198" width="140" height="48" rx="6"></rect>
+          <text class="t" x="270" y="220" text-anchor="middle">Status board</text>
+          <text class="s" x="270" y="236" text-anchor="middle">SSE real-time</text>
+
+          <rect class="r" x="400" y="198" width="120" height="48" rx="6"></rect>
+          <text class="t" x="460" y="220" text-anchor="middle">Deliverables</text>
+          <text class="s" x="460" y="236" text-anchor="middle">archive + PR</text>
+
+          <rect class="b" x="120" y="270" width="300" height="38" rx="6"></rect>
+          <text class="t" x="270" y="294" text-anchor="middle">Self-improvement loop: WovenTeam ships its own next feature</text>
+
+          <path class="a" d="M140 44 H196"></path>
+          <path class="a" d="M340 44 H396"></path>
+          <path class="a" d="M270 68 V102"></path>
+          <path class="a" d="M460 68 C460 86 350 88 340 102"></path>
+          <path class="a" d="M140 134 H196"></path>
+          <path class="a" d="M340 134 H396"></path>
+          <path class="a" d="M270 162 V194"></path>
+          <path class="a" d="M80 162 V194"></path>
+          <path class="a" d="M460 162 V194"></path>
+          <path class="a" d="M270 246 V268"></path>
+          <path class="dash" d="M420 290 C500 280 540 200 525 140 C515 100 500 80 525 60 C540 40 540 26 525 22"></path>
+        </svg>
+      </div>
+    </header>
+
+    <nav class="nav" aria-label="Plan navigation">
+      <a href="#goal">Goal</a>
+      <a href="#done">Definition Of Done</a>
+      <a href="#streams">Workstreams</a>
+      <a href="#sprints">Sprints</a>
+      <a href="#architecture">Architecture</a>
+      <a href="#autonomy">Autonomy</a>
+      <a href="#heartbeats">Heartbeats</a>
+      <a href="#deliverables">Deliverables</a>
+      <a href="#network">Network</a>
+      <a href="#dashboard">Dashboard</a>
+      <a href="#self-improve">Self-Improvement</a>
+      <a href="#risks">Risks</a>
+      <a href="#demo">Demo</a>
+      <a href="#checklist">v1.0 Checklist</a>
+      <a href="#refs">References</a>
+    </nav>
+
+    <section id="goal">
+      <h2>Phase 3 Goal</h2>
+      <p>Phase 2 produced a functional workbench that the operator could trust for bounded real work. Phase 3 makes that workbench safe enough, observant enough, and autonomous enough to <strong>ship WovenTeam's own next feature</strong>, using WovenTeam — with the operator supervising at a glance rather than per task. The phase ends with v1.0: tagged, documented, and ready for first release.</p>
+      <div class="grid">
+        <div class="card metric"><span class="muted">Self-improvement</span><b>1</b><strong>End-to-end demo</strong><p class="muted">WovenTeam plans, implements, reviews, and lands one real WovenTeam feature initiative through its own workbench.</p></div>
+        <div class="card metric"><span class="muted">Operator load</span><b>↓</b><strong>Supervise, don't pilot</strong><p class="muted">Glanceable health, milestone + heartbeat reporting, deep-but-clear status surfaces. Most tasks run without per-action approvals when policy allows.</p></div>
+        <div class="card metric"><span class="muted">Distribution</span><b>N</b><strong>Local + remote agents</strong><p class="muted">Agents on remote hosts can claim, execute, and report bounded work. The room daemon remains the single audit + policy origin.</p></div>
+      </div>
+    </section>
+
+    <section id="done">
+      <h2>Definition Of Done (v1.0)</h2>
+      <p>Phase 3 ships when this full launch flow works without operator hand-holding:</p>
+      <div class="checklist">
+        <div class="check"><span class="box"></span><span>Operator can grant a task autonomous execution permission (with documented blast radius) and the agent respects it without re-prompting.</span></div>
+        <div class="check"><span class="box"></span><span>Agents emit heartbeats on a configurable interval (default ~2 h) plus milestone events at every major lifecycle transition.</span></div>
+        <div class="check"><span class="box"></span><span>A status report endpoint aggregates initiatives, in-flight tasks, alerts, budgets, and heartbeats into one structured payload; the console shows the same data live via SSE.</span></div>
+        <div class="check"><span class="box"></span><span>Accepted artifacts can be promoted into a deliverables archive (branch / tarball / PR) with a manifest carrying checksums and provenance.</span></div>
+        <div class="check"><span class="box"></span><span>Remote agents on at least one second host can claim and complete bounded tasks with the same lease + policy + audit semantics as local agents.</span></div>
+        <div class="check"><span class="box"></span><span>The console can modify, cancel, reprioritize, and re-route in-flight tasks; status updates land within seconds via SSE.</span></div>
+        <div class="check"><span class="box"></span><span>WovenTeam ships at least one real WovenTeam feature end-to-end through its own workbench, captured in an audit + launch report.</span></div>
+        <div class="check"><span class="box"></span><span>Operations runbook, cheat sheet, console scaffold doc, API reference, and the README are aligned with v1.0 surfaces.</span></div>
+        <div class="check"><span class="box"></span><span>v1.0 release: tagged commit, signed (or hashed) tarball, install + upgrade procedure, security review note.</span></div>
+      </div>
+    </section>
+
+    <section id="streams">
+      <h2>Workstreams</h2>
+      <p class="muted">Use the filter to narrow to a category. Streams cluster the discrete pieces of work, each of which lands as one or two sprints below.</p>
+      <div class="filter" aria-label="Workstream filter">
+        <button type="button" class="active" data-filter="all">All</button>
+        <button type="button" data-filter="must">Launch Critical</button>
+        <button type="button" data-filter="core">Core System</button>
+        <button type="button" data-filter="ui">Console</button>
+        <button type="button" data-filter="ops">Operations</button>
+        <button type="button" data-filter="policy">Policy</button>
+        <button type="button" data-filter="release">Release</button>
+      </div>
+      <div class="workstreams">
+        <article class="stream" data-kind="must core policy">
+          <header><h3>1. Autonomy &amp; Permissive Modes</h3><span class="tag must">Launch Critical</span></header>
+          <p>Make it possible to grant an agent enough latitude to do real work without per-action approvals, while keeping every elevated action auditable and reversible.</p>
+          <ul>
+            <li>Per-task <code>autonomyLevel</code> field (<code>observe</code>, <code>ask-each</code>, <code>ask-batch</code>, <code>autonomous</code>) with sane defaults per <code>toolPolicy.profile</code>.</li>
+            <li>Adapter plumbing: pass-through of <code>--dangerously-skip-permissions</code> for Claude Code, <code>--ask-for-approval never</code> for Codex CLI, equivalent flags for Gemini CLI, all gated by autonomyLevel.</li>
+            <li>Per-agent default autonomy (config), per-initiative override, per-task override. Most-specific wins.</li>
+            <li>Every elevated action records a <code>woventeam.autonomy_event.v0.1</code> ledger entry: actor, target, command-class, and reason for granting.</li>
+            <li>Escalation path: a task may downgrade itself ("I need to write outside the workspace") and prompt the operator; the policy evaluator rejects unauthorized escalations.</li>
+          </ul>
+        </article>
+
+        <article class="stream" data-kind="must core ops">
+          <header><h3>2. Heartbeats &amp; Milestone Reporting</h3><span class="tag must">Launch Critical</span></header>
+          <p>Surface long-running work to the operator without polling and without forcing each adapter to invent its own status protocol.</p>
+          <ul>
+            <li>Each <code>wt-agent</code> emits <code>woventeam.heartbeat.v0.1</code> records on a configurable interval (default 2 h). Heartbeats carry agent, host, last-lease-renewal, current task, and a free-text status line.</li>
+            <li>Milestone events: a fixed set of named transitions (<code>received</code>, <code>plan</code>, <code>execute</code>, <code>review</code>, <code>complete</code>, <code>escalate</code>) recorded as <code>woventeam.milestone.v0.1</code> task events.</li>
+            <li>Aggregated <code>GET /api/status</code>: initiatives, in-flight tasks, recent heartbeats, alerts, budget pressure, and adapter readiness in one structured payload.</li>
+            <li>Notification routing: each milestone class can map to a Slack webhook key or email address; channels keyed off the existing <code>slack_webhook.txt</code> format.</li>
+            <li>Console status board: a single-pane summary of fleet-wide work, with explicit "last seen" stamps so an unresponsive agent is immediately visible.</li>
+          </ul>
+        </article>
+
+        <article class="stream" data-kind="must core ops policy">
+          <header><h3>3. Deliverables Pipeline</h3><span class="tag must">Launch Critical</span></header>
+          <p>Define <em>where</em> finished work lives. Today, accepted artifacts stay in the per-task runtime workspace; v1.0 needs a project-level destination.</p>
+          <ul>
+            <li>Per-initiative <code>deliverableRoot</code> setting (defaults under <code>data/deliverables/&lt;initiativeId&gt;/</code>).</li>
+            <li>Promote-to-deliverable lifecycle that extends the artifact <code>accepted</code> state: file is copied (or moved) to the deliverable root and recorded as <code>woventeam.deliverable.v0.1</code> with size, sha256, source workspace path, reviewer, and timestamp.</li>
+            <li>Optional packaging: <code>tarball</code> (zipped under <code>data/deliverables/</code>), <code>branch</code> (commit to a deliverables branch in the project repo), or <code>pull-request</code> (open a PR via <code>gh</code> using the existing project credentials).</li>
+            <li>Audit export folds the deliverable manifest into <code>/api/initiative-audit</code> output.</li>
+            <li>Operator console action: "Send to deliverable" button on accepted artifacts, with a dropdown for the packaging mode.</li>
+          </ul>
+        </article>
+
+        <article class="stream" data-kind="must core ops">
+          <header><h3>4. Remote Execution Substrate</h3><span class="tag core">Core System</span></header>
+          <p>Let agents run on more than one host without sacrificing audit, policy, or recovery semantics.</p>
+          <ul>
+            <li>Two transports: SSH-launched <code>wt-agent</code> (simpler, reuses operator credentials) and HTTPS-polled <code>wt-agent --remote</code> (longer-lived, mTLS-authenticated).</li>
+            <li>Host capability registry: each host advertises which adapters + tool profiles it supports; the policy evaluator already has a hook for capability-based routing.</li>
+            <li>Per-task <code>executionHost</code> field. Routing picks a host that matches both the role and the available adapter.</li>
+            <li>Auth: bearer-token + IP allow-list for the local network on the daemon side; mutual TLS for cross-network use.</li>
+            <li>Failure modes: partition tolerance via lease expiry already there; new <code>woventeam.host_event.v0.1</code> covers host up/down notifications.</li>
+            <li>Tested against at least one second host (real machine or container) before launch.</li>
+          </ul>
+        </article>
+
+        <article class="stream" data-kind="must ui core">
+          <header><h3>5. Real-Time Dashboard</h3><span class="tag ui">Console</span></header>
+          <p>Operator can see what is happening and steer it in real time, not through poll-refresh.</p>
+          <ul>
+            <li>SSE channel for every task / initiative / artifact / policy / heartbeat event so the console stops polling. Existing <code>/events</code> is the foundation.</li>
+            <li>Glanceable header summary: one row showing initiatives in flight, tasks active, alerts, budget pressure, oldest stuck task.</li>
+            <li>In-flight task controls: modify priority / agent / model, cancel, reroute, supply a one-shot operator note that lands as a task event.</li>
+            <li>Hotkey triage: a small set of keyboard shortcuts to acknowledge alerts, promote artifacts, reclaim leases, all surfaced in the help overlay.</li>
+            <li>Drag-priority queue for the assignment backlog: the dashboard updates the per-task <code>priority</code> field via a new <code>POST /api/task-priority</code> endpoint.</li>
+          </ul>
+        </article>
+
+        <article class="stream" data-kind="must ops release">
+          <header><h3>6. Self-Improvement Demonstration</h3><span class="tag release">Release</span></header>
+          <p>Drive a real WovenTeam feature initiative through WovenTeam itself. Capture the audit story end-to-end.</p>
+          <ul>
+            <li>Choose a small but real feature that is not already on the roadmap (e.g. an exporter, a new adapter flag, a documentation generator).</li>
+            <li>Open the initiative as a CEO task; let the Project Manager role decompose into adapter-backed subtasks.</li>
+            <li>Real adapter execution under autonomous-with-audit mode; the operator only intervenes on policy denials or stuck leases.</li>
+            <li>Promote the result through the deliverable pipeline to a branch; open a PR; merge it; cite the audit JSON in the PR description.</li>
+            <li>Document the demonstration in the v1.0 launch report.</li>
+          </ul>
+        </article>
+
+        <article class="stream" data-kind="must release ops">
+          <header><h3>7. Release Hardening &amp; v1.0</h3><span class="tag release">Release</span></header>
+          <p>Make the system installable and operable by someone who did not build it.</p>
+          <ul>
+            <li>Public README pass, runbook polish, cheat sheet polish, screenshots.</li>
+            <li>Install + upgrade scripts (<code>make install</code>, distribution tarball, optional Debian packaging).</li>
+            <li>Branding pass on the console (logo, name, hue swatches).</li>
+            <li>Security review: review threat model (single tenant intranet) and document operational assumptions.</li>
+            <li>Tag v1.0, build a signed (or hashed) release artifact, archive a checksums file under <code>docs/launch/</code>.</li>
+          </ul>
+        </article>
+      </div>
+    </section>
+
+    <section id="sprints">
+      <h2>Proposed Sprints</h2>
+      <p class="muted">Seven sprints. Sprints 1-3 add the safety + observability needed to run autonomous work; Sprints 4-5 extend the substrate; Sprint 6 makes the operator surface real-time; Sprint 7 demonstrates self-improvement and ships v1.0.</p>
+      <div class="timeline">
+        <article class="sprint">
+          <h3>Sprint 1: Autonomy &amp; Permissive Modes</h3>
+          <p class="muted">Make it safe to grant an agent enough latitude to do real work.</p>
+          <ol>
+            <li>Add <code>autonomyLevel</code> to the task package schema; defaults derived from <code>toolPolicy.profile</code>.</li>
+            <li>Adapter plumbing: pass-through of CLI permission flags (<code>--dangerously-skip-permissions</code>, <code>--ask-for-approval never</code>, etc.) gated by autonomy.</li>
+            <li>Per-agent default config; per-initiative + per-task overrides; most-specific wins.</li>
+            <li>New <code>woventeam.autonomy_event.v0.1</code> ledger record for every elevation, with classified <code>commandClass</code>.</li>
+            <li>Policy evaluator gains <code>autonomy_required</code> reason so unauthorized elevations fail closed.</li>
+          </ol>
+          <div class="accept"><strong>Acceptance:</strong> an integration test (<code>wt-autonomy</code>) creates a task with autonomy <code>autonomous</code>, runs the adapter with the corresponding skip-permissions flag, and verifies the autonomy_event chain. Downgrading the level mid-task downgrades the next adapter invocation.</div>
+        </article>
+
+        <article class="sprint">
+          <h3>Sprint 2: Heartbeats &amp; Milestone Reporting</h3>
+          <p class="muted">Long-running work becomes visible without polling.</p>
+          <ol>
+            <li><code>wt-agent</code> emits <code>woventeam.heartbeat.v0.1</code> on its configured interval; default 2 h, override via <code>heartbeatIntervalSeconds</code>.</li>
+            <li>Milestone events: <code>woventeam.milestone.v0.1</code> at <code>plan</code>, <code>execute</code>, <code>review</code>, <code>escalate</code>, <code>complete</code>.</li>
+            <li><code>GET /api/status</code> returns one aggregated payload: initiatives, in-flight tasks, recent heartbeats, alerts, budgets, adapter readiness, host roster.</li>
+            <li>Slack/email notification map keyed off <code>slack_webhook.txt</code> + an optional <code>smtp.conf</code>.</li>
+            <li>Console status board panel renders the same data live via SSE.</li>
+          </ol>
+          <div class="accept"><strong>Acceptance:</strong> integration test confirms heartbeat appends + status endpoint aggregation + Slack webhook delivery (against a local mock). Console status board renders within 2 s of a heartbeat append.</div>
+        </article>
+
+        <article class="sprint">
+          <h3>Sprint 3: Deliverables Pipeline</h3>
+          <p class="muted">Accepted work product lands in a stable destination.</p>
+          <ol>
+            <li>Schema: <code>woventeam.deliverable.v0.1</code> with source workspace path, deliverable path, size, sha256, reviewer, packaging mode.</li>
+            <li><code>POST /api/task-deliverable</code> + <code>wt-task artifact ship TASK_ID [--mode tarball|branch|pr]</code>.</li>
+            <li>Per-initiative <code>deliverableRoot</code> config (default <code>data/deliverables/&lt;initiativeId&gt;/</code>).</li>
+            <li>Optional packaging: tarball (zip), branch (commit + push), pull-request (uses local <code>gh</code> auth).</li>
+            <li>Audit export embeds the deliverable manifest; the initiative card surfaces a "Deliverables" sub-panel.</li>
+          </ol>
+          <div class="accept"><strong>Acceptance:</strong> integration test promotes an artifact through tarball + branch modes; manifest checksums match; audit export includes the deliverable record. PR mode is operator-gated like <code>wt-rehearse-live</code> with explicit <code>--yes</code>.</div>
+        </article>
+
+        <article class="sprint">
+          <h3>Sprint 4: Remote Execution Substrate</h3>
+          <p class="muted">Agents on additional hosts claim work with the same audit + policy semantics.</p>
+          <ol>
+            <li>Two transports: <code>wt-agent --remote</code> (HTTPS poll + bearer token) and <code>wt-agent --ssh HOST</code> (operator-launched).</li>
+            <li>Bearer-token auth + IP allow-list on the daemon. Token rotation via <code>POST /api/auth-token</code> (operator-only).</li>
+            <li>Host capability registry: <code>POST /api/host-capabilities</code> from the agent, <code>GET /api/hosts</code> for the operator.</li>
+            <li>Routing extension: tasks with <code>executionHost</code> route only to that host; capability check rejects mismatches.</li>
+            <li><code>woventeam.host_event.v0.1</code> for host up / down / capability-changed; partitions surface as stuck-lease alerts and reclaim.</li>
+          </ol>
+          <div class="accept"><strong>Acceptance:</strong> integration test runs two containerized agents on different network namespaces against one daemon; both successfully lease + complete tasks; partitioning one host triggers reclaim. Bearer-token rejection returns 401 with a classified reason.</div>
+        </article>
+
+        <article class="sprint">
+          <h3>Sprint 5: Real-Time Dashboard</h3>
+          <p class="muted">Operator can see and steer in-flight work in real time.</p>
+          <ol>
+            <li>SSE channels for tasks, initiatives, artifacts, policy decisions, heartbeats; replace polling in <code>web/app.js</code>.</li>
+            <li>Glanceable header summary with one-line status: initiatives, in-flight tasks, alerts, budget pressure, oldest stuck task.</li>
+            <li>In-flight controls: priority change, agent reroute, cancel, operator note. New <code>POST /api/task-priority</code> + <code>POST /api/task-reroute</code> endpoints.</li>
+            <li>Hotkey triage: <code>A</code> acknowledge alert, <code>P</code> promote selected artifact, <code>R</code> reclaim selected task.</li>
+            <li>Drag-priority queue for the task backlog with optimistic UI + server reconciliation.</li>
+          </ol>
+          <div class="accept"><strong>Acceptance:</strong> manual smoke against a running daemon shows task state changes propagate within 2 s of the ledger append. New endpoints are covered by integration tests. Help overlay maps every hotkey to a CLI equivalent.</div>
+        </article>
+
+        <article class="sprint">
+          <h3>Sprint 6: Self-Improvement Demonstration</h3>
+          <p class="muted">WovenTeam ships its own next feature using its own workbench.</p>
+          <ol>
+            <li>Pick a small but real feature initiative (e.g. add an export-to-markdown formatter, or a new vendor adapter behind a flag).</li>
+            <li>Open the initiative as a CEO task package; let PM decompose into subtasks with autonomy set to <code>autonomous</code> within a safe tool profile.</li>
+            <li>Run end-to-end: real adapters, real heartbeats, real deliverable packaging, real PR.</li>
+            <li>Operator only intervenes on policy denials or stuck leases. Every intervention is itself a recorded event.</li>
+            <li>Capture the audit JSON, the PR URL, and the final diff in a launch artifact.</li>
+          </ol>
+          <div class="accept"><strong>Acceptance:</strong> a merged PR in this repository whose initiative was opened via the console and whose execution path is documented in <code>docs/launch/phase3-self-improvement-demo.md</code>. Audit export attached to the launch report.</div>
+        </article>
+
+        <article class="sprint">
+          <h3>Sprint 7: Release Hardening &amp; v1.0</h3>
+          <p class="muted">Make WovenTeam installable, operable, and presentable for the first public version.</p>
+          <ol>
+            <li>Public-ready README, runbook, cheat sheet, console scaffold doc. Screenshots if licensed.</li>
+            <li><code>make install</code> + distribution tarball + optional Debian packaging.</li>
+            <li>Branding pass: logo, name, hue swatch defaults, copyright. Update <code>LICENSE</code> if needed.</li>
+            <li>Security review note: document the threat model (single-tenant intranet, optional remote agents over mTLS), document the operational assumptions and the boundaries that are out-of-scope.</li>
+            <li>Tag <code>v1.0.0</code>, build a signed (or hashed) release artifact, archive checksums under <code>docs/launch/v1.0/</code>.</li>
+          </ol>
+          <div class="accept"><strong>Acceptance:</strong> <code>git tag v1.0.0</code> exists on a commit that passes <code>make test</code>, includes the demonstration PR, and ships with all updated docs. A second operator can install + start the daemon from the tarball following only the README.</div>
+        </article>
+      </div>
+    </section>
+
+    <section id="architecture">
+      <h2>Target Architecture For Phase 3</h2>
+      <svg class="flow" viewBox="0 0 1040 420" role="img" aria-label="Detailed Phase 3 architecture diagram">
+        <defs>
+          <marker id="arrow2" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M 0 0 L 10 5 L 0 10 z" fill="#2563a8"></path>
+          </marker>
+          <style>
+            .node { fill: #fff; stroke: #b9c3cc; stroke-width: 1.5; }
+            .blue { fill: #e7f0fa; stroke: #2563a8; }
+            .green { fill: #e7f5ee; stroke: #1f7a5a; }
+            .amber { fill: #fff4db; stroke: #a16207; }
+            .violet { fill: #eeeafe; stroke: #6d4aff; }
+            .teal { fill: #e4f5f2; stroke: #0f766e; }
+            .red { fill: #fdeceb; stroke: #b42318; }
+            .label { fill: #1f2933; font: 700 14px system-ui, sans-serif; }
+            .small { fill: #64717d; font: 12px system-ui, sans-serif; }
+            .line { stroke: #2563a8; stroke-width: 2; fill: none; marker-end: url(#arrow2); }
+            .audit { stroke: #64717d; stroke-width: 2; fill: none; stroke-dasharray: 5 5; }
+          </style>
+        </defs>
+        <rect class="node blue" x="20" y="20" width="160" height="62" rx="6"></rect>
+        <text class="label" x="100" y="46" text-anchor="middle">Real-Time Console</text>
+        <text class="small" x="100" y="66" text-anchor="middle">SSE + hotkey triage</text>
+
+        <rect class="node blue" x="220" y="20" width="160" height="62" rx="6"></rect>
+        <text class="label" x="300" y="46" text-anchor="middle">CLI</text>
+        <text class="small" x="300" y="66" text-anchor="middle">wt-task + audit + ship</text>
+
+        <rect class="node" x="420" y="20" width="180" height="62" rx="6"></rect>
+        <text class="label" x="510" y="46" text-anchor="middle">wt-roomd</text>
+        <text class="small" x="510" y="66" text-anchor="middle">API + SSE + auth + policy</text>
+
+        <rect class="node teal" x="640" y="20" width="170" height="62" rx="6"></rect>
+        <text class="label" x="725" y="46" text-anchor="middle">Policy + Audit</text>
+        <text class="small" x="725" y="66" text-anchor="middle">+ deliverables manifest</text>
+
+        <rect class="node violet" x="850" y="20" width="170" height="62" rx="6"></rect>
+        <text class="label" x="935" y="46" text-anchor="middle">Status Aggregator</text>
+        <text class="small" x="935" y="66" text-anchor="middle">heartbeats + milestones</text>
+
+        <rect class="node green" x="20" y="120" width="180" height="62" rx="6"></rect>
+        <text class="label" x="110" y="146" text-anchor="middle">Local Agents</text>
+        <text class="small" x="110" y="166" text-anchor="middle">lease + heartbeat</text>
+
+        <rect class="node green" x="220" y="120" width="180" height="62" rx="6"></rect>
+        <text class="label" x="310" y="146" text-anchor="middle">Remote Agents</text>
+        <text class="small" x="310" y="166" text-anchor="middle">SSH or HTTPS + bearer</text>
+
+        <rect class="node amber" x="420" y="120" width="180" height="62" rx="6"></rect>
+        <text class="label" x="510" y="146" text-anchor="middle">Adapters</text>
+        <text class="small" x="510" y="166" text-anchor="middle">autonomy-aware flags</text>
+
+        <rect class="node" x="640" y="120" width="170" height="62" rx="6"></rect>
+        <text class="label" x="725" y="146" text-anchor="middle">Task Workspaces</text>
+        <text class="small" x="725" y="166" text-anchor="middle">per-task runtime dir</text>
+
+        <rect class="node red" x="850" y="120" width="170" height="62" rx="6"></rect>
+        <text class="label" x="935" y="146" text-anchor="middle">Deliverable Archive</text>
+        <text class="small" x="935" y="166" text-anchor="middle">tarball / branch / PR</text>
+
+        <rect class="node violet" x="20" y="230" width="240" height="62" rx="6"></rect>
+        <text class="label" x="140" y="256" text-anchor="middle">Heartbeats (every ~2 h)</text>
+        <text class="small" x="140" y="276" text-anchor="middle">woventeam.heartbeat.v0.1</text>
+
+        <rect class="node violet" x="300" y="230" width="240" height="62" rx="6"></rect>
+        <text class="label" x="420" y="256" text-anchor="middle">Milestones</text>
+        <text class="small" x="420" y="276" text-anchor="middle">plan / execute / review / escalate</text>
+
+        <rect class="node teal" x="580" y="230" width="240" height="62" rx="6"></rect>
+        <text class="label" x="700" y="256" text-anchor="middle">Notifications</text>
+        <text class="small" x="700" y="276" text-anchor="middle">Slack / email keyed maps</text>
+
+        <rect class="node amber" x="860" y="230" width="160" height="62" rx="6"></rect>
+        <text class="label" x="940" y="256" text-anchor="middle">Operator</text>
+        <text class="small" x="940" y="276" text-anchor="middle">supervises, doesn't pilot</text>
+
+        <rect class="node" x="160" y="340" width="720" height="50" rx="6"></rect>
+        <text class="label" x="520" y="360" text-anchor="middle">Append-only JSONL audit trail: tasks, events, leases, policy, autonomy, deliverables, heartbeats, hosts</text>
+        <text class="small" x="520" y="378" text-anchor="middle">SQLite projection rebuilt on demand from JSONL; the JSONL remains the recovery source</text>
+
+        <path class="line" d="M180 52 H216"></path>
+        <path class="line" d="M380 52 H416"></path>
+        <path class="line" d="M600 52 H636"></path>
+        <path class="line" d="M810 52 H846"></path>
+        <path class="line" d="M200 152 H216"></path>
+        <path class="line" d="M400 152 H416"></path>
+        <path class="line" d="M600 152 H636"></path>
+        <path class="line" d="M810 152 H846"></path>
+        <path class="line" d="M510 82 V120"></path>
+        <path class="line" d="M510 182 V230"></path>
+        <path class="line" d="M725 82 V120"></path>
+        <path class="line" d="M935 82 V120"></path>
+        <path class="line" d="M935 182 V230"></path>
+        <path class="line" d="M820 260 H856"></path>
+        <path class="line" d="M540 260 H576"></path>
+        <path class="line" d="M260 260 H296"></path>
+        <path class="audit" d="M880 380 C760 410 380 410 280 360 C200 320 110 300 110 240"></path>
+        <path class="audit" d="M520 390 C520 410 200 410 200 360"></path>
+      </svg>
+      <p class="muted">Phase 3 keeps the Phase 0-2 storage discipline: append-only JSONL remains the recovery source, SQLite remains rebuildable state, and every new surface (autonomy, heartbeats, deliverables, host events) appends one new schema rather than mutating prior ones.</p>
+    </section>
+
+    <section id="autonomy">
+      <h2>Autonomy Levels &amp; Permissive Modes</h2>
+      <div class="twocol">
+        <div>
+          <p>Autonomy is the operator's contract with an agent about how much it may do without re-prompting. Levels are deliberately discrete so audit and UX can both reason about them.</p>
+          <table>
+            <thead><tr><th>Level</th><th>Adapter flag</th><th>What the agent may do</th></tr></thead>
+            <tbody>
+              <tr><td><code>observe</code></td><td>read-only flags</td><td>Read repo, summarize, plan. No filesystem or network writes.</td></tr>
+              <tr><td><code>ask-each</code></td><td>default interactive</td><td>Default for new tasks. Adapter prompts for every privileged action; operator approves inline or via console.</td></tr>
+              <tr><td><code>ask-batch</code></td><td>scope-batched prompts</td><td>Approve a batch of actions ahead of time (e.g. "all edits under <code>src/foo</code>"). Adapter executes inside the batch without re-prompting.</td></tr>
+              <tr><td><code>autonomous</code></td><td><code>--dangerously-skip-permissions</code>, <code>--ask-for-approval never</code>, equivalents</td><td>Full latitude inside the tool profile. Every action still appends an <code>autonomy_event</code> record; escalations outside the profile fail closed.</td></tr>
+            </tbody>
+          </table>
+          <h4>Resolution order</h4>
+          <ol>
+            <li>Per-task <code>autonomyLevel</code> field (most specific; operator's explicit choice).</li>
+            <li>Per-initiative default (set at initiative creation).</li>
+            <li>Per-agent config default (<code>defaultAutonomyClaude</code>, etc.).</li>
+            <li>Profile default (e.g. <code>observe</code> tasks default to <code>observe</code> autonomy).</li>
+          </ol>
+        </div>
+        <svg viewBox="0 0 460 320" role="img" aria-label="Autonomy state diagram">
+          <defs>
+            <marker id="arrow3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+              <path d="M 0 0 L 10 5 L 0 10 z" fill="#2563a8"></path>
+            </marker>
+            <style>
+              .b { fill: #fff; stroke: #b9c3cc; stroke-width: 1.5; }
+              .blue { fill: #e7f0fa; stroke: #2563a8; }
+              .amber { fill: #fff4db; stroke: #a16207; }
+              .red { fill: #fdeceb; stroke: #b42318; }
+              .t { fill: #1f2933; font: 700 14px system-ui, sans-serif; }
+              .s { fill: #64717d; font: 11px system-ui, sans-serif; }
+              .line { stroke: #2563a8; stroke-width: 2; fill: none; marker-end: url(#arrow3); }
+              .deny { stroke: #b42318; stroke-width: 2; fill: none; marker-end: url(#arrow3); }
+            </style>
+          </defs>
+          <rect class="b blue" x="20" y="20" width="180" height="50" rx="6"></rect>
+          <text class="t" x="110" y="42" text-anchor="middle">observe</text>
+          <text class="s" x="110" y="58" text-anchor="middle">read-only</text>
+
+          <rect class="b" x="20" y="100" width="180" height="50" rx="6"></rect>
+          <text class="t" x="110" y="122" text-anchor="middle">ask-each</text>
+          <text class="s" x="110" y="138" text-anchor="middle">default interactive</text>
+
+          <rect class="b amber" x="20" y="180" width="180" height="50" rx="6"></rect>
+          <text class="t" x="110" y="202" text-anchor="middle">ask-batch</text>
+          <text class="s" x="110" y="218" text-anchor="middle">scope-approved</text>
+
+          <rect class="b red" x="20" y="260" width="180" height="50" rx="6"></rect>
+          <text class="t" x="110" y="282" text-anchor="middle">autonomous</text>
+          <text class="s" x="110" y="298" text-anchor="middle">skip-permissions flag</text>
+
+          <rect class="b" x="250" y="40" width="190" height="160" rx="6"></rect>
+          <text class="t" x="345" y="62" text-anchor="middle">Per-action audit</text>
+          <text class="s" x="345" y="82" text-anchor="middle">autonomy_event</text>
+          <text class="s" x="345" y="100" text-anchor="middle">- actor</text>
+          <text class="s" x="345" y="116" text-anchor="middle">- commandClass</text>
+          <text class="s" x="345" y="132" text-anchor="middle">- targetPath / endpoint</text>
+          <text class="s" x="345" y="148" text-anchor="middle">- reason for elevation</text>
+          <text class="s" x="345" y="168" text-anchor="middle">- timestamp + host</text>
+
+          <rect class="b red" x="250" y="220" width="190" height="64" rx="6"></rect>
+          <text class="t" x="345" y="244" text-anchor="middle">Escalation denied</text>
+          <text class="s" x="345" y="262" text-anchor="middle">policy reason:</text>
+          <text class="s" x="345" y="278" text-anchor="middle">autonomy_required</text>
+
+          <path class="line" d="M200 45 H246"></path>
+          <path class="line" d="M200 125 H246"></path>
+          <path class="line" d="M200 205 H246"></path>
+          <path class="line" d="M200 285 C220 270 234 250 246 240"></path>
+          <path class="deny" d="M110 70 V96"></path>
+          <path class="deny" d="M110 150 V176"></path>
+          <path class="deny" d="M110 230 V256"></path>
+        </svg>
+      </div>
+    </section>
+
+    <section id="heartbeats">
+      <h2>Heartbeats &amp; Milestone Reporting</h2>
+      <div class="twocol swap">
+        <svg viewBox="0 0 520 300" role="img" aria-label="Heartbeat + milestone flow">
+          <defs>
+            <marker id="arrow4" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+              <path d="M 0 0 L 10 5 L 0 10 z" fill="#2563a8"></path>
+            </marker>
+            <style>
+              .b { fill: #fff; stroke: #b9c3cc; stroke-width: 1.5; }
+              .v { fill: #eeeafe; stroke: #6d4aff; }
+              .q { fill: #e4f5f2; stroke: #0f766e; }
+              .g { fill: #e7f5ee; stroke: #1f7a5a; }
+              .y { fill: #fff4db; stroke: #a16207; }
+              .t { fill: #1f2933; font: 700 13px system-ui, sans-serif; }
+              .s { fill: #64717d; font: 11px system-ui, sans-serif; }
+              .line { stroke: #2563a8; stroke-width: 2; fill: none; marker-end: url(#arrow4); }
+            </style>
+          </defs>
+          <rect class="b v" x="20" y="20" width="140" height="56" rx="6"></rect>
+          <text class="t" x="90" y="44" text-anchor="middle">Agent loop</text>
+          <text class="s" x="90" y="62" text-anchor="middle">every 2 h tick</text>
+
+          <rect class="b" x="190" y="20" width="160" height="56" rx="6"></rect>
+          <text class="t" x="270" y="44" text-anchor="middle">heartbeat append</text>
+          <text class="s" x="270" y="62" text-anchor="middle">JSONL ledger</text>
+
+          <rect class="b q" x="380" y="20" width="120" height="56" rx="6"></rect>
+          <text class="t" x="440" y="44" text-anchor="middle">/api/status</text>
+          <text class="s" x="440" y="62" text-anchor="middle">aggregator</text>
+
+          <rect class="b g" x="20" y="120" width="140" height="56" rx="6"></rect>
+          <text class="t" x="90" y="144" text-anchor="middle">Adapter run</text>
+          <text class="s" x="90" y="162" text-anchor="middle">milestone events</text>
+
+          <rect class="b" x="190" y="120" width="160" height="56" rx="6"></rect>
+          <text class="t" x="270" y="144" text-anchor="middle">plan / execute /</text>
+          <text class="t" x="270" y="160" text-anchor="middle">review / escalate</text>
+
+          <rect class="b y" x="380" y="120" width="120" height="56" rx="6"></rect>
+          <text class="t" x="440" y="144" text-anchor="middle">Console SSE</text>
+          <text class="s" x="440" y="162" text-anchor="middle">live status</text>
+
+          <rect class="b" x="20" y="220" width="140" height="56" rx="6"></rect>
+          <text class="t" x="90" y="244" text-anchor="middle">Notification</text>
+          <text class="s" x="90" y="262" text-anchor="middle">Slack / email</text>
+
+          <rect class="b" x="190" y="220" width="160" height="56" rx="6"></rect>
+          <text class="t" x="270" y="244" text-anchor="middle">Operator dashboard</text>
+          <text class="s" x="270" y="262" text-anchor="middle">glanceable header</text>
+
+          <rect class="b" x="380" y="220" width="120" height="56" rx="6"></rect>
+          <text class="t" x="440" y="244" text-anchor="middle">audit export</text>
+          <text class="s" x="440" y="262" text-anchor="middle">includes both</text>
+
+          <path class="line" d="M160 48 H186"></path>
+          <path class="line" d="M350 48 H376"></path>
+          <path class="line" d="M160 148 H186"></path>
+          <path class="line" d="M350 148 H376"></path>
+          <path class="line" d="M270 76 V120"></path>
+          <path class="line" d="M270 176 V220"></path>
+          <path class="line" d="M440 76 V120"></path>
+          <path class="line" d="M440 176 V220"></path>
+          <path class="line" d="M160 248 H186"></path>
+          <path class="line" d="M350 248 H376"></path>
+        </svg>
+        <div>
+          <p>Heartbeats and milestones answer two different questions. Heartbeats answer "is this agent still alive and working" — they fire on a clock. Milestones answer "where in the work am I" — they fire on transitions.</p>
+          <h4>Heartbeat payload (proposed)</h4>
+          <pre><code>{
+  "schema": "woventeam.heartbeat.v0.1",
+  "agent": "claude",
+  "host": "homelab.lan",
+  "currentTaskId": "task_abc123",
+  "currentLeaseExpiresAtUnixMs": 1779260000000,
+  "statusLine": "Implementing exporter; tests still failing.",
+  "createdAtUnixMs": 1779253500000
+}</code></pre>
+          <h4>Milestone payload (proposed)</h4>
+          <pre><code>{
+  "schema": "woventeam.milestone.v0.1",
+  "taskId": "task_abc123",
+  "milestone": "review",
+  "message": "Ready for operator review. Tests pass; output in result.md.",
+  "createdBy": "wt-agent@claude",
+  "createdAtUnixMs": 1779253600000
+}</code></pre>
+          <h4>Notification routing</h4>
+          <p>Operator picks which milestones broadcast and to where. The map is config-driven:</p>
+          <pre><code>notifications.milestone.escalate=slack:on-call
+notifications.milestone.complete=slack:work
+notifications.heartbeat.stuck=slack:on-call
+notifications.policy.deny=slack:audit</code></pre>
+        </div>
+      </div>
+    </section>
+
+    <section id="deliverables">
+      <h2>Deliverables Pipeline</h2>
+      <div class="twocol">
+        <div>
+          <p>An accepted artifact today is a file inside a per-task workspace. v1.0 needs that file to land in a project-level destination with a manifest the operator can hand to compliance, a downstream pipeline, or a second WovenTeam instance.</p>
+          <h4>States</h4>
+          <p><code>accepted</code> (today) → <code>shipping</code> (in-flight copy/packaging) → <code>shipped</code> (deliverable manifest written) → optional <code>archived</code> (older deliverable superseded).</p>
+          <h4>Packaging modes</h4>
+          <ul>
+            <li><code>copy</code> (default): file moved to <code>data/deliverables/&lt;initiativeId&gt;/&lt;taskId&gt;/&lt;name&gt;</code>.</li>
+            <li><code>tarball</code>: a zipped bundle with the manifest and all associated workspace files.</li>
+            <li><code>branch</code>: commits to a deliverable branch (configurable name) and pushes if remote is configured.</li>
+            <li><code>pull-request</code>: opens a PR via local <code>gh</code> credentials. Operator-gated by <code>--yes</code> like <code>wt-rehearse-live</code>.</li>
+          </ul>
+          <h4>Manifest fields</h4>
+          <p><code>schema</code>, <code>taskId</code>, <code>initiativeId</code>, <code>sourceWorkspacePath</code>, <code>deliverablePath</code>, <code>sha256</code>, <code>sizeBytes</code>, <code>packagingMode</code>, <code>reviewer</code>, <code>notes</code>, <code>createdBy</code>, <code>createdAtUnixMs</code>.</p>
+        </div>
+        <svg viewBox="0 0 540 320" role="img" aria-label="Deliverable pipeline">
+          <defs>
+            <marker id="arrow5" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+              <path d="M 0 0 L 10 5 L 0 10 z" fill="#2563a8"></path>
+            </marker>
+            <style>
+              .b { fill: #fff; stroke: #b9c3cc; stroke-width: 1.5; }
+              .g { fill: #e7f5ee; stroke: #1f7a5a; }
+              .v { fill: #eeeafe; stroke: #6d4aff; }
+              .r { fill: #fdeceb; stroke: #b42318; }
+              .t { fill: #1f2933; font: 700 13px system-ui, sans-serif; }
+              .s { fill: #64717d; font: 11px system-ui, sans-serif; }
+              .line { stroke: #2563a8; stroke-width: 2; fill: none; marker-end: url(#arrow5); }
+            </style>
+          </defs>
+          <rect class="b" x="20" y="30" width="160" height="50" rx="6"></rect>
+          <text class="t" x="100" y="52" text-anchor="middle">Task workspace</text>
+          <text class="s" x="100" y="68" text-anchor="middle">result.md</text>
+
+          <rect class="b g" x="210" y="30" width="160" height="50" rx="6"></rect>
+          <text class="t" x="290" y="52" text-anchor="middle">artifact accepted</text>
+          <text class="s" x="290" y="68" text-anchor="middle">sprint 4</text>
+
+          <rect class="b v" x="400" y="30" width="120" height="50" rx="6"></rect>
+          <text class="t" x="460" y="52" text-anchor="middle">ship</text>
+          <text class="s" x="460" y="68" text-anchor="middle">choose mode</text>
+
+          <rect class="b" x="20" y="120" width="160" height="50" rx="6"></rect>
+          <text class="t" x="100" y="142" text-anchor="middle">copy</text>
+          <text class="s" x="100" y="158" text-anchor="middle">data/deliverables/</text>
+
+          <rect class="b" x="200" y="120" width="160" height="50" rx="6"></rect>
+          <text class="t" x="280" y="142" text-anchor="middle">tarball</text>
+          <text class="s" x="280" y="158" text-anchor="middle">deliverable.tgz</text>
+
+          <rect class="b" x="380" y="120" width="140" height="50" rx="6"></rect>
+          <text class="t" x="450" y="142" text-anchor="middle">branch</text>
+          <text class="s" x="450" y="158" text-anchor="middle">deliverables/INIT</text>
+
+          <rect class="b r" x="200" y="200" width="160" height="50" rx="6"></rect>
+          <text class="t" x="280" y="222" text-anchor="middle">pull-request</text>
+          <text class="s" x="280" y="238" text-anchor="middle">--yes required</text>
+
+          <rect class="b g" x="120" y="270" width="320" height="40" rx="6"></rect>
+          <text class="t" x="280" y="294" text-anchor="middle">deliverable manifest appended; folded into audit export</text>
+
+          <path class="line" d="M180 55 H206"></path>
+          <path class="line" d="M370 55 H396"></path>
+          <path class="line" d="M460 80 C460 100 230 110 200 118"></path>
+          <path class="line" d="M460 80 C460 100 320 110 300 118"></path>
+          <path class="line" d="M460 80 V118"></path>
+          <path class="line" d="M280 170 V196"></path>
+          <path class="line" d="M280 250 V268"></path>
+        </svg>
+      </div>
+    </section>
+
+    <section id="network">
+      <h2>Network Execution Topology</h2>
+      <svg class="flow" viewBox="0 0 1040 340" role="img" aria-label="Network execution topology">
+        <defs>
+          <marker id="arrow6" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M 0 0 L 10 5 L 0 10 z" fill="#2563a8"></path>
+          </marker>
+          <style>
+            .b { fill: #fff; stroke: #b9c3cc; stroke-width: 1.5; }
+            .blue { fill: #e7f0fa; stroke: #2563a8; }
+            .green { fill: #e7f5ee; stroke: #1f7a5a; }
+            .amber { fill: #fff4db; stroke: #a16207; }
+            .teal { fill: #e4f5f2; stroke: #0f766e; }
+            .t { fill: #1f2933; font: 700 14px system-ui, sans-serif; }
+            .s { fill: #64717d; font: 12px system-ui, sans-serif; }
+            .line { stroke: #2563a8; stroke-width: 2; fill: none; marker-end: url(#arrow6); }
+            .dash { stroke: #6d4aff; stroke-width: 2; fill: none; stroke-dasharray: 5 5; }
+          </style>
+        </defs>
+        <rect class="b blue" x="20" y="30" width="200" height="76" rx="6"></rect>
+        <text class="t" x="120" y="58" text-anchor="middle">Operator host</text>
+        <text class="s" x="120" y="78" text-anchor="middle">browser + CLI</text>
+        <text class="s" x="120" y="96" text-anchor="middle">control plane only</text>
+
+        <rect class="b" x="280" y="30" width="240" height="76" rx="6"></rect>
+        <text class="t" x="400" y="58" text-anchor="middle">wt-roomd (single instance)</text>
+        <text class="s" x="400" y="78" text-anchor="middle">audit + policy + auth</text>
+        <text class="s" x="400" y="96" text-anchor="middle">single source of truth</text>
+
+        <rect class="b teal" x="580" y="30" width="220" height="76" rx="6"></rect>
+        <text class="t" x="690" y="58" text-anchor="middle">Status aggregator</text>
+        <text class="s" x="690" y="78" text-anchor="middle">heartbeats + milestones</text>
+        <text class="s" x="690" y="96" text-anchor="middle">SSE fan-out</text>
+
+        <rect class="b amber" x="840" y="30" width="180" height="76" rx="6"></rect>
+        <text class="t" x="930" y="58" text-anchor="middle">Deliverables</text>
+        <text class="s" x="930" y="78" text-anchor="middle">archive + PR target</text>
+        <text class="s" x="930" y="96" text-anchor="middle">repo write-through</text>
+
+        <rect class="b green" x="20" y="150" width="180" height="76" rx="6"></rect>
+        <text class="t" x="110" y="178" text-anchor="middle">Local agent</text>
+        <text class="s" x="110" y="198" text-anchor="middle">claude</text>
+
+        <rect class="b green" x="220" y="150" width="180" height="76" rx="6"></rect>
+        <text class="t" x="310" y="178" text-anchor="middle">Local agent</text>
+        <text class="s" x="310" y="198" text-anchor="middle">chatgpt (codex)</text>
+
+        <rect class="b green" x="420" y="150" width="180" height="76" rx="6"></rect>
+        <text class="t" x="510" y="178" text-anchor="middle">Local agent</text>
+        <text class="s" x="510" y="198" text-anchor="middle">gemini</text>
+
+        <rect class="b green" x="620" y="150" width="180" height="76" rx="6"></rect>
+        <text class="t" x="710" y="178" text-anchor="middle">Remote agent #1</text>
+        <text class="s" x="710" y="198" text-anchor="middle">SSH-launched</text>
+
+        <rect class="b green" x="820" y="150" width="200" height="76" rx="6"></rect>
+        <text class="t" x="920" y="178" text-anchor="middle">Remote agent #2</text>
+        <text class="s" x="920" y="198" text-anchor="middle">HTTPS + bearer + mTLS</text>
+
+        <rect class="b" x="160" y="260" width="720" height="50" rx="6"></rect>
+        <text class="t" x="520" y="280" text-anchor="middle">Auth: bearer token + IP allow-list (intranet) ; mTLS (cross-network)</text>
+        <text class="s" x="520" y="298" text-anchor="middle">Failure mode: lease expiry + reclaim; partition triggers host_event</text>
+
+        <path class="line" d="M220 68 H276"></path>
+        <path class="line" d="M520 68 H576"></path>
+        <path class="line" d="M800 68 H836"></path>
+        <path class="line" d="M400 106 V146"></path>
+        <path class="line" d="M400 106 C250 130 150 130 110 146"></path>
+        <path class="line" d="M400 106 C500 130 510 130 510 146"></path>
+        <path class="line" d="M400 106 C600 130 700 130 710 146"></path>
+        <path class="line" d="M400 106 C700 130 880 130 920 146"></path>
+        <path class="dash" d="M710 226 V258"></path>
+        <path class="dash" d="M920 226 V258"></path>
+      </svg>
+      <p class="muted">Single daemon, many agents. Local agents talk to the daemon over the loopback interface; remote agents authenticate with a bearer token (intranet) or mTLS (cross-network). The same lease + policy + audit machinery applies — only the transport changes.</p>
+    </section>
+
+    <section id="dashboard">
+      <h2>Real-Time Dashboard Mockup</h2>
+      <svg class="flow" viewBox="0 0 1040 420" role="img" aria-label="Real-time dashboard mockup">
+        <defs>
+          <style>
+            .panel { fill: #fff; stroke: #b9c3cc; stroke-width: 1.5; }
+            .head { fill: #f0f4f8; stroke: #b9c3cc; stroke-width: 1.5; }
+            .accent { fill: #e7f0fa; stroke: #2563a8; }
+            .live { fill: #1f7a5a; }
+            .stuck { fill: #b42318; }
+            .warn { fill: #a16207; }
+            .text { fill: #1f2933; font: 700 12px system-ui, sans-serif; }
+            .small { fill: #64717d; font: 10.5px system-ui, sans-serif; }
+            .mono { font: 11px ui-monospace, SFMono-Regular, Menlo, monospace; fill: #1f2933; }
+          </style>
+        </defs>
+        <rect class="head" x="10" y="10" width="1020" height="50" rx="4"></rect>
+        <text class="text" x="24" y="32">WOVENTEAM</text>
+        <text class="small" x="24" y="48">mission control v1.0</text>
+        <text class="small" x="160" y="32">Initiatives</text>
+        <text class="text" x="160" y="48">4 active</text>
+        <text class="small" x="270" y="32">In-flight tasks</text>
+        <text class="text" x="270" y="48">11 / 12</text>
+        <text class="small" x="400" y="32">Alerts</text>
+        <text class="text" x="400" y="48">2 stuck · 0 fail</text>
+        <text class="small" x="540" y="32">Budget 24h</text>
+        <text class="text" x="540" y="48">62%</text>
+        <text class="small" x="640" y="32">Oldest stuck</text>
+        <text class="text" x="640" y="48">11m claude</text>
+        <text class="small" x="780" y="32">Heartbeats</text>
+        <text class="text" x="780" y="48">3 / 3 live</text>
+        <circle class="live" cx="950" cy="35" r="6"></circle>
+        <text class="small" x="965" y="40">LINK</text>
+
+        <rect class="panel" x="10" y="76" width="500" height="160" rx="4"></rect>
+        <text class="text" x="24" y="98">Active initiatives</text>
+        <text class="small" x="24" y="116" class="mono">init_self_improve · 4 tasks · 32% · claude+chatgpt</text>
+        <text class="small" x="24" y="134" class="mono">init_remote_smoke · 3 tasks · 11% · remote#1</text>
+        <text class="small" x="24" y="152" class="mono">init_release_prep · 2 tasks · 88% · claude</text>
+        <text class="small" x="24" y="170" class="mono">init_audit_review · 2 tasks · 100% · awaiting accept</text>
+        <text class="small" x="24" y="200">Click row to focus task table. Drag to reprioritize.</text>
+
+        <rect class="panel" x="520" y="76" width="510" height="160" rx="4"></rect>
+        <text class="text" x="534" y="98">Alerts</text>
+        <text class="stuck" x="534" y="118" class="mono" font-family="ui-monospace">STUCK</text>
+        <text class="small" x="588" y="118" class="mono">task_self_improve_4 · 11m · claude</text>
+        <text class="stuck" x="534" y="138" class="mono">STUCK</text>
+        <text class="small" x="588" y="138" class="mono">task_remote_smoke_1 · 7m · remote#1</text>
+        <text class="warn" x="534" y="158" class="mono">REVIEW</text>
+        <text class="small" x="588" y="158" class="mono">task_release_prep_2 · awaiting promote</text>
+        <text class="small" x="534" y="200">Hotkeys: A acknowledge · P promote · R reclaim</text>
+
+        <rect class="panel" x="10" y="246" width="690" height="160" rx="4"></rect>
+        <text class="text" x="24" y="268">Live task table (SSE)</text>
+        <text class="small" x="24" y="288" class="mono">id              | status   | agent     | priority | last event</text>
+        <text class="small" x="24" y="306" class="mono">task_a (init_si)| running  | claude    | high     | 12s plan</text>
+        <text class="small" x="24" y="324" class="mono">task_b (init_si)| reviewed | chatgpt   | normal   | 1m review</text>
+        <text class="small" x="24" y="342" class="mono">task_c (init_rs)| leased   | remote#1  | normal   | stuck 7m</text>
+        <text class="small" x="24" y="360" class="mono">task_d (init_rp)| complete | claude    | high     | 3m ship</text>
+        <text class="small" x="24" y="378" class="mono">task_e (init_ar)| accepted | claude    | low      | 5m audit</text>
+        <text class="small" x="24" y="396">In-flight actions: priority slider, agent reroute, cancel, operator note.</text>
+
+        <rect class="panel" x="710" y="246" width="320" height="160" rx="4"></rect>
+        <text class="text" x="724" y="268">Status board</text>
+        <text class="small" x="724" y="288" class="mono">claude  · last 24s · plan</text>
+        <text class="small" x="724" y="306" class="mono">chatgpt · last 1m · review</text>
+        <text class="small" x="724" y="324" class="mono">gemini  · last 14m · idle</text>
+        <text class="small" x="724" y="342" class="mono">remote1 · last 8m · STUCK</text>
+        <text class="small" x="724" y="360" class="mono">remote2 · last 32s · execute</text>
+        <text class="small" x="724" y="396">Notifications: Slack:on-call (escalate, stuck)</text>
+      </svg>
+      <p class="muted">The mockup is illustrative; the real layout will reuse the existing console grid and the new SSE channels.  No new visual frameworks are introduced — the dashboard is the same DOM with richer state and richer push behavior.</p>
+    </section>
+
+    <section id="self-improve">
+      <h2>Self-Improvement Demonstration</h2>
+      <p>The acceptance moment for Phase 3 is WovenTeam shipping a real WovenTeam feature using its own workbench. The demo is small but real; the audit story is what matters.</p>
+      <h4>Candidate features</h4>
+      <ul>
+        <li><strong>Markdown export.</strong> A new <code>bin/wt-ops-export</code> that turns an initiative audit JSON into a Markdown brief. Touches CLI + docs but not the core daemon.</li>
+        <li><strong>Vendor adapter flag.</strong> Add a configurable <code>claudeMaxTurns</code> setting plumbed into the adapter's invocation. Touches config + adapter + integration test.</li>
+        <li><strong>Audit query filter.</strong> A <code>?since=&lt;ms&gt;</code> filter on the audit endpoint so dashboards can fetch deltas. Touches projection + endpoint + UI.</li>
+      </ul>
+      <h4>Demonstration flow</h4>
+      <ol>
+        <li>Operator opens a CEO task package via the console naming the chosen feature.</li>
+        <li>Project Manager role decomposes it into design + implementation + test + docs subtasks.</li>
+        <li>Each subtask runs at autonomy <code>autonomous</code> within an appropriately scoped <code>toolPolicy.profile</code>.</li>
+        <li>Heartbeats and milestones surface progress without operator polling.</li>
+        <li>Accepted artifacts are shipped as a deliverable branch + PR.</li>
+        <li>Audit export captures the entire run; the PR description cites it.</li>
+        <li>Operator intervention is limited to policy approvals on the few escalations that the agent decides need it.</li>
+      </ol>
+      <h4>What counts as success</h4>
+      <p>The merged PR is the artifact. Its commit history, audit export, and the launch report tell the story. The launch report links to each, and notes the moments where the operator did or did not need to intervene.</p>
+    </section>
+
+    <section id="risks">
+      <h2>Risks And Controls</h2>
+      <table>
+        <thead><tr><th>Risk</th><th>Control</th><th>Owner Bias</th></tr></thead>
+        <tbody>
+          <tr><td>Autonomous agent writes outside the intended tool profile.</td><td>Autonomy resolution + adapter flag plumbing + per-action <code>autonomy_event</code> records. Escalations outside the profile are denied with <code>autonomy_required</code>.</td><td>Policy</td></tr>
+          <tr><td>Operator cannot tell who's alive without polling.</td><td>Heartbeats every 2 h plus milestone events; aggregated status endpoint; status-board last-seen timestamps and notifications.</td><td>Operations</td></tr>
+          <tr><td>Deliverables drift from their source artifacts.</td><td>Manifest sha256 + size; audit export embeds manifest; tarball / branch / PR modes preserve provenance.</td><td>Operations</td></tr>
+          <tr><td>Remote agent compromised or impersonated.</td><td>Bearer-token + IP allow-list on intranet; mTLS for cross-network. Token rotation endpoint. All <code>autonomy_event</code> + <code>policy_decision</code> records carry the host id.</td><td>Policy / runtime</td></tr>
+          <tr><td>Dashboard floods operator with noise.</td><td>Notification map per milestone class; default keeps escalations + stuck only; SSE coalesces frequent events into batched updates.</td><td>Dashboard</td></tr>
+          <tr><td>Self-improvement demo fails to merge.</td><td>Decomposition into small subtasks; PR mode is operator-gated; failure modes are themselves recorded in the audit export and become the launch story.</td><td>Operations</td></tr>
+          <tr><td>Release artifact differs from what was tested.</td><td>Tag + tarball + checksum file under <code>docs/launch/v1.0/</code>; <code>make install</code> validates checksum on install.</td><td>Release</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section id="demo">
+      <h2>Phase 3 Acceptance Demo Script</h2>
+      <p>Use this as the launch demonstration at the end of Phase 3.</p>
+      <table>
+        <thead><tr><th>Step</th><th>Expected Evidence</th></tr></thead>
+        <tbody>
+          <tr><td>Create an initiative for the chosen self-improvement feature.</td><td>Initiative appears with task count 0; deliverableRoot configured.</td></tr>
+          <tr><td>Set initiative-level <code>autonomyLevel</code> to <code>autonomous</code>.</td><td>Default applied to subtasks; per-task override still possible.</td></tr>
+          <tr><td>Project Manager decomposes the initiative.</td><td>Subtasks land via <code>task-request</code> with routed agents; policy denies blocked-vendor / over-budget requests as classified.</td></tr>
+          <tr><td>Real adapters run subtasks.</td><td>Heartbeats appear in the status board on the configured interval; milestone events render in real time.</td></tr>
+          <tr><td>Operator reviews accepted artifacts.</td><td>Artifact decision panel shows the diff; promote-to-deliverable opens a tarball + branch + PR with manifest.</td></tr>
+          <tr><td>Remote agent claims one subtask.</td><td>Audit export shows the remote host id; partition + reclaim path verified.</td></tr>
+          <tr><td>Self-improvement PR merges.</td><td>Merged commit on main; <code>make test</code> passes including the new behavior; launch report cites the PR + audit JSON.</td></tr>
+          <tr><td>Tag <code>v1.0.0</code> and ship.</td><td>Tag exists; tarball + checksum archived; second operator can install from the tarball using only the README.</td></tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section id="checklist">
+      <h2>v1.0 Release Checklist</h2>
+      <div class="checklist">
+        <div class="check"><span class="box"></span><span><strong>Code:</strong> 23+ integration tests pass via <code>make test</code> (Phase 2's 19 plus new Phase 3 harnesses).</span></div>
+        <div class="check"><span class="box"></span><span><strong>Tag:</strong> <code>git tag v1.0.0</code> on a commit that includes the self-improvement demo PR.</span></div>
+        <div class="check"><span class="box"></span><span><strong>Release artifact:</strong> tarball + <code>SHA256SUMS</code> under <code>docs/launch/v1.0/</code>.</span></div>
+        <div class="check"><span class="box"></span><span><strong>Install path:</strong> <code>make install</code> writes binaries + systemd units + a stub <code>woventeam.conf</code>.</span></div>
+        <div class="check"><span class="box"></span><span><strong>Upgrade path:</strong> documented in-place upgrade procedure that survives one daemon restart.</span></div>
+        <div class="check"><span class="box"></span><span><strong>README:</strong> matches v1.0 surface area; install + quickstart + cheat-sheet pointers.</span></div>
+        <div class="check"><span class="box"></span><span><strong>Runbook:</strong> Phase 1 / 2 / 3 sections merged into one ops runbook; policy + budget + autonomy + heartbeats covered.</span></div>
+        <div class="check"><span class="box"></span><span><strong>Cheat sheet:</strong> Phase 3 commands (autonomy, ship, audit, rehearse) present; reason codes documented.</span></div>
+        <div class="check"><span class="box"></span><span><strong>API reference:</strong> every new endpoint + schema added to <code>docs/api/task-ledger-v0.1.md</code>.</span></div>
+        <div class="check"><span class="box"></span><span><strong>Security review:</strong> threat model documented; intranet + mTLS modes; operator assumptions explicit.</span></div>
+        <div class="check"><span class="box"></span><span><strong>Branding:</strong> name, logo, hue swatches set; license updated if any new copyrighted material was added.</span></div>
+        <div class="check"><span class="box"></span><span><strong>Self-improvement demo:</strong> merged PR cited in the v1.0 launch report; audit JSON archived.</span></div>
+      </div>
+    </section>
+
+    <section id="refs">
+      <h2>References</h2>
+      <ul>
+        <li><code>docs/plans/phase2-functional-workbench-plan.html</code> — Phase 2 plan that this document succeeds.</li>
+        <li><code>docs/launch/phase2-launch-report-2026-05-20.html</code> — Phase 2 closeout summary.</li>
+        <li><code>docs/launch/phase2-sprint3-closeout-2026-05-20.html</code> — workload control.</li>
+        <li><code>docs/launch/phase2-sprint4-closeout-2026-05-20.html</code> — artifact promotion.</li>
+        <li><code>docs/launch/phase2-sprint5-closeout-2026-05-20.html</code> — policy + audit.</li>
+        <li><code>docs/api/task-ledger-v0.1.md</code> — schema and endpoint reference.</li>
+        <li><code>docs/ops/phase1-operations-runbook.md</code> — operations runbook (Phase 1 + 2).</li>
+        <li><code>docs/user-manual/phase0-cheat-sheet.html</code> — operator cheat sheet.</li>
+        <li><code>docs/ui/phase0-console-scaffold.md</code> — console scaffold reference.</li>
+      </ul>
+    </section>
+
+    <footer>
+      Generated 2026-05-20 UTC. Phase 3 plan: self-improvement and v1.0 release. Keep this document aligned with the Phase 2 launch report and the active task schema docs.
+    </footer>
+  </main>
+  <script>
+    /*
+     * Workstream filter. Buttons toggle the 'hidden' class on .stream cards
+     * whose data-kind list does not include the chosen filter. Identical
+     * pattern to the Phase 2 plan so the operator's muscle memory carries.
+     */
+    const filterButtons = document.querySelectorAll(".filter button");
+    const streamCards = document.querySelectorAll(".stream");
+    filterButtons.forEach(button => {
+      button.addEventListener("click", () => {
+        const filter = button.dataset.filter;
+        filterButtons.forEach(item => item.classList.toggle("active", item === button));
+        streamCards.forEach(stream => {
+          const visible = filter === "all" || stream.dataset.kind.split(" ").includes(filter);
+          stream.classList.toggle("hidden", !visible);
+        });
+      });
+    });
+
+    /*
+     * Sticky-nav active section highlight. Uses IntersectionObserver on each
+     * <section> so the nav link for the section closest to the top is styled
+     * the same way the filter "active" pill is styled. Keeps the page legible
+     * when it grows beyond a single screen.
+     */
+    const navLinks = document.querySelectorAll(".nav a");
+    const sections = Array.from(document.querySelectorAll("section[id]"));
+    const observer = new IntersectionObserver(entries => {
+      entries.forEach(entry => {
+        if (!entry.isIntersecting) return;
+        const id = entry.target.id;
+        navLinks.forEach(link => {
+          const matches = link.getAttribute("href") === `#${id}`;
+          link.style.borderColor = matches ? "var(--blue)" : "var(--line)";
+          link.style.color = matches ? "var(--blue)" : "var(--ink)";
+          link.style.background = matches ? "var(--soft-blue)" : "var(--paper)";
+        });
+      });
+    }, {rootMargin: "-40% 0px -55% 0px"});
+    sections.forEach(section => observer.observe(section));
+  </script>
+</body>
+</html>
