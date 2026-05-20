@@ -273,7 +273,13 @@ static int runCodexAdapter(const WtConfig *config, const char *agentName, const 
     snprintf(eventMessage, sizeof(eventMessage), "Codex adapter exitCode=%d timedOut=%s; see task workspace manifest.",
              exitCode, timedOut ? "true" : "false");
     const char *finalStatus = exitCode == 0 ? "complete" : "failed";
-    wtTaskAppendStatusEvent(config->taskLedgerPath, task->taskId, finalStatus, actor, eventMessage, config->fsyncEachMessage);
+    /* Classify the failure so the operator can see why this attempt died. */
+    const char *retryCause = NULL;
+    if (exitCode != 0) {
+        retryCause = timedOut ? "timeout" : (exitCode == 127 ? "adapter_unavailable" : "exit_nonzero");
+    }
+    wtTaskAppendStatusEventWithCause(config->taskLedgerPath, task->taskId, finalStatus, actor,
+                                     eventMessage, retryCause, config->fsyncEachMessage);
 
     char detail[1024];
     snprintf(detail, sizeof(detail), "codex adapter exitCode=%d workspace=%s", exitCode, workspace);
@@ -422,7 +428,12 @@ static int runCliArtifactAdapter(const WtConfig *config, const char *agentName,
     snprintf(eventMessage, sizeof(eventMessage), "%s adapter exitCode=%d timedOut=%s; see task workspace manifest.",
              adapterName, exitCode, timedOut ? "true" : "false");
     const char *finalStatus = exitCode == 0 ? "complete" : "failed";
-    wtTaskAppendStatusEvent(config->taskLedgerPath, task->taskId, finalStatus, actor, eventMessage, config->fsyncEachMessage);
+    const char *retryCause = NULL;
+    if (exitCode != 0) {
+        retryCause = timedOut ? "timeout" : (exitCode == 127 ? "adapter_unavailable" : "exit_nonzero");
+    }
+    wtTaskAppendStatusEventWithCause(config->taskLedgerPath, task->taskId, finalStatus, actor,
+                                     eventMessage, retryCause, config->fsyncEachMessage);
 
     char detail[1024];
     snprintf(detail, sizeof(detail), "%s adapter exitCode=%d workspace=%s", adapterName, exitCode, workspace);
@@ -438,12 +449,46 @@ static int handleAssignedTask(const WtConfig *config, const char *agentName) {
         return 0;
     }
     WtTaskSummary task;
-    int found = wtTaskFindQueuedForAgent(config->taskLedgerPath, agentName, &task);
+    long long nowUnixMs = (long long)time(NULL) * 1000LL;
+    int found = wtTaskFindClaimableForAgent(config->taskLedgerPath, agentName, nowUnixMs, &task);
     if (found <= 0) {
         return 0;
     }
-    long long leaseExpiresAtUnixMs = (long long)time(NULL) * 1000LL + 15LL * 60LL * 1000LL;
-    if (wtTaskAppendLeaseEvent(config->taskLedgerPath, task.taskId, agentName, 1,
+    /*
+     * Sprint 3 closeout: inspect the latest lease on this task before claiming.
+     * If a foreign agent still holds a valid lease we must not double-run; if
+     * the lease has expired we append a "reclaim" event so the projection knows
+     * this is the second attempt and the new lease counter is consistent.
+     */
+    char leaseHolder[WT_TASK_AGENT_SIZE] = "";
+    long long previousLeaseExpiresAt = 0;
+    int previousAttempt = 0;
+    int hasActiveLease = wtTaskFindActiveLease(config->taskLedgerPath, task.taskId,
+                                               leaseHolder, sizeof(leaseHolder),
+                                               &previousLeaseExpiresAt, &previousAttempt);
+    if (hasActiveLease && previousLeaseExpiresAt > nowUnixMs && strcmp(leaseHolder, agentName) != 0) {
+        /* Foreign lease still valid - skip this task. */
+        printf("[agent] %s skipping %s held by %s until %lld\n",
+               agentName, task.taskId, leaseHolder, previousLeaseExpiresAt);
+        return 0;
+    }
+    if (hasActiveLease && previousLeaseExpiresAt <= nowUnixMs) {
+        /* The previous lease is stale - release it before recording our own. */
+        char reclaimMessage[256];
+        snprintf(reclaimMessage, sizeof(reclaimMessage),
+                 "Auto-reclaim by wt-agent@%s after lease expired (previous holder=%s).",
+                 agentName, leaseHolder[0] ? leaseHolder : "unknown");
+        if (wtTaskAppendReclaimEvent(config->taskLedgerPath, task.taskId, leaseHolder,
+                                     agentName, "lease_expired", reclaimMessage,
+                                     config->fsyncEachMessage) != 0) {
+            perror("record auto-reclaim");
+            return 1;
+        }
+    }
+    int leaseAttempt = previousAttempt + 1;
+    /* 15-minute lease window matches the stuck-task threshold used in projection. */
+    long long leaseExpiresAtUnixMs = nowUnixMs + 15LL * 60LL * 1000LL;
+    if (wtTaskAppendLeaseEvent(config->taskLedgerPath, task.taskId, agentName, leaseAttempt,
                                leaseExpiresAtUnixMs, config->fsyncEachMessage) != 0) {
         perror("record task lease");
         return 1;

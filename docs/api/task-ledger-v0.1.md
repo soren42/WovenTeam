@@ -110,10 +110,11 @@ package, and emits `task.assign`. The child package includes `parentTaskId`,
 - `POST /api/task-gate`
 - `POST /api/task-usage`
 - `POST /api/agent-control`
+- `POST /api/task-reclaim`
 
 `bin/wt-task` wraps those endpoints for local operator use with `create`,
 `request`, `list`, `show`, `assign`, `update-status`, `retry`, `cancel`,
-`close`, `reopen`, `initiative create/list/show/export/close`, and
+`close`, `reopen`, `reclaim`, `initiative create/list/show/export/close`, and
 `agent list/pause/resume` commands.
 
 Phase 1 keeps the JSONL ledger as the recovery source and adds a rebuildable
@@ -187,6 +188,51 @@ Agent pause/resume records use:
 `GET /api/agents` returns one row for each primary agent with active, leased,
 running, stuck, and attempt counts. A task is considered stuck when it remains
 `leased` or `running` for more than 15 minutes.
+
+Sprint 3 closeout (2026-05-20) adds two more event shapes. A `reclaim` task
+event releases the most recent lease and sends the task back to the queued
+pool:
+
+```json
+{
+  "schema": "woventeam.task_event.v0.1",
+  "taskId": "task_example_001",
+  "eventType": "reclaim",
+  "status": "queued",
+  "assignedAgent": "chatgpt",
+  "reclaimReason": "lease_expired",
+  "message": "Auto-reclaim after lease expired (previous holder=chatgpt).",
+  "createdBy": "wt-agent@gemini",
+  "createdAtUnixMs": 1779249000000
+}
+```
+
+`reclaimReason` is an allowlist of `operator` (operator-triggered) or
+`lease_expired` (recorded automatically by `wt-agent` when it finds a stuck
+foreign lease). Failed status events may additionally carry a `retryCause`
+field:
+
+```json
+{
+  "schema": "woventeam.task_event.v0.1",
+  "taskId": "task_example_001",
+  "eventType": "status",
+  "status": "failed",
+  "message": "Codex adapter exitCode=124 timedOut=true; see task workspace manifest.",
+  "retryCause": "timeout",
+  "createdBy": "wt-agent@chatgpt",
+  "createdAtUnixMs": 1779249000000
+}
+```
+
+`retryCause` values emitted by `wt-agent` adapters: `timeout` (timeout kill),
+`adapter_unavailable` (exec returned 127), `exit_nonzero` (any other non-zero
+exit). The projection surfaces the latest classified cause on each task as
+`failureCause`, the most recent reclaim's reason as `lastReclaimReason`, and a
+cumulative `reclaimCount`. `POST /api/task-reclaim` accepts a JSON body with
+`taskId`, `reason` (`operator` or `lease_expired`), optional `message`, and
+optional `createdBy`; it appends the same `reclaim` task event a stuck-task
+recovery would emit.
 
 When a task is marked `blocked`, queued/running child tasks that list it in
 `dependencies` receive an appended `blocked` task event. Terminal dependents are
