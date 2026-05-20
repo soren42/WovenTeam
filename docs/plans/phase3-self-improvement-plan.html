@@ -341,6 +341,7 @@
           <span class="pill next">Phase 3 target: v1.0 release</span>
           <span class="pill violet">Self-improvement loop</span>
           <span class="pill risk">Scope: single-tenant intranet, optional remote agents</span>
+          <span class="pill">rev 2 (post-Codex review)</span>
         </div>
       </div>
       <div class="hero-card">
@@ -431,6 +432,7 @@
       <a href="#risks">Risks</a>
       <a href="#demo">Demo</a>
       <a href="#checklist">v1.0 Checklist</a>
+      <a href="#revisions">Revisions</a>
       <a href="#refs">References</a>
     </nav>
 
@@ -446,17 +448,23 @@
 
     <section id="done">
       <h2>Definition Of Done (v1.0)</h2>
-      <p>Phase 3 ships when this full launch flow works without operator hand-holding:</p>
+      <p>Phase 3 ships when this full launch flow works without operator hand-holding. v1.0 has <strong>two gates</strong>: a product gate that proves WovenTeam can ship its own next feature, and a release gate that proves a second operator can install + recover + revoke + reason about the threat model.</p>
       <div class="checklist">
-        <div class="check"><span class="box"></span><span>Operator can grant a task autonomous execution permission (with documented blast radius) and the agent respects it without re-prompting.</span></div>
         <div class="check"><span class="box"></span><span>Agents emit heartbeats on a configurable interval (default ~2 h) plus milestone events at every major lifecycle transition.</span></div>
-        <div class="check"><span class="box"></span><span>A status report endpoint aggregates initiatives, in-flight tasks, alerts, budgets, and heartbeats into one structured payload; the console shows the same data live via SSE.</span></div>
-        <div class="check"><span class="box"></span><span>Accepted artifacts can be promoted into a deliverables archive (branch / tarball / PR) with a manifest carrying checksums and provenance.</span></div>
-        <div class="check"><span class="box"></span><span>Remote agents on at least one second host can claim and complete bounded tasks with the same lease + policy + audit semantics as local agents.</span></div>
-        <div class="check"><span class="box"></span><span>The console can modify, cancel, reprioritize, and re-route in-flight tasks; status updates land within seconds via SSE.</span></div>
+        <div class="check"><span class="box"></span><span>Long-running adapter runs renew their lease before expiry; cancel terminates the adapter process group with audit evidence.</span></div>
+        <div class="check"><span class="box"></span><span>Audit export supports windowed pagination so the 1 MiB single-buffer no longer caps initiative size.</span></div>
+        <div class="check"><span class="box"></span><span>A status report endpoint aggregates initiatives, in-flight tasks, alerts, budgets, autonomy grants, and heartbeats into one structured payload; the console shows the same data live via SSE.</span></div>
+        <div class="check"><span class="box"></span><span>Operator can grant a task a bounded, revocable autonomy grant (scope, TTL, wall-clock cap, network class, credential class) and the agent respects it without re-prompting. Revocation is immediate.</span></div>
+        <div class="check"><span class="box"></span><span>Every elevation and every adapter invocation appends an <code>autonomy_event</code>. The plan does not claim per-filesystem-write observability beyond that.</span></div>
+        <div class="check"><span class="box"></span><span>Accepted artifacts can be promoted into a deliverables archive (copy / tarball / branch / PR) with a manifest carrying checksums + provenance + a pre-ship secret scan.</span></div>
+        <div class="check"><span class="box"></span><span>Remote agents on at least one second host can claim and complete bounded tasks with the same lease + policy + audit semantics as local agents; token revocation invalidates an in-flight remote.</span></div>
+        <div class="check"><span class="box"></span><span>Mutating endpoints (task-priority / task-reroute / task-cancel / autonomy-revoke / auth-token / task-deliverable) require either local-socket origin or operator-class token.</span></div>
+        <div class="check"><span class="box"></span><span>The console can modify, cancel, reprioritize, re-route, and revoke autonomy on in-flight tasks; status updates land within seconds via SSE.</span></div>
+        <div class="check"><span class="box"></span><span>Backup / replay / restore: delete the SQLite projection, replay JSONL, verify status/audit/deliverables match the captured baseline.</span></div>
+        <div class="check"><span class="box"></span><span>Threat-model doc (<code>docs/security/threat-model.md</code>) signed off: single-tenant intranet, mTLS for cross-network, out-of-scope items explicit.</span></div>
         <div class="check"><span class="box"></span><span>WovenTeam ships at least one real WovenTeam feature end-to-end through its own workbench, captured in an audit + launch report.</span></div>
         <div class="check"><span class="box"></span><span>Operations runbook, cheat sheet, console scaffold doc, API reference, and the README are aligned with v1.0 surfaces.</span></div>
-        <div class="check"><span class="box"></span><span>v1.0 release: tagged commit, signed (or hashed) tarball, install + upgrade procedure, security review note.</span></div>
+        <div class="check"><span class="box"></span><span>v1.0 release: tagged commit, hashed tarball + <code>SHA256SUMS</code> under <code>docs/launch/v1.0/</code>, install + upgrade procedure rehearsed by a second operator.</span></div>
       </div>
     </section>
 
@@ -562,97 +570,113 @@
 
     <section id="sprints">
       <h2>Proposed Sprints</h2>
-      <p class="muted">Seven sprints. Sprints 1-3 add the safety + observability needed to run autonomous work; Sprints 4-5 extend the substrate; Sprint 6 makes the operator surface real-time; Sprint 7 demonstrates self-improvement and ships v1.0.</p>
+      <p class="muted">Seven sprints, resequenced from the original draft after a Codex review (see <code>/woventeam/docs/audit/phase3-plan-peer-review-2026-05-20.md</code>). Observability and control-plane work land first so autonomy is built on top of revocable, observable infrastructure rather than the other way around.</p>
       <div class="timeline">
         <article class="sprint">
-          <h3>Sprint 1: Autonomy &amp; Permissive Modes</h3>
-          <p class="muted">Make it safe to grant an agent enough latitude to do real work.</p>
+          <h3>Sprint 1: Runtime Observability &amp; Control Plane</h3>
+          <p class="muted">Build the substrate autonomy will sit on: heartbeats, milestones, lease renewal, kill semantics, audit windowing.</p>
           <ol>
-            <li>Add <code>autonomyLevel</code> to the task package schema; defaults derived from <code>toolPolicy.profile</code>.</li>
-            <li>Adapter plumbing: pass-through of CLI permission flags (<code>--dangerously-skip-permissions</code>, <code>--ask-for-approval never</code>, etc.) gated by autonomy.</li>
-            <li>Per-agent default config; per-initiative + per-task overrides; most-specific wins.</li>
-            <li>New <code>woventeam.autonomy_event.v0.1</code> ledger record for every elevation, with classified <code>commandClass</code>.</li>
-            <li>Policy evaluator gains <code>autonomy_required</code> reason so unauthorized elevations fail closed.</li>
-          </ol>
-          <div class="accept"><strong>Acceptance:</strong> an integration test (<code>wt-autonomy</code>) creates a task with autonomy <code>autonomous</code>, runs the adapter with the corresponding skip-permissions flag, and verifies the autonomy_event chain. Downgrading the level mid-task downgrades the next adapter invocation.</div>
-        </article>
-
-        <article class="sprint">
-          <h3>Sprint 2: Heartbeats &amp; Milestone Reporting</h3>
-          <p class="muted">Long-running work becomes visible without polling.</p>
-          <ol>
-            <li><code>wt-agent</code> emits <code>woventeam.heartbeat.v0.1</code> on its configured interval; default 2 h, override via <code>heartbeatIntervalSeconds</code>.</li>
+            <li><code>wt-agent</code> emits <code>woventeam.heartbeat.v0.1</code> on a configurable interval (default 2 h, override via <code>heartbeatIntervalSeconds</code>).</li>
             <li>Milestone events: <code>woventeam.milestone.v0.1</code> at <code>plan</code>, <code>execute</code>, <code>review</code>, <code>escalate</code>, <code>complete</code>.</li>
             <li><code>GET /api/status</code> returns one aggregated payload: initiatives, in-flight tasks, recent heartbeats, alerts, budgets, adapter readiness, host roster.</li>
-            <li>Slack/email notification map keyed off <code>slack_webhook.txt</code> + an optional <code>smtp.conf</code>.</li>
+            <li><strong>Lease renewal</strong>: long-running adapters refresh their lease before the 15-minute expiry (deferred from Phase 2). Renewal events appear in the ledger.</li>
+            <li><strong>Kill semantics</strong>: <code>POST /api/task-cancel</code> terminates the adapter process group with <code>SIGTERM</code> then <code>SIGKILL</code>; appends a <code>woventeam.kill_event.v0.1</code> record with exit reason. Cancelled output cannot be later accepted.</li>
+            <li><strong>Audit pagination</strong>: <code>/api/initiative-audit</code> accepts <code>?since=&lt;ms&gt;</code> and <code>?limit=&lt;N&gt;</code>; the 1 MiB buffer becomes a windowed stream (deferred watch item from Phase 2 launch report).</li>
+            <li>Notification routing keyed off the existing webhook map plus optional <code>smtp.conf</code>. Defaults: escalate + stuck broadcast; routine milestones silent.</li>
             <li>Console status board panel renders the same data live via SSE.</li>
           </ol>
-          <div class="accept"><strong>Acceptance:</strong> integration test confirms heartbeat appends + status endpoint aggregation + Slack webhook delivery (against a local mock). Console status board renders within 2 s of a heartbeat append.</div>
+          <div class="accept"><strong>Acceptance:</strong> integration test confirms heartbeat appends, status endpoint aggregation, lease renewal across a 20-minute synthetic run, cancel terminates the process group with audit evidence, paginated audit responses match the unpaginated baseline, and Slack webhook delivery hits a local mock. Console status board renders within 2 s of a heartbeat append.</div>
         </article>
 
         <article class="sprint">
-          <h3>Sprint 3: Deliverables Pipeline</h3>
-          <p class="muted">Accepted work product lands in a stable destination.</p>
+          <h3>Sprint 2: Autonomy &amp; Policy Contract</h3>
+          <p class="muted">Now that the control plane exists, grant agents bounded, revocable latitude to do real work.</p>
+          <ol>
+            <li>Add <code>autonomyLevel</code> to the task package schema; defaults derived from <code>toolPolicy.profile</code>.</li>
+            <li>New <code>autonomyGrant</code> sub-object on every task with <code>scope</code> (workspace paths, allowed endpoints, allowed git operations), <code>ttlSeconds</code>, <code>maxWallClockSeconds</code>, <code>maxCostUsd</code> / <code>maxTokens</code> (inherited from budget), <code>network</code> (<code>none</code>/<code>intranet</code>/<code>allowlist</code>), <code>credentialClass</code> (<code>none</code>/<code>repo-read</code>/<code>repo-write</code>/<code>release</code>), <code>requiresCleanWorktree</code>, <code>revokedAtUnixMs</code> / <code>revokedBy</code>.</li>
+            <li>Adapter plumbing: pass-through of CLI permission flags (<code>--dangerously-skip-permissions</code>, <code>--ask-for-approval never</code>, etc.) only when grant.ttl is unexpired AND scope covers the invocation.</li>
+            <li>Per-agent default config; per-initiative + per-task overrides; most-specific wins.</li>
+            <li>New <code>woventeam.autonomy_event.v0.1</code> ledger record for <strong>every elevation and every adapter invocation</strong>. The plan does not claim to observe every filesystem write the adapter performs once skip-permissions is granted (OS-level tracing is out of scope for v1.0); the audit records the invocation envelope and the CLI exit code, not each syscall.</li>
+            <li>Policy evaluator gains <code>autonomy_required</code> reason so unauthorized elevations fail closed; <code>autonomy_expired</code> and <code>autonomy_revoked</code> as separate codes.</li>
+            <li>Revocation endpoint: <code>POST /api/autonomy-revoke</code> with <code>taskId</code> + reason. Revocation is immediate; the next adapter invocation downgrades to the lowest level that still fits the tool profile.</li>
+          </ol>
+          <div class="accept"><strong>Acceptance:</strong> integration test (<code>wt-autonomy</code>) creates a task with autonomy <code>autonomous</code> and an explicit grant, runs the adapter with the corresponding skip-permissions flag, and verifies the autonomy_event chain. Mid-task <code>autonomy-revoke</code> downgrades the next adapter invocation. Expired grants fail closed with <code>autonomy_expired</code>. Grants without sufficient scope are denied with <code>autonomy_required</code>.</div>
+        </article>
+
+        <article class="sprint">
+          <h3>Sprint 3: Deliverables &amp; Provenance</h3>
+          <p class="muted">Accepted work product lands in a stable, scanned destination.</p>
           <ol>
             <li>Schema: <code>woventeam.deliverable.v0.1</code> with source workspace path, deliverable path, size, sha256, reviewer, packaging mode.</li>
-            <li><code>POST /api/task-deliverable</code> + <code>wt-task artifact ship TASK_ID [--mode tarball|branch|pr]</code>.</li>
+            <li><code>POST /api/task-deliverable</code> + <code>wt-task artifact ship TASK_ID [--mode copy|tarball|branch|pr]</code>.</li>
             <li>Per-initiative <code>deliverableRoot</code> config (default <code>data/deliverables/&lt;initiativeId&gt;/</code>).</li>
-            <li>Optional packaging: tarball (zip), branch (commit + push), pull-request (uses local <code>gh</code> auth).</li>
+            <li>Optional packaging: copy (default), tarball (zip), branch (commit + push), pull-request (uses local <code>gh</code> auth, operator-gated by <code>--yes</code>).</li>
+            <li><strong>Pre-ship secret scan</strong>: branch + pr modes refuse to ship if the staged content matches a small set of token / private-key / API-key patterns. The scan result lands as a <code>woventeam.secret_scan.v0.1</code> record.</li>
+            <li>Rollback / supersede: a new deliverable can supersede an earlier one; the manifest preserves the predecessor's sha256 + timestamp so the audit trail remains coherent.</li>
             <li>Audit export embeds the deliverable manifest; the initiative card surfaces a "Deliverables" sub-panel.</li>
           </ol>
-          <div class="accept"><strong>Acceptance:</strong> integration test promotes an artifact through tarball + branch modes; manifest checksums match; audit export includes the deliverable record. PR mode is operator-gated like <code>wt-rehearse-live</code> with explicit <code>--yes</code>.</div>
+          <div class="accept"><strong>Acceptance:</strong> integration test promotes an artifact through tarball + branch modes; manifest checksums match; the secret scan rejects a planted token; audit export includes the deliverable + secret_scan records. PR mode requires explicit <code>--yes</code> and is exercised only against a local fixture repo in test.</div>
         </article>
 
         <article class="sprint">
           <h3>Sprint 4: Remote Execution Substrate</h3>
-          <p class="muted">Agents on additional hosts claim work with the same audit + policy semantics.</p>
+          <p class="muted">Agents on additional hosts claim work with the same audit + policy + revocation semantics.</p>
           <ol>
             <li>Two transports: <code>wt-agent --remote</code> (HTTPS poll + bearer token) and <code>wt-agent --ssh HOST</code> (operator-launched).</li>
-            <li>Bearer-token auth + IP allow-list on the daemon. Token rotation via <code>POST /api/auth-token</code> (operator-only).</li>
-            <li>Host capability registry: <code>POST /api/host-capabilities</code> from the agent, <code>GET /api/hosts</code> for the operator.</li>
-            <li>Routing extension: tasks with <code>executionHost</code> route only to that host; capability check rejects mismatches.</li>
-            <li><code>woventeam.host_event.v0.1</code> for host up / down / capability-changed; partitions surface as stuck-lease alerts and reclaim.</li>
+            <li>Bearer-token auth + IP allow-list on the daemon. <code>POST /api/auth-token</code> rotates a token; <code>POST /api/auth-token/revoke</code> burns one. Tokens carry an issued-at and TTL.</li>
+            <li>Host capability registry: <code>POST /api/host-capabilities</code> from the agent, <code>GET /api/hosts</code> for the operator. Capability changes broadcast as <code>woventeam.host_event.v0.1</code>.</li>
+            <li>Routing extension: tasks with <code>executionHost</code> route only to that host; capability check rejects mismatches with <code>capability_unmet</code>.</li>
+            <li>Operator auth on mutating endpoints: <code>task-priority</code>, <code>task-reroute</code>, <code>task-cancel</code>, <code>autonomy-revoke</code>, <code>auth-token</code>, <code>task-deliverable</code> all require either a local-socket origin or a bearer token issued to "operator" role. The threat-model assumptions land in <code>docs/security/threat-model.md</code>.</li>
+            <li>Partitions surface as stuck-lease alerts and reclaim — the Phase 2 reclaim path generalizes to remote hosts unchanged.</li>
           </ol>
-          <div class="accept"><strong>Acceptance:</strong> integration test runs two containerized agents on different network namespaces against one daemon; both successfully lease + complete tasks; partitioning one host triggers reclaim. Bearer-token rejection returns 401 with a classified reason.</div>
+          <div class="accept"><strong>Acceptance:</strong> integration test runs two containerized agents on different network namespaces against one daemon; both successfully lease + complete tasks; partitioning one host triggers reclaim within the lease window; token revocation invalidates an in-flight remote agent's next claim with <code>token_revoked</code>; mutating endpoints reject anonymous requests with classified reason codes.</div>
         </article>
 
         <article class="sprint">
           <h3>Sprint 5: Real-Time Dashboard</h3>
-          <p class="muted">Operator can see and steer in-flight work in real time.</p>
+          <p class="muted">Operator sees and steers in-flight work in real time.</p>
           <ol>
-            <li>SSE channels for tasks, initiatives, artifacts, policy decisions, heartbeats; replace polling in <code>web/app.js</code>.</li>
-            <li>Glanceable header summary with one-line status: initiatives, in-flight tasks, alerts, budget pressure, oldest stuck task.</li>
-            <li>In-flight controls: priority change, agent reroute, cancel, operator note. New <code>POST /api/task-priority</code> + <code>POST /api/task-reroute</code> endpoints.</li>
-            <li>Hotkey triage: <code>A</code> acknowledge alert, <code>P</code> promote selected artifact, <code>R</code> reclaim selected task.</li>
+            <li>SSE channels for tasks, initiatives, artifacts, policy decisions, autonomy events, heartbeats, host events; replace polling in <code>web/app.js</code>.</li>
+            <li>Glanceable header summary with one-line status: initiatives, in-flight tasks, alerts, budget pressure, oldest stuck task, autonomy grants in flight.</li>
+            <li>In-flight controls: priority change, agent reroute, cancel (kill-tree), operator note, autonomy revoke. New <code>POST /api/task-priority</code> + <code>POST /api/task-reroute</code> endpoints; cancel + revoke reuse Sprint 1/2 endpoints.</li>
+            <li>Hotkey triage: <code>A</code> acknowledge alert, <code>P</code> promote selected artifact, <code>R</code> reclaim selected task, <code>X</code> cancel selected task, <code>!</code> revoke autonomy on selected task.</li>
             <li>Drag-priority queue for the task backlog with optimistic UI + server reconciliation.</li>
           </ol>
           <div class="accept"><strong>Acceptance:</strong> manual smoke against a running daemon shows task state changes propagate within 2 s of the ledger append. New endpoints are covered by integration tests. Help overlay maps every hotkey to a CLI equivalent.</div>
         </article>
 
         <article class="sprint">
-          <h3>Sprint 6: Self-Improvement Demonstration</h3>
-          <p class="muted">WovenTeam ships its own next feature using its own workbench.</p>
+          <h3>Sprint 6: Release Hardening Rehearsal</h3>
+          <p class="muted">Prove WovenTeam can be installed, recovered, and operated by a second pair of hands before the self-improvement demo runs.</p>
           <ol>
-            <li>Pick a small but real feature initiative (e.g. add an export-to-markdown formatter, or a new vendor adapter behind a flag).</li>
-            <li>Open the initiative as a CEO task package; let PM decompose into subtasks with autonomy set to <code>autonomous</code> within a safe tool profile.</li>
-            <li>Run end-to-end: real adapters, real heartbeats, real deliverable packaging, real PR.</li>
-            <li>Operator only intervenes on policy denials or stuck leases. Every intervention is itself a recorded event.</li>
-            <li>Capture the audit JSON, the PR URL, and the final diff in a launch artifact.</li>
+            <li><strong>Backup / replay / restore</strong>: delete the SQLite projection, replay <code>data/task-packages.jsonl</code>, verify status/audit/deliverables match a captured baseline byte-for-byte (modulo timestamps).</li>
+            <li><strong>Install + upgrade rehearsal</strong>: a second operator (or a freshly provisioned VM) installs WovenTeam from a tarball using only the README, starts the daemon, runs <code>make test</code>, and exercises the cheat sheet's walkthrough.</li>
+            <li><strong>Failure injection</strong>: daemon restart, agent restart, remote partition, expired token, full disk on the deliverable root, corrupted JSONL line, oversized audit response. Each failure mode maps to a classified ledger event and a documented recovery path.</li>
+            <li><strong>Threat-model signoff</strong>: <code>docs/security/threat-model.md</code> documents the single-tenant intranet assumption, the mTLS bar for cross-network, the operator-auth assumption on mutating endpoints, and the explicit out-of-scope items.</li>
+            <li><strong>Secret-handling pass</strong>: redaction at every emission point (logs, artifacts, heartbeats, adapter manifests, deliverable manifests). The pre-ship secret scan from Sprint 3 stays; this sprint adds the redaction-at-source step.</li>
           </ol>
-          <div class="accept"><strong>Acceptance:</strong> a merged PR in this repository whose initiative was opened via the console and whose execution path is documented in <code>docs/launch/phase3-self-improvement-demo.md</code>. Audit export attached to the launch report.</div>
+          <div class="accept"><strong>Acceptance:</strong> backup/replay/restore produces a matching baseline; the failure-injection scenarios each have a reproducible test or runbook step; second-operator install completes from tarball within 30 minutes following only the README. Threat-model doc reviewed.</div>
         </article>
 
         <article class="sprint">
-          <h3>Sprint 7: Release Hardening &amp; v1.0</h3>
-          <p class="muted">Make WovenTeam installable, operable, and presentable for the first public version.</p>
+          <h3>Sprint 7: Self-Improvement Demonstration &amp; v1.0</h3>
+          <p class="muted">WovenTeam ships its own next feature using its own workbench. Then tag from that proven commit.</p>
           <ol>
-            <li>Public-ready README, runbook, cheat sheet, console scaffold doc. Screenshots if licensed.</li>
-            <li><code>make install</code> + distribution tarball + optional Debian packaging.</li>
-            <li>Branding pass: logo, name, hue swatch defaults, copyright. Update <code>LICENSE</code> if needed.</li>
-            <li>Security review note: document the threat model (single-tenant intranet, optional remote agents over mTLS), document the operational assumptions and the boundaries that are out-of-scope.</li>
-            <li>Tag <code>v1.0.0</code>, build a signed (or hashed) release artifact, archive checksums under <code>docs/launch/v1.0/</code>.</li>
+            <li>Pick a small but real feature initiative (e.g. an export-to-markdown formatter, a new adapter flag, an audit query filter).</li>
+            <li>Open the initiative as a CEO task package; let PM decompose into subtasks with autonomy <code>autonomous</code> bounded by a scoped grant.</li>
+            <li>Run end-to-end: real adapters, real heartbeats, real deliverable packaging through Sprint 3's tarball + branch + PR pipeline.</li>
+            <li>Operator only intervenes on policy denials, stuck leases, or revocations. Every intervention is itself a recorded event.</li>
+            <li>Capture the audit JSON, the PR URL, and the final diff in <code>docs/launch/phase3-self-improvement-demo.md</code>.</li>
+            <li>Tag <code>v1.0.0</code> on the commit that includes the merged demo PR. Build a hashed release tarball; archive checksums under <code>docs/launch/v1.0/</code>. Branding pass + README polish + cheat sheet polish + runbook polish.</li>
           </ol>
-          <div class="accept"><strong>Acceptance:</strong> <code>git tag v1.0.0</code> exists on a commit that passes <code>make test</code>, includes the demonstration PR, and ships with all updated docs. A second operator can install + start the daemon from the tarball following only the README.</div>
+          <div class="accept">
+            <strong>Two-gate acceptance.</strong>
+            <ul>
+              <li><strong>Product gate</strong>: merged self-improvement PR; audit export archived; operator interventions recorded.</li>
+              <li><strong>Release gate</strong>: clean install from tarball by a second operator (rehearsed in Sprint 6) passes; restore/replay test passes on the tagged commit; token revocation invalidates an in-flight remote agent; threat-model doc signed off.</li>
+            </ul>
+            Both gates must pass before <code>git tag v1.0.0</code>.
+          </div>
         </article>
       </div>
     </section>
@@ -764,23 +788,35 @@
       <h2>Autonomy Levels &amp; Permissive Modes</h2>
       <div class="twocol">
         <div>
-          <p>Autonomy is the operator's contract with an agent about how much it may do without re-prompting. Levels are deliberately discrete so audit and UX can both reason about them.</p>
+          <p>Autonomy is the operator's contract with an agent about how much it may do without re-prompting. Levels are deliberately discrete so audit and UX can both reason about them. Each task carries a <strong>bounded, revocable grant</strong> alongside the level — the level says "what kind of latitude", the grant says "for how long, over what scope, with what credentials."</p>
           <table>
             <thead><tr><th>Level</th><th>Adapter flag</th><th>What the agent may do</th></tr></thead>
             <tbody>
               <tr><td><code>observe</code></td><td>read-only flags</td><td>Read repo, summarize, plan. No filesystem or network writes.</td></tr>
               <tr><td><code>ask-each</code></td><td>default interactive</td><td>Default for new tasks. Adapter prompts for every privileged action; operator approves inline or via console.</td></tr>
               <tr><td><code>ask-batch</code></td><td>scope-batched prompts</td><td>Approve a batch of actions ahead of time (e.g. "all edits under <code>src/foo</code>"). Adapter executes inside the batch without re-prompting.</td></tr>
-              <tr><td><code>autonomous</code></td><td><code>--dangerously-skip-permissions</code>, <code>--ask-for-approval never</code>, equivalents</td><td>Full latitude inside the tool profile. Every action still appends an <code>autonomy_event</code> record; escalations outside the profile fail closed.</td></tr>
+              <tr><td><code>autonomous</code></td><td><code>--dangerously-skip-permissions</code>, <code>--ask-for-approval never</code>, equivalents</td><td>Full latitude <em>inside the grant</em>. Every elevation and every adapter invocation still appends an <code>autonomy_event</code>; the grant bounds blast radius.</td></tr>
             </tbody>
           </table>
+          <h4>Grant fields (required for <code>autonomous</code>; optional below)</h4>
+          <ul>
+            <li><code>scope</code> — workspace paths, allowed endpoints, allowed git operations (e.g. <code>branch-only</code>, <code>commit</code>, <code>push</code>).</li>
+            <li><code>ttlSeconds</code>, <code>maxWallClockSeconds</code> — the grant expires; the policy evaluator rejects elevations past either.</li>
+            <li><code>maxCostUsd</code>, <code>maxTokens</code> — inherited from the task budget but separately enforced inside the grant.</li>
+            <li><code>network</code> — <code>none</code>, <code>intranet</code>, or <code>allowlist</code> (with explicit hosts).</li>
+            <li><code>credentialClass</code> — <code>none</code>, <code>repo-read</code>, <code>repo-write</code>, <code>release</code>. Controls which tokens the daemon will lease to the adapter.</li>
+            <li><code>requiresCleanWorktree</code> — true for branch / pr deliverable modes.</li>
+            <li><code>revokedAtUnixMs</code>, <code>revokedBy</code> — populated by <code>POST /api/autonomy-revoke</code>; revocation is immediate.</li>
+          </ul>
           <h4>Resolution order</h4>
           <ol>
-            <li>Per-task <code>autonomyLevel</code> field (most specific; operator's explicit choice).</li>
+            <li>Per-task <code>autonomyLevel</code> + <code>autonomyGrant</code> (most specific; operator's explicit choice).</li>
             <li>Per-initiative default (set at initiative creation).</li>
             <li>Per-agent config default (<code>defaultAutonomyClaude</code>, etc.).</li>
             <li>Profile default (e.g. <code>observe</code> tasks default to <code>observe</code> autonomy).</li>
           </ol>
+          <h4>What the audit can (and cannot) prove</h4>
+          <p>Each elevation and each adapter invocation appends an <code>autonomy_event</code> record with actor, command-class, target, and reason. <strong>Once a skip-permission flag is passed to an external CLI, WovenTeam does not observe individual filesystem writes the CLI makes.</strong> OS-level tracing is out of scope for v1.0. The grant bounds, the invocation envelope, and the CLI exit code are what the audit guarantees; per-write provenance is not.</p>
         </div>
         <svg viewBox="0 0 460 320" role="img" aria-label="Autonomy state diagram">
           <defs>
@@ -1220,20 +1256,67 @@ notifications.policy.deny=slack:audit</code></pre>
 
     <section id="checklist">
       <h2>v1.0 Release Checklist</h2>
+      <p class="muted"><strong>Product gate</strong> proves WovenTeam can ship its own next feature. <strong>Release gate</strong> proves a second operator can install, recover from failure, revoke autonomy, and reason about the threat model. Both must pass before <code>git tag v1.0.0</code>.</p>
+      <h4>Product gate</h4>
       <div class="checklist">
+        <div class="check"><span class="box"></span><span><strong>Self-improvement demo:</strong> merged PR in this repository whose initiative was opened via the console; audit JSON archived; operator interventions recorded.</span></div>
+        <div class="check"><span class="box"></span><span><strong>Demo launch report:</strong> <code>docs/launch/phase3-self-improvement-demo.md</code> cites the PR, the audit JSON, and the diff.</span></div>
         <div class="check"><span class="box"></span><span><strong>Code:</strong> 23+ integration tests pass via <code>make test</code> (Phase 2's 19 plus new Phase 3 harnesses).</span></div>
-        <div class="check"><span class="box"></span><span><strong>Tag:</strong> <code>git tag v1.0.0</code> on a commit that includes the self-improvement demo PR.</span></div>
-        <div class="check"><span class="box"></span><span><strong>Release artifact:</strong> tarball + <code>SHA256SUMS</code> under <code>docs/launch/v1.0/</code>.</span></div>
-        <div class="check"><span class="box"></span><span><strong>Install path:</strong> <code>make install</code> writes binaries + systemd units + a stub <code>woventeam.conf</code>.</span></div>
-        <div class="check"><span class="box"></span><span><strong>Upgrade path:</strong> documented in-place upgrade procedure that survives one daemon restart.</span></div>
-        <div class="check"><span class="box"></span><span><strong>README:</strong> matches v1.0 surface area; install + quickstart + cheat-sheet pointers.</span></div>
-        <div class="check"><span class="box"></span><span><strong>Runbook:</strong> Phase 1 / 2 / 3 sections merged into one ops runbook; policy + budget + autonomy + heartbeats covered.</span></div>
-        <div class="check"><span class="box"></span><span><strong>Cheat sheet:</strong> Phase 3 commands (autonomy, ship, audit, rehearse) present; reason codes documented.</span></div>
-        <div class="check"><span class="box"></span><span><strong>API reference:</strong> every new endpoint + schema added to <code>docs/api/task-ledger-v0.1.md</code>.</span></div>
-        <div class="check"><span class="box"></span><span><strong>Security review:</strong> threat model documented; intranet + mTLS modes; operator assumptions explicit.</span></div>
-        <div class="check"><span class="box"></span><span><strong>Branding:</strong> name, logo, hue swatches set; license updated if any new copyrighted material was added.</span></div>
-        <div class="check"><span class="box"></span><span><strong>Self-improvement demo:</strong> merged PR cited in the v1.0 launch report; audit JSON archived.</span></div>
       </div>
+      <h4>Release gate</h4>
+      <div class="checklist">
+        <div class="check"><span class="box"></span><span><strong>Backup / replay / restore:</strong> delete the SQLite projection, replay JSONL, verify status/audit/deliverables match the captured baseline.</span></div>
+        <div class="check"><span class="box"></span><span><strong>Second-operator install:</strong> a fresh operator installs from the release tarball in &lt;= 30 minutes using only the README; <code>make test</code> passes on the fresh install.</span></div>
+        <div class="check"><span class="box"></span><span><strong>Token revocation:</strong> <code>POST /api/auth-token/revoke</code> invalidates an in-flight remote agent's next claim with <code>token_revoked</code>.</span></div>
+        <div class="check"><span class="box"></span><span><strong>Autonomy revocation:</strong> <code>POST /api/autonomy-revoke</code> downgrades the next adapter invocation within seconds.</span></div>
+        <div class="check"><span class="box"></span><span><strong>Kill semantics:</strong> <code>POST /api/task-cancel</code> terminates the adapter process group; the task cannot be later accepted; kill_event records the exit.</span></div>
+        <div class="check"><span class="box"></span><span><strong>Failure injection:</strong> daemon restart, agent restart, remote partition, expired token, full-disk deliverable root, corrupted JSONL line, oversized audit response — each mapped to a classified ledger event + runbook step.</span></div>
+        <div class="check"><span class="box"></span><span><strong>Threat-model doc:</strong> <code>docs/security/threat-model.md</code> signed off; single-tenant intranet baseline, mTLS for cross-network, out-of-scope items explicit.</span></div>
+        <div class="check"><span class="box"></span><span><strong>Secret handling:</strong> redaction at logs / artifacts / heartbeats / adapter manifests / deliverable manifests; pre-ship secret scan rejects planted tokens.</span></div>
+        <div class="check"><span class="box"></span><span><strong>Operator auth:</strong> mutating endpoints reject anonymous requests; local-socket origin or operator-class token required.</span></div>
+        <div class="check"><span class="box"></span><span><strong>Audit pagination:</strong> <code>?since</code> + <code>?limit</code> windowing on <code>/api/initiative-audit</code> verified against unpaginated baseline.</span></div>
+      </div>
+      <h4>Release artifact</h4>
+      <div class="checklist">
+        <div class="check"><span class="box"></span><span><strong>Tag:</strong> <code>git tag v1.0.0</code> on a commit that passes both gates.</span></div>
+        <div class="check"><span class="box"></span><span><strong>Tarball:</strong> hashed release tarball + <code>SHA256SUMS</code> under <code>docs/launch/v1.0/</code>.</span></div>
+        <div class="check"><span class="box"></span><span><strong>Install path:</strong> <code>make install</code> writes binaries + systemd units + a stub <code>woventeam.conf</code>.</span></div>
+        <div class="check"><span class="box"></span><span><strong>Upgrade path:</strong> documented in-place upgrade that survives one daemon restart.</span></div>
+        <div class="check"><span class="box"></span><span><strong>README:</strong> matches v1.0 surface area; install + quickstart + cheat-sheet pointers.</span></div>
+        <div class="check"><span class="box"></span><span><strong>Runbook:</strong> Phase 1 / 2 / 3 sections merged into one ops runbook; policy + budget + autonomy + heartbeats + remote covered.</span></div>
+        <div class="check"><span class="box"></span><span><strong>Cheat sheet:</strong> Phase 3 commands (autonomy, ship, audit, rehearse, cancel, revoke) present; reason codes documented.</span></div>
+        <div class="check"><span class="box"></span><span><strong>API reference:</strong> every new endpoint + schema added to <code>docs/api/task-ledger-v0.1.md</code>.</span></div>
+        <div class="check"><span class="box"></span><span><strong>Branding:</strong> name, logo, hue swatches set; license updated if any new copyrighted material was added.</span></div>
+      </div>
+    </section>
+
+    <section id="revisions">
+      <h2>Revisions</h2>
+      <table>
+        <thead><tr><th>Rev</th><th>Date</th><th>Source</th><th>Summary</th></tr></thead>
+        <tbody>
+          <tr>
+            <td>1</td>
+            <td>2026-05-20</td>
+            <td>Initial draft</td>
+            <td>Seven sprints with autonomy first, single v1.0 acceptance gate centered on the self-improvement demonstration.</td>
+          </tr>
+          <tr>
+            <td>2</td>
+            <td>2026-05-20</td>
+            <td>Codex peer review (see <code>/woventeam/docs/audit/phase3-plan-peer-review-2026-05-20.md</code>)</td>
+            <td>
+              Resequenced sprints so observability + lease renewal + audit pagination + kill semantics land in Sprint 1, before autonomy.
+              Autonomy expanded into a bounded, revocable grant schema (scope, TTL, wall-clock cap, network class, credential class, requiresCleanWorktree, revokedAt).
+              Audit claim reworded: every elevation and every adapter invocation appends an <code>autonomy_event</code> (the document no longer claims per-filesystem-write observability).
+              Added Sprint 6 "Release Hardening Rehearsal" covering backup/replay, second-operator install, failure injection, threat-model signoff, secret-handling pass.
+              Two-gate v1.0: Product gate (self-improvement PR merged) plus Release gate (clean install + restore + revocation + threat-model signoff).
+              New acceptance criteria for kill semantics, audit pagination, operator auth on mutating endpoints, token revocation, secret scan before ship.
+              Gemini's review (Issue #36) still pending; further revisions will append a rev 3 row.
+            </td>
+          </tr>
+        </tbody>
+      </table>
     </section>
 
     <section id="refs">
