@@ -429,8 +429,29 @@ async function loadTaskDetail(taskId) {
   if (!detail.ok) return;
   taskDetail.hidden = false;
   state.selectedTaskStatus = detail.task.status || "";
+  state.selectedTaskDetail = detail.task;
   document.querySelector("#detailTitle").textContent = detail.task.title || taskId;
-  document.querySelector("#detailMeta").textContent = `${detail.task.taskId} · ${detail.task.status} · ${detail.task.assignedAgent || "all"} · ${fmtTokens(detail.task.maxTokens || 0)} tokens`;
+  /*
+   * Build a meta line that always carries: id, status, assigned agent, budget.
+   * Sprint 3 closeout: when the projection reports a failure cause, an active
+   * lease holder, or a non-zero reclaim count, surface those in-line so the
+   * operator does not have to open the raw events list to see why a task is in
+   * its current state.
+   */
+  const metaParts = [
+    detail.task.taskId,
+    detail.task.status,
+    detail.task.assignedAgent || "all",
+    `${fmtTokens(detail.task.maxTokens || 0)} tokens`,
+  ];
+  if (detail.task.attemptCount > 0) metaParts.push(`attempt ${detail.task.attemptCount}`);
+  if (detail.task.failureCause) metaParts.push(`cause: ${detail.task.failureCause}`);
+  if (detail.task.leaseOwner) metaParts.push(`lease: ${detail.task.leaseOwner}`);
+  if (detail.task.reclaimCount > 0) {
+    const reason = detail.task.lastReclaimReason || "operator";
+    metaParts.push(`reclaimed ${detail.task.reclaimCount}× (${reason})`);
+  }
+  document.querySelector("#detailMeta").textContent = metaParts.join(" · ");
   document.querySelector("#detailBody").textContent = detail.task.body || "";
   const events = document.querySelector("#detailEvents");
   events.innerHTML = "";
@@ -611,6 +632,37 @@ async function postAgentControl(agent, action) {
   await loadAgents();
 }
 
+/*
+ * Sprint 3 closeout: operator-visible task reclaim. POST releases the most
+ * recent lease so a stuck task returns to the queued pool. The selected task is
+ * implied by state.selectedTaskId; the reason is hard-coded to "operator"
+ * because the UI button is explicitly an operator action.
+ */
+async function postTaskReclaim(taskId, reason) {
+  if (!taskId) {
+    addAudit("ui", "reclaim ignored: no task selected");
+    return;
+  }
+  const response = await fetch("/api/task-reclaim", {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({
+      taskId,
+      reason: reason || "operator",
+      message: `Reclaim requested from web console (${reason || "operator"}).`,
+      createdBy: "ceo",
+    }),
+  });
+  if (!response.ok) {
+    addAudit("ui", `reclaim failed for ${taskId}`);
+    return;
+  }
+  addAudit("ui", `reclaim posted for ${taskId}`);
+  await loadTasks();
+  await loadTaskDetail(taskId);
+  await loadAgents();
+}
+
 function renderAgentControls() {
   const container = document.querySelector("#agentControls");
   if (!container) return;
@@ -625,14 +677,33 @@ function renderAgentControls() {
   agents.forEach(agent => {
     const card = document.createElement("div");
     const isPaused = agent.state === "paused";
-    card.className = `agent-control-card ${isPaused ? "paused" : ""}`;
-    card.innerHTML = "<strong></strong><span></span><button type=\"button\"></button>";
+    const stuckCount = Number(agent.stuckTasks || 0);
+    card.className = `agent-control-card ${isPaused ? "paused" : ""} ${stuckCount > 0 ? "stuck" : ""}`;
+    card.innerHTML = "<strong></strong><span></span><div class=\"agent-control-buttons\"></div>";
     card.querySelector("strong").textContent = `${agent.agent} · ${agent.state}`;
     card.querySelector("span").textContent =
-      `${agent.leasedTasks || 0} leased · ${agent.runningTasks || 0} running · ${agent.stuckTasks || 0} stuck · ${agent.attempts || 0} attempts`;
-    const button = card.querySelector("button");
-    button.textContent = isPaused ? "RESUME" : "PAUSE";
-    button.addEventListener("click", () => postAgentControl(agent.agent, isPaused ? "resume" : "pause"));
+      `${agent.leasedTasks || 0} leased · ${agent.runningTasks || 0} running · ${stuckCount} stuck · ${agent.attempts || 0} attempts`;
+    const buttonRow = card.querySelector(".agent-control-buttons");
+    const pauseButton = document.createElement("button");
+    pauseButton.type = "button";
+    pauseButton.textContent = isPaused ? "RESUME" : "PAUSE";
+    pauseButton.addEventListener("click", () => postAgentControl(agent.agent, isPaused ? "resume" : "pause"));
+    buttonRow.appendChild(pauseButton);
+    /*
+     * Reclaim affordance: only shown when this agent has at least one stuck
+     * task. It reclaims the currently selected task, which is the common case
+     * for an operator who clicked into a stuck task to investigate. If no task
+     * is selected the helper records an audit warning rather than failing.
+     */
+    if (stuckCount > 0) {
+      const reclaimButton = document.createElement("button");
+      reclaimButton.type = "button";
+      reclaimButton.className = "reclaim";
+      reclaimButton.textContent = "RECLAIM TASK";
+      reclaimButton.title = "Release the most recent lease on the currently selected task.";
+      reclaimButton.addEventListener("click", () => postTaskReclaim(state.selectedTaskId, "operator"));
+      buttonRow.appendChild(reclaimButton);
+    }
     container.appendChild(card);
   });
 }

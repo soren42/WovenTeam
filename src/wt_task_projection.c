@@ -120,6 +120,10 @@ static int insertEvent(sqlite3 *db, const char *line, const char *schema) {
     char assignedAgent[WT_TASK_AGENT_SIZE];
     char message[WT_TASK_BODY_SIZE];
     char createdBy[WT_TASK_AGENT_SIZE];
+    /* retryCause and reclaimReason are Sprint 3 closeout fields used to drive the
+     * operator's visibility into why a task failed or had its lease released. */
+    char retryCause[64];
+    char reclaimReason[64];
     long long createdAtMs = 0;
     long long leaseExpiresAtMs = 0;
     long attempt = 0;
@@ -136,6 +140,8 @@ static int insertEvent(sqlite3 *db, const char *line, const char *schema) {
     if (createdBy[0] == '\0') {
         readStringOrDefault(line, "requestedBy", createdBy, sizeof(createdBy), "");
     }
+    readStringOrDefault(line, "retryCause", retryCause, sizeof(retryCause), "");
+    readStringOrDefault(line, "reclaimReason", reclaimReason, sizeof(reclaimReason), "");
     wtJsonReadLongLong(line, "createdAtUnixMs", &createdAtMs);
     wtJsonReadLongLong(line, "leaseExpiresAtUnixMs", &leaseExpiresAtMs);
     wtJsonReadLong(line, "attempt", &attempt);
@@ -153,40 +159,88 @@ static int insertEvent(sqlite3 *db, const char *line, const char *schema) {
     if (rc != 0 || taskId[0] == '\0') {
         return -1;
     }
-    if (status[0] != '\0' || assignedAgent[0] != '\0') {
+    if (status[0] != '\0' || assignedAgent[0] != '\0' || strcmp(eventType, "reclaim") == 0) {
+        /*
+         * Apply the event to the tasks projection row. The CASE expressions are
+         * narrow: each column only updates when the event_type or status warrants
+         * it, leaving prior values intact for unrelated events. The reclaim
+         * branch clears the lease columns so subsequent lease events look fresh.
+         */
         sqlite3_stmt *update = NULL;
         const char *updateSql =
             "UPDATE tasks SET "
             "status=CASE WHEN ? != '' THEN ? ELSE status END,"
             "assigned_agent=CASE WHEN ? != '' THEN ? ELSE assigned_agent END,"
-            "lease_owner=CASE WHEN ? = 'lease' THEN ? ELSE lease_owner END,"
-            "lease_expires_at_ms=CASE WHEN ? = 'lease' THEN ? ELSE lease_expires_at_ms END,"
-            "leased_at_ms=CASE WHEN ? = 'lease' THEN ? ELSE leased_at_ms END,"
-            "running_at_ms=CASE WHEN ? = 'status' AND ? = 'running' THEN ? ELSE running_at_ms END,"
+            "lease_owner=CASE "
+            "  WHEN ? = 'lease' THEN ? "
+            "  WHEN ? = 'reclaim' THEN '' "
+            "  ELSE lease_owner END,"
+            "lease_expires_at_ms=CASE "
+            "  WHEN ? = 'lease' THEN ? "
+            "  WHEN ? = 'reclaim' THEN 0 "
+            "  ELSE lease_expires_at_ms END,"
+            "leased_at_ms=CASE "
+            "  WHEN ? = 'lease' THEN ? "
+            "  WHEN ? = 'reclaim' THEN 0 "
+            "  ELSE leased_at_ms END,"
+            "running_at_ms=CASE "
+            "  WHEN ? = 'status' AND ? = 'running' THEN ? "
+            "  WHEN ? = 'reclaim' THEN 0 "
+            "  ELSE running_at_ms END,"
             "attempt_count=CASE WHEN ? = 'lease' THEN max(attempt_count + 1, ?) ELSE attempt_count END,"
+            "failure_cause=CASE "
+            "  WHEN ? = 'status' AND ? = 'failed' AND ? != '' THEN ? "
+            "  WHEN ? = 'lease' OR ? = 'reclaim' THEN '' "
+            "  ELSE failure_cause END,"
+            "last_reclaim_reason=CASE WHEN ? = 'reclaim' THEN ? ELSE last_reclaim_reason END,"
+            "reclaim_count=CASE WHEN ? = 'reclaim' THEN reclaim_count + 1 ELSE reclaim_count END,"
             "updated_at_ms=max(updated_at_ms,?),"
             "event_count=event_count+1 "
             "WHERE task_id=?";
         if (sqlite3_prepare_v2(db, updateSql, -1, &update, NULL) != SQLITE_OK) {
             return -1;
         }
-        bindText(update, 1, status);
-        bindText(update, 2, status);
-        bindText(update, 3, assignedAgent);
-        bindText(update, 4, assignedAgent);
-        bindText(update, 5, eventType);
-        bindText(update, 6, assignedAgent);
-        bindText(update, 7, eventType);
-        sqlite3_bind_int64(update, 8, leaseExpiresAtMs);
-        bindText(update, 9, eventType);
-        sqlite3_bind_int64(update, 10, createdAtMs);
-        bindText(update, 11, eventType);
-        bindText(update, 12, status);
-        sqlite3_bind_int64(update, 13, createdAtMs);
-        bindText(update, 14, eventType);
-        sqlite3_bind_int64(update, 15, attempt);
-        sqlite3_bind_int64(update, 16, createdAtMs);
-        bindText(update, 17, taskId);
+        int parameterIndex = 1;
+        /* status -> column status */
+        bindText(update, parameterIndex++, status);
+        bindText(update, parameterIndex++, status);
+        /* assignedAgent -> column assigned_agent */
+        bindText(update, parameterIndex++, assignedAgent);
+        bindText(update, parameterIndex++, assignedAgent);
+        /* lease_owner: lease branch / reclaim branch */
+        bindText(update, parameterIndex++, eventType);   /* CASE WHEN lease */
+        bindText(update, parameterIndex++, assignedAgent);
+        bindText(update, parameterIndex++, eventType);   /* CASE WHEN reclaim */
+        /* lease_expires_at_ms */
+        bindText(update, parameterIndex++, eventType);
+        sqlite3_bind_int64(update, parameterIndex++, leaseExpiresAtMs);
+        bindText(update, parameterIndex++, eventType);
+        /* leased_at_ms */
+        bindText(update, parameterIndex++, eventType);
+        sqlite3_bind_int64(update, parameterIndex++, createdAtMs);
+        bindText(update, parameterIndex++, eventType);
+        /* running_at_ms: status==running OR reclaim clears it */
+        bindText(update, parameterIndex++, eventType);
+        bindText(update, parameterIndex++, status);
+        sqlite3_bind_int64(update, parameterIndex++, createdAtMs);
+        bindText(update, parameterIndex++, eventType);
+        /* attempt_count: lease bumps the counter */
+        bindText(update, parameterIndex++, eventType);
+        sqlite3_bind_int64(update, parameterIndex++, attempt);
+        /* failure_cause: set on failed status with cause, cleared on lease/reclaim */
+        bindText(update, parameterIndex++, eventType);
+        bindText(update, parameterIndex++, status);
+        bindText(update, parameterIndex++, retryCause);
+        bindText(update, parameterIndex++, retryCause);
+        bindText(update, parameterIndex++, eventType);
+        bindText(update, parameterIndex++, eventType);
+        /* last_reclaim_reason and reclaim_count */
+        bindText(update, parameterIndex++, eventType);
+        bindText(update, parameterIndex++, reclaimReason);
+        bindText(update, parameterIndex++, eventType);
+        /* updated_at_ms + WHERE task_id */
+        sqlite3_bind_int64(update, parameterIndex++, createdAtMs);
+        bindText(update, parameterIndex++, taskId);
         rc = sqlite3_step(update) == SQLITE_DONE ? 0 : -1;
         sqlite3_finalize(update);
     }
@@ -239,7 +293,14 @@ int wtTaskProjectionRebuild(const char *dbPath, const char *ledgerPath) {
             "title TEXT,body TEXT,tool_profile TEXT,max_tokens INTEGER DEFAULT 0,"
             "created_at_ms INTEGER DEFAULT 0,updated_at_ms INTEGER DEFAULT 0,event_count INTEGER DEFAULT 0,"
             "lease_owner TEXT DEFAULT '',lease_expires_at_ms INTEGER DEFAULT 0,"
-            "leased_at_ms INTEGER DEFAULT 0,running_at_ms INTEGER DEFAULT 0,attempt_count INTEGER DEFAULT 0);"
+            "leased_at_ms INTEGER DEFAULT 0,running_at_ms INTEGER DEFAULT 0,attempt_count INTEGER DEFAULT 0,"
+            /* Sprint 3 closeout columns:
+             *   failure_cause     - last classified retryCause for a failed attempt
+             *   last_reclaim_reason - last reason a lease was released (operator vs lease_expired)
+             *   reclaim_count     - cumulative reclaim events recorded for this task
+             */
+            "failure_cause TEXT DEFAULT '',last_reclaim_reason TEXT DEFAULT '',"
+            "reclaim_count INTEGER DEFAULT 0);"
             "CREATE INDEX idx_tasks_status ON tasks(status);"
             "CREATE INDEX idx_tasks_agent ON tasks(assigned_agent);"
             "CREATE INDEX idx_tasks_initiative ON tasks(initiative_id);"
@@ -316,7 +377,8 @@ int wtTaskProjectionReadSummariesJson(const char *dbPath, char *buffer, size_t b
     const char *sql =
         "SELECT task_id,initiative_id,parent_task_id,requested_by_role,assigned_role,assigned_agent,"
         "model_id,priority,status,title,tool_profile,max_tokens,created_at_ms,updated_at_ms,event_count,"
-        "lease_owner,lease_expires_at_ms,leased_at_ms,running_at_ms,attempt_count "
+        "lease_owner,lease_expires_at_ms,leased_at_ms,running_at_ms,attempt_count,"
+        "failure_cause,last_reclaim_reason,reclaim_count "
         "FROM tasks ORDER BY updated_at_ms DESC, created_at_ms DESC LIMIT 200";
     if (sqlite3_prepare_v2(db, sql, -1, &stmt, NULL) != SQLITE_OK) {
         sqlite3_close(db);
@@ -326,7 +388,11 @@ int wtTaskProjectionReadSummariesJson(const char *dbPath, char *buffer, size_t b
     appendRaw(buffer, bufferSize, &used, "[");
     int first = 1;
     while (sqlite3_step(stmt) == SQLITE_ROW) {
-        char number[128];
+        /* 320 bytes is large enough for the combined numeric/key block emitted
+         * below; the 128-byte buffer used previously could truncate once the
+         * lease columns and Sprint 3 closeout columns combined exceeded ~140
+         * bytes of static text plus four 64-bit integers. */
+        char number[320];
         if (!first) appendRaw(buffer, bufferSize, &used, ",");
         first = 0;
         appendRaw(buffer, bufferSize, &used, "{");
@@ -349,11 +415,17 @@ int wtTaskProjectionReadSummariesJson(const char *dbPath, char *buffer, size_t b
         appendRaw(buffer, bufferSize, &used, number);
         appendJsonString(buffer, bufferSize, &used, columnText(stmt, 15));
         snprintf(number, sizeof(number),
-                 ",\"leaseExpiresAtUnixMs\":%lld,\"leasedAtUnixMs\":%lld,\"runningAtUnixMs\":%lld,\"attemptCount\":%d}",
+                 ",\"leaseExpiresAtUnixMs\":%lld,\"leasedAtUnixMs\":%lld,\"runningAtUnixMs\":%lld,\"attemptCount\":%d,"
+                 "\"failureCause\":",
                  sqlite3_column_int64(stmt, 16),
                  sqlite3_column_int64(stmt, 17),
                  sqlite3_column_int64(stmt, 18),
                  sqlite3_column_int(stmt, 19));
+        appendRaw(buffer, bufferSize, &used, number);
+        appendJsonString(buffer, bufferSize, &used, columnText(stmt, 20));
+        appendRaw(buffer, bufferSize, &used, ",\"lastReclaimReason\":");
+        appendJsonString(buffer, bufferSize, &used, columnText(stmt, 21));
+        snprintf(number, sizeof(number), ",\"reclaimCount\":%d}", sqlite3_column_int(stmt, 22));
         appendRaw(buffer, bufferSize, &used, number);
     }
     appendRaw(buffer, bufferSize, &used, "]");
@@ -372,7 +444,8 @@ int wtTaskProjectionReadDetailJson(const char *dbPath, const char *taskId, char 
     const char *taskSql =
         "SELECT task_id,initiative_id,parent_task_id,requested_by_role,assigned_role,assigned_agent,"
         "model_id,priority,status,title,body,tool_profile,max_tokens,created_at_ms,updated_at_ms,event_count,"
-        "lease_owner,lease_expires_at_ms,leased_at_ms,running_at_ms,attempt_count "
+        "lease_owner,lease_expires_at_ms,leased_at_ms,running_at_ms,attempt_count,"
+        "failure_cause,last_reclaim_reason,reclaim_count "
         "FROM tasks WHERE task_id=?";
     if (sqlite3_prepare_v2(db, taskSql, -1, &task, NULL) != SQLITE_OK) {
         sqlite3_close(db);
@@ -406,11 +479,17 @@ int wtTaskProjectionReadDetailJson(const char *dbPath, const char *taskId, char 
     appendRaw(buffer, bufferSize, &used, number);
     appendJsonString(buffer, bufferSize, &used, columnText(task, 16));
     snprintf(number, sizeof(number),
-             ",\"leaseExpiresAtUnixMs\":%lld,\"leasedAtUnixMs\":%lld,\"runningAtUnixMs\":%lld,\"attemptCount\":%d},\"events\":[",
+             ",\"leaseExpiresAtUnixMs\":%lld,\"leasedAtUnixMs\":%lld,\"runningAtUnixMs\":%lld,\"attemptCount\":%d,"
+             "\"failureCause\":",
              sqlite3_column_int64(task, 17),
              sqlite3_column_int64(task, 18),
              sqlite3_column_int64(task, 19),
              sqlite3_column_int(task, 20));
+    appendRaw(buffer, bufferSize, &used, number);
+    appendJsonString(buffer, bufferSize, &used, columnText(task, 21));
+    appendRaw(buffer, bufferSize, &used, ",\"lastReclaimReason\":");
+    appendJsonString(buffer, bufferSize, &used, columnText(task, 22));
+    snprintf(number, sizeof(number), ",\"reclaimCount\":%d},\"events\":[", sqlite3_column_int(task, 23));
     appendRaw(buffer, bufferSize, &used, number);
     sqlite3_finalize(task);
 

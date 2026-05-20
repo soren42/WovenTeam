@@ -1,0 +1,491 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>WovenTeam Phase 2 Sprint 3 Closeout</title>
+  <!--
+    Sprint 3 closeout report. Self-contained: all CSS / SVG / JS is inline so the
+    file can be archived alongside the docs/launch artifacts and rendered with
+    nothing more than a browser. Document style matches phase2-spike3-handoff.
+  -->
+  <style>
+    :root {
+      color-scheme: light;
+      --ink: #17202a;
+      --muted: #5c6875;
+      --line: #d7dee6;
+      --paper: #f7f9fb;
+      --panel: #ffffff;
+      --blue: #2563a8;
+      --green: #1f7a5a;
+      --amber: #a16207;
+      --red: #b42318;
+      --violet: #6d4aff;
+      --teal: #0f766e;
+      --soft-blue: #e7f0fa;
+      --soft-green: #e7f5ee;
+      --soft-amber: #fff4db;
+      --soft-red: #fdeceb;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      color: var(--ink);
+      background: var(--paper);
+      line-height: 1.48;
+    }
+    header.hero {
+      background: #11253a;
+      color: #fff;
+      padding: 38px clamp(18px, 5vw, 64px) 30px;
+    }
+    header.hero h1 {
+      margin: 0 0 10px;
+      max-width: 980px;
+      font-size: clamp(30px, 5vw, 54px);
+      line-height: 1.02;
+      letter-spacing: 0;
+    }
+    header.hero p {
+      max-width: 900px;
+      margin: 0;
+      color: #dbe7f4;
+      font-size: 18px;
+    }
+    header.hero .meta {
+      margin-top: 14px;
+      color: #aac4dd;
+      font-size: 14px;
+    }
+    nav {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      padding: 14px clamp(18px, 5vw, 64px);
+      background: #fff;
+      border-bottom: 1px solid var(--line);
+      position: sticky;
+      top: 0;
+      z-index: 2;
+    }
+    nav a, button.filter {
+      border: 1px solid var(--line);
+      background: #fff;
+      color: var(--ink);
+      border-radius: 6px;
+      padding: 8px 10px;
+      font: inherit;
+      text-decoration: none;
+      cursor: pointer;
+    }
+    nav a:hover, button.filter:hover, button.filter.active {
+      border-color: var(--blue);
+      color: var(--blue);
+      background: var(--soft-blue);
+    }
+    main {
+      max-width: 1180px;
+      margin: 0 auto;
+      padding: 24px clamp(16px, 4vw, 28px) 48px;
+    }
+    section {
+      margin: 0 0 28px;
+      padding: 24px;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+    }
+    h2 { margin: 0 0 14px; font-size: 24px; }
+    h3 { margin: 0 0 8px; font-size: 18px; }
+    p { margin: 0 0 12px; }
+    ul, ol { margin: 0; padding-left: 22px; }
+    li + li { margin-top: 7px; }
+    code {
+      background: #eef2f6;
+      border: 1px solid #dfe6ee;
+      border-radius: 4px;
+      padding: 1px 4px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 0.95em;
+    }
+    pre {
+      margin: 12px 0;
+      padding: 12px 14px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: #fbfcfe;
+      overflow-x: auto;
+      font-size: 13px;
+      line-height: 1.45;
+    }
+    pre code { background: transparent; border: 0; padding: 0; }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(12, 1fr);
+      gap: 14px;
+    }
+    .card {
+      grid-column: span 4;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 16px;
+      background: #fbfcfe;
+    }
+    .wide { grid-column: span 6; }
+    .full { grid-column: 1 / -1; }
+    .status {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      margin-bottom: 10px;
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .04em;
+    }
+    .dot {
+      width: 9px;
+      height: 9px;
+      border-radius: 999px;
+      background: var(--blue);
+    }
+    .done .dot { background: var(--green); }
+    .next .dot { background: var(--blue); }
+    .risk .dot { background: var(--amber); }
+    .problem .dot { background: var(--red); }
+    .muted { color: var(--muted); }
+    .callout {
+      border-left: 4px solid var(--green);
+      padding: 12px 14px;
+      background: var(--soft-green);
+      border-radius: 6px;
+      margin: 12px 0 0;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 14px;
+    }
+    th, td {
+      text-align: left;
+      vertical-align: top;
+      padding: 10px;
+      border-bottom: 1px solid var(--line);
+    }
+    th { background: #f0f4f8; }
+    .diagram {
+      width: 100%;
+      height: auto;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+    }
+    .hide { display: none; }
+    .pill {
+      display: inline-block;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: 3px 8px;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      background: #f6f8fa;
+      color: var(--muted);
+    }
+    .pill.pass { color: var(--green); background: var(--soft-green); border-color: #b7dfcd; }
+    .pill.warn { color: var(--amber); background: var(--soft-amber); border-color: #f0d28c; }
+    @media (max-width: 820px) {
+      nav { position: static; }
+      section { padding: 18px; }
+      .card, .wide { grid-column: 1 / -1; }
+    }
+  </style>
+</head>
+<body>
+  <header class="hero">
+    <h1>Phase 2 Sprint 3 Closeout</h1>
+    <p>Workload control closeout: lease reclaim, classified retry causes, operator reclaim API, and the matching CLI / web affordances. Closes the explicit Remaining Work item left by Spike 3 and finishes Sprint 3 of the Phase 2 Functional Workbench plan.</p>
+    <div class="meta">Generated 2026-05-20 · branch closeout · supersedes Spike 3 "Remaining Work" section</div>
+  </header>
+
+  <nav aria-label="Report navigation">
+    <a href="#status">Status</a>
+    <a href="#technical">Technical</a>
+    <a href="#flow">Flow</a>
+    <a href="#validation">Validation</a>
+    <a href="#operator">Operator</a>
+    <a href="#followups">Follow-ups</a>
+    <button class="filter active" data-filter="all">All</button>
+    <button class="filter" data-filter="review">Review</button>
+    <button class="filter" data-filter="ops">Ops</button>
+    <button class="filter" data-filter="next">Next</button>
+  </nav>
+
+  <main>
+    <section id="status" data-kind="review ops">
+      <h2>Executive Status</h2>
+      <div class="grid">
+        <article class="card done">
+          <span class="status"><span class="dot"></span>Delivered</span>
+          <h3>Lease Reclaim</h3>
+          <p>A <code>reclaim</code> task event releases the most recent lease and returns the task to the queued pool. Reclaims are auto-recorded by <code>wt-agent</code> when it sees an expired foreign lease and are also operator-triggerable.</p>
+        </article>
+        <article class="card done">
+          <span class="status"><span class="dot"></span>Delivered</span>
+          <h3>Retry Causes</h3>
+          <p>Adapter failures now carry a classified <code>retryCause</code> (<code>timeout</code>, <code>adapter_unavailable</code>, <code>exit_nonzero</code>). The projection exposes the latest cause on each task as <code>failureCause</code>.</p>
+        </article>
+        <article class="card done">
+          <span class="status"><span class="dot"></span>Delivered</span>
+          <h3>Operator Surfaces</h3>
+          <p><code>POST /api/task-reclaim</code>, <code>wt-task reclaim</code>, and a reclaim button on the agent panel let the operator clear stuck work without editing the ledger or touching <code>systemd</code>.</p>
+        </article>
+      </div>
+      <div class="callout">
+        <strong>Definition of Done for Sprint 3:</strong> task claim/lease records, agent pause/resume, attempt counts <em>and</em> retry causes, stuck-task detection, and an agent operations panel are all live. The "Remaining Work" gap recorded in <code>phase2-spike3-workload-control-2026-05-19.md</code> is now closed.
+      </div>
+    </section>
+
+    <section id="technical" data-kind="review">
+      <h2>Detailed Technical Status</h2>
+      <div class="grid">
+        <article class="card wide">
+          <h3>Ledger Schema Additions</h3>
+          <ul>
+            <li><code>woventeam.task_event.v0.1</code> now supports <code>eventType:"reclaim"</code>. The event carries <code>reclaimReason</code> (<code>operator</code> or <code>lease_expired</code>), <code>assignedAgent</code> (previous lease holder), and resets status to <code>queued</code>.</li>
+            <li>Status events emitted by <code>wt-agent</code> for failed attempts include an optional <code>retryCause</code> string. Existing callers without a cause continue to emit the previous event shape unchanged.</li>
+            <li><code>wtTaskAppendReclaimEvent()</code> and <code>wtTaskAppendStatusEventWithCause()</code> are the new append helpers in <code>wt_task_store</code>. Both are JSON-string-escaped and respect the existing <code>fsyncEachMessage</code> setting.</li>
+          </ul>
+        </article>
+        <article class="card wide">
+          <h3>Projection And API</h3>
+          <ul>
+            <li>The tasks projection table gained three columns: <code>failure_cause</code>, <code>last_reclaim_reason</code>, <code>reclaim_count</code>. A reclaim event clears the lease columns so a follow-up lease event reads cleanly.</li>
+            <li><code>GET /api/task-summaries</code> and <code>GET /api/task-detail</code> now include <code>failureCause</code>, <code>lastReclaimReason</code>, and <code>reclaimCount</code> in their JSON output.</li>
+            <li><code>POST /api/task-reclaim</code> accepts <code>taskId</code>, <code>reason</code> (allowlist: <code>operator</code>, <code>lease_expired</code>), optional <code>message</code> and <code>createdBy</code>. The handler looks up the current lease holder so the recorded event has provenance.</li>
+            <li>A 256-byte to 320-byte buffer fix in <code>wtTaskProjectionReadSummariesJson</code> resolves a latent truncation bug uncovered while wiring the new fields - the prior 128-byte stack number buffer would silently chop the response when ledger key counts grew.</li>
+          </ul>
+        </article>
+        <article class="card wide">
+          <h3>Agent Runtime</h3>
+          <ul>
+            <li>New <code>wtTaskFindClaimableForAgent()</code> returns the next queued/assigned task <em>or</em>, if none, a task whose status is <code>leased</code>/<code>running</code> but whose lease has expired. Routing/assignment events drive the rightful-owner check.</li>
+            <li>Before recording a new lease, <code>handleAssignedTask</code> calls <code>wtTaskFindActiveLease()</code>. A still-valid foreign lease causes the agent to skip the task. An expired lease is released with a <code>lease_expired</code> reclaim event before the new lease is appended.</li>
+            <li>Each lease event now records <code>attempt = previousAttempt + 1</code>, so attempt counts are coherent across recovery cycles.</li>
+            <li>Codex and CLI artifact adapters classify their own exit codes: <code>timeout</code> (signal/kill timer fired), <code>adapter_unavailable</code> (exec returned 127), <code>exit_nonzero</code> (any other non-zero exit). The classification is emitted on the failed status event.</li>
+          </ul>
+        </article>
+        <article class="card wide">
+          <h3>Operator Interfaces</h3>
+          <ul>
+            <li><code>bin/wt-task reclaim TASK_ID [--reason operator|lease_expired] [--message TEXT]</code> posts to the new endpoint.</li>
+            <li>The web console <code>renderAgentControls()</code> now adds a <code>RECLAIM TASK</code> button to any agent card whose <code>stuckTasks &gt; 0</code>. Clicking the button reclaims the currently-selected task.</li>
+            <li>The task detail meta line now surfaces <code>attempt N</code>, <code>cause: X</code>, <code>lease: AGENT</code>, and <code>reclaimed N× (reason)</code> when those fields carry signal.</li>
+          </ul>
+        </article>
+      </div>
+    </section>
+
+    <section id="flow" data-kind="review">
+      <h2>Recovery Flow Diagram</h2>
+      <p class="muted">Path taken when an agent or daemon restart leaves a task in a leased/running state past its 15-minute lease expiry.</p>
+      <svg class="diagram" viewBox="0 0 1040 360" role="img" aria-label="Lease reclaim recovery flow">
+        <defs>
+          <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M 0 0 L 10 5 L 0 10 z" fill="#2563a8"></path>
+          </marker>
+          <style>
+            .node { fill: #fff; stroke: #b9c3cc; stroke-width: 1.5; }
+            .green { fill: #e7f5ee; stroke: #1f7a5a; }
+            .amber { fill: #fff4db; stroke: #a16207; }
+            .red   { fill: #fdeceb; stroke: #b42318; }
+            .violet { fill: #eeeafe; stroke: #6d4aff; }
+            .label { fill: #1f2933; font: 700 14px system-ui, sans-serif; }
+            .small { fill: #5c6875; font: 12px system-ui, sans-serif; }
+            .line  { stroke: #2563a8; stroke-width: 2; fill: none; marker-end: url(#arrow); }
+            .dash  { stroke: #64717d; stroke-width: 2; fill: none; stroke-dasharray: 5 5; }
+          </style>
+        </defs>
+
+        <rect class="node violet" x="30"  y="30"  width="190" height="64" rx="8"></rect>
+        <text class="label" x="125" y="56"  text-anchor="middle">Stuck Task</text>
+        <text class="small" x="125" y="76"  text-anchor="middle">status=leased, expired</text>
+
+        <rect class="node amber" x="280" y="30"  width="210" height="64" rx="8"></rect>
+        <text class="label" x="385" y="56"  text-anchor="middle">wt-agent --once</text>
+        <text class="small" x="385" y="76"  text-anchor="middle">finds claimable + foreign lease</text>
+
+        <rect class="node red"   x="550" y="20"  width="200" height="56" rx="8"></rect>
+        <text class="label" x="650" y="44"  text-anchor="middle">Append reclaim event</text>
+        <text class="small" x="650" y="64"  text-anchor="middle">reason: lease_expired</text>
+
+        <rect class="node green" x="800" y="20"  width="210" height="56" rx="8"></rect>
+        <text class="label" x="905" y="44"  text-anchor="middle">Append lease event</text>
+        <text class="small" x="905" y="64"  text-anchor="middle">attempt = previous + 1</text>
+
+        <rect class="node green" x="800" y="100" width="210" height="56" rx="8"></rect>
+        <text class="label" x="905" y="124" text-anchor="middle">Adapter executes</text>
+        <text class="small" x="905" y="144" text-anchor="middle">stub or real CLI</text>
+
+        <rect class="node violet" x="800" y="180" width="210" height="60" rx="8"></rect>
+        <text class="label" x="905" y="206" text-anchor="middle">Status: complete</text>
+        <text class="small" x="905" y="226" text-anchor="middle">or failed + retryCause</text>
+
+        <rect class="node amber" x="30"  y="180" width="220" height="60" rx="8"></rect>
+        <text class="label" x="140" y="204" text-anchor="middle">Operator UI</text>
+        <text class="small" x="140" y="224" text-anchor="middle">"Reclaim Task" / wt-task reclaim</text>
+
+        <rect class="node red"   x="290" y="180" width="220" height="60" rx="8"></rect>
+        <text class="label" x="400" y="204" text-anchor="middle">POST /api/task-reclaim</text>
+        <text class="small" x="400" y="224" text-anchor="middle">reason=operator</text>
+
+        <rect class="node green" x="550" y="180" width="200" height="60" rx="8"></rect>
+        <text class="label" x="650" y="204" text-anchor="middle">Same reclaim event</text>
+        <text class="small" x="650" y="224" text-anchor="middle">enters durable JSONL</text>
+
+        <rect class="node" x="290" y="280" width="460" height="56" rx="8"></rect>
+        <text class="label" x="520" y="304" text-anchor="middle">Projection rebuild updates failure_cause / last_reclaim_reason</text>
+
+        <path class="line" d="M220 62 H276"></path>
+        <path class="line" d="M490 62 H546"></path>
+        <path class="line" d="M750 48 H796"></path>
+        <path class="line" d="M905 76 V96"></path>
+        <path class="line" d="M905 156 V176"></path>
+        <path class="line" d="M250 210 H286"></path>
+        <path class="line" d="M510 210 H546"></path>
+        <path class="line" d="M650 240 V276"></path>
+        <path class="line" d="M905 240 C905 270 760 280 750 290"></path>
+        <path class="dash" d="M650 280 V250 H650"></path>
+      </svg>
+    </section>
+
+    <section id="validation" data-kind="ops">
+      <h2>Validation</h2>
+      <p>Run the workload-control integration test to exercise the entire closeout surface:</p>
+      <pre><code>make test-agent-workload-control</code></pre>
+      <p>Or run the full Phase 2 suite to confirm no Phase 1/2 regressions:</p>
+      <pre><code>make test</code></pre>
+      <table>
+        <thead>
+          <tr><th>Coverage</th><th>Mechanism</th><th>Result</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Pause prevents lease</td>
+            <td>jq assertion on <code>task-detail</code> after <code>wt-task agent pause</code></td>
+            <td><span class="pill pass">Pass</span></td>
+          </tr>
+          <tr>
+            <td>Resume executes single attempt with lease event</td>
+            <td>jq assertion that attemptCount=1 and exactly one lease event exists</td>
+            <td><span class="pill pass">Pass</span></td>
+          </tr>
+          <tr>
+            <td>Stuck task detection</td>
+            <td><code>GET /api/agents</code> reports <code>stuckTasks == 1</code> for the injected expired lease</td>
+            <td><span class="pill pass">Pass</span></td>
+          </tr>
+          <tr>
+            <td>Operator reclaim API</td>
+            <td><code>wt-task reclaim --reason operator</code> followed by detail assertions on <code>lastReclaimReason</code>, <code>reclaimCount</code>, and lease columns</td>
+            <td><span class="pill pass">Pass</span></td>
+          </tr>
+          <tr>
+            <td>Auto-reclaim by wt-agent</td>
+            <td>Foreign expired lease + agent <code>--once</code> produces a <code>reclaim</code> event with reason <code>lease_expired</code> before the new lease</td>
+            <td><span class="pill pass">Pass</span></td>
+          </tr>
+          <tr>
+            <td>Retry-cause projection</td>
+            <td>Synthesized failed event with <code>retryCause:"timeout"</code> projects to <code>failureCause == "timeout"</code></td>
+            <td><span class="pill pass">Pass</span></td>
+          </tr>
+          <tr>
+            <td>Full regression sweep</td>
+            <td><code>make test</code> (16 integration tests including Phase 1 E2E)</td>
+            <td><span class="pill pass">Pass</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section id="operator" data-kind="ops">
+      <h2>Operator Quick Reference</h2>
+      <div class="grid">
+        <article class="card wide">
+          <h3>CLI</h3>
+          <pre><code># List agent state and workload counters
+wt-task agent list
+
+# Pause or resume an agent (durable; survives restarts)
+wt-task agent pause chatgpt --message "Codex CLI maintenance"
+wt-task agent resume chatgpt --message "Codex CLI restored"
+
+# Reclaim a stuck task (releases its most recent lease)
+wt-task reclaim task_abc123 --reason operator \
+  --message "Manual unblock - stuck after restart"
+</code></pre>
+        </article>
+        <article class="card wide">
+          <h3>API</h3>
+          <pre><code>POST /api/task-reclaim
+Content-Type: application/json
+
+{
+  "taskId": "task_abc123",
+  "reason": "operator",          // or "lease_expired"
+  "message": "Manual unblock",
+  "createdBy": "ceo"
+}
+
+200 OK
+{ "ok": true,
+  "taskId": "task_abc123",
+  "reason": "operator",
+  "previousAgent": "chatgpt",
+  "previousAttempt": 1 }
+</code></pre>
+        </article>
+        <article class="card full">
+          <h3>Web Console</h3>
+          <p>The agent control panel under "Agents in flight" gains a <strong>RECLAIM TASK</strong> button on any card with <code>stuckTasks &gt; 0</code>. Click the stuck task in the task list first to select it, then press <strong>RECLAIM TASK</strong>. The task detail meta line shows the latest <code>attempt</code>, <code>failureCause</code>, lease holder, and reclaim history so the operator can confirm the action without inspecting raw events.</p>
+        </article>
+      </div>
+    </section>
+
+    <section id="followups" data-kind="next">
+      <h2>Follow-ups Into Sprint 4 (Artifact Promotion)</h2>
+      <ul>
+        <li>Adapter <strong>lease renewal</strong> remains a future enhancement: long real-CLI runs that approach 15 minutes still need a renewal heartbeat. Sprint 4 work is unaffected, but the topic should land in Sprint 5 policy work alongside per-initiative budget timers.</li>
+        <li>The reclaim button currently targets the selected task. A future "Reclaim all stuck for AGENT" action could iterate task summaries; deferred until artifact promotion lands so the workflow can mark accepted assets as untouchable.</li>
+        <li>The projection still rebuilds the entire SQLite read model on every API hit. With the new columns this remains within budget for Phase 2 scales, but Sprint 6 launch-rehearsal load testing should measure rebuild time on a realistic ledger.</li>
+      </ul>
+      <p class="muted">No new risks were introduced by this closeout. The schema additions are additive; older ledgers without reclaim or retry-cause events project as empty values and the UI degrades gracefully.</p>
+    </section>
+  </main>
+
+  <script>
+    /*
+     * Single-file inline filter wiring. The filter buttons toggle a 'hide'
+     * class on sections whose data-kind doesn't intersect the chosen filter.
+     * Keeps the document fully usable when JS is disabled.
+     */
+    const filterButtons = document.querySelectorAll("button.filter");
+    const sections = document.querySelectorAll("section[data-kind]");
+    filterButtons.forEach(button => {
+      button.addEventListener("click", () => {
+        filterButtons.forEach(item => item.classList.toggle("active", item === button));
+        const filter = button.dataset.filter;
+        sections.forEach(section => {
+          const kinds = (section.dataset.kind || "").split(/\s+/);
+          const visible = filter === "all" || kinds.includes(filter);
+          section.classList.toggle("hide", !visible);
+        });
+      });
+    });
+  </script>
+</body>
+</html>

@@ -1175,6 +1175,70 @@ static int sendAgentsJson(int clientFd, const WtConfig *config) {
     return rc;
 }
 
+/*
+ * POST /api/task-reclaim
+ *
+ * Operator-visible reclaim path. Releases the most recent lease on a task so it
+ * returns to the queued pool. Body shape:
+ *   { "taskId": "task_abc", "reason": "operator"|"lease_expired",
+ *     "message": "...", "createdBy": "ceo" }
+ *
+ * Reason is restricted to a small allowlist so the projection's
+ * last_reclaim_reason column stays a stable enum-like value.
+ */
+static int handlePostTaskReclaim(int clientFd, const WtConfig *config, const char *request) {
+    const char *body = strstr(request, "\r\n\r\n");
+    if (!body) {
+        return wtHttpSendText(clientFd, 400, "Bad Request", "application/json",
+                              "{\"ok\":false,\"error\":\"missing body\"}\n");
+    }
+    body += 4;
+    char taskId[WT_TASK_ID_SIZE];
+    char reason[64];
+    char message[WT_TASK_TITLE_SIZE];
+    char createdBy[WT_TASK_AGENT_SIZE];
+    if (wtJsonReadString(body, "taskId", taskId, sizeof(taskId)) != 0) {
+        return wtHttpSendText(clientFd, 400, "Bad Request", "application/json",
+                              "{\"ok\":false,\"error\":\"taskId required\"}\n");
+    }
+    if (wtJsonReadString(body, "reason", reason, sizeof(reason)) != 0) {
+        snprintf(reason, sizeof(reason), "%s", "operator");
+    }
+    /* Reason allowlist - keeps projection column predictable for the UI. */
+    if (strcmp(reason, "operator") != 0 && strcmp(reason, "lease_expired") != 0) {
+        return wtHttpSendText(clientFd, 400, "Bad Request", "application/json",
+                              "{\"ok\":false,\"error\":\"unsupported reclaim reason\"}\n");
+    }
+    if (wtJsonReadString(body, "message", message, sizeof(message)) != 0) {
+        snprintf(message, sizeof(message), "%s",
+                 strcmp(reason, "operator") == 0 ?
+                     "Lease reclaimed by operator." :
+                     "Lease reclaimed because it expired.");
+    }
+    if (wtJsonReadString(body, "createdBy", createdBy, sizeof(createdBy)) != 0) {
+        snprintf(createdBy, sizeof(createdBy), "%s", "ceo");
+    }
+    /* Look up the existing lease holder so the reclaim event carries provenance. */
+    char previousAgent[WT_TASK_AGENT_SIZE] = "";
+    long long previousLeaseExpiresAt = 0;
+    int previousAttempt = 0;
+    wtTaskFindActiveLease(config->taskLedgerPath, taskId, previousAgent, sizeof(previousAgent),
+                          &previousLeaseExpiresAt, &previousAttempt);
+    if (wtTaskAppendReclaimEvent(config->taskLedgerPath, taskId, previousAgent, createdBy,
+                                 reason, message, config->fsyncEachMessage) != 0) {
+        return wtHttpSendText(clientFd, 500, "Internal Server Error", "application/json",
+                              "{\"ok\":false,\"error\":\"append failed\"}\n");
+    }
+    /* Broadcast a room message so operators watching the transcript see it too. */
+    appendTaskRoomEvent(config, taskId, "all", "task.reclaim", "queued", message);
+    char response[768];
+    snprintf(response, sizeof(response),
+             "{\"ok\":true,\"taskId\":\"%s\",\"reason\":\"%s\",\"previousAgent\":\"%s\","
+             "\"previousAttempt\":%d}\n",
+             taskId, reason, previousAgent, previousAttempt);
+    return wtHttpSendText(clientFd, 200, "OK", "application/json; charset=utf-8", response);
+}
+
 static int handlePostAgentControl(int clientFd, const WtConfig *config, const char *request) {
     const char *body = strstr(request, "\r\n\r\n");
     if (!body) {
@@ -1589,6 +1653,8 @@ static void handleClient(int clientFd, WtConfig *config) {
         handlePostTaskUsage(clientFd, config, request);
     } else if (strcmp(method, "POST") == 0 && strcmp(path, "/api/agent-control") == 0) {
         handlePostAgentControl(clientFd, config, request);
+    } else if (strcmp(method, "POST") == 0 && strcmp(path, "/api/task-reclaim") == 0) {
+        handlePostTaskReclaim(clientFd, config, request);
     } else if (strcmp(method, "POST") == 0 && strcmp(path, "/api/config") == 0) {
         handlePostConfig(clientFd, config, request);
     } else if (strcmp(method, "GET") == 0 && strcmp(path, "/api/health") == 0) {

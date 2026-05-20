@@ -470,6 +470,31 @@ kbd {
   cursor: pointer;
 }
 
+/*
+ * Sprint 3 closeout: stuck-state agent card + reclaim button styling. A red
+ * accent draws attention to lease-expired tasks; the reclaim button shares the
+ * accent so the operator's eye lands on the affordance instead of the pause.
+ */
+.agent-control-card.stuck {
+  border-color: var(--alert, #ef4444);
+}
+
+.agent-control-buttons {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 4px;
+}
+
+.agent-control-card.stuck .agent-control-buttons {
+  grid-template-columns: 1fr 1fr;
+}
+
+.agent-control-card button.reclaim {
+  border-color: var(--alert, #ef4444);
+  color: var(--alert, #ef4444);
+  background: rgba(239, 68, 68, 0.08);
+}
+
 .token-panel {
   --accent: var(--warn);
 }

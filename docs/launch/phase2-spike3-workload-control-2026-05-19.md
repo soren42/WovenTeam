@@ -61,3 +61,26 @@ node --check web/app.js
 This spike records one attempt per claim path but does not yet implement
 automatic lease expiration/reclaim. Later Phase 2 work should add retry policy,
 lease renewal for long real-adapter runs, and operator-visible reclaim actions.
+
+## Sprint 3 Closeout (2026-05-20)
+
+The Remaining Work section above is closed. See
+`docs/launch/phase2-sprint3-closeout-2026-05-20.html` for the full report.
+
+Delivered in the closeout:
+
+- Automatic lease expiration/reclaim. `wt-agent` now surfaces stuck tasks via
+  `wtTaskFindClaimableForAgent`, releases an expired foreign lease with a
+  `reclaim` event (`reclaimReason:"lease_expired"`), and records the next lease
+  with an incremented attempt counter.
+- Retry causes. Failed status events optionally carry a `retryCause` field
+  (`timeout`, `adapter_unavailable`, `exit_nonzero`). The projection exposes the
+  latest cause as `failureCause` on each task and the web console surfaces it
+  on the task detail meta line.
+- Operator-visible reclaim. `POST /api/task-reclaim`, `wt-task reclaim TASK_ID`,
+  and a `RECLAIM TASK` button on agent cards with `stuckTasks > 0` all reach
+  the same durable reclaim event.
+
+Lease renewal for very long real-adapter runs (>15 minutes) is intentionally
+deferred to Sprint 5 policy work, where it can land alongside model/budget
+timers.

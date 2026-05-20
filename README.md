@@ -98,6 +98,7 @@ Create and inspect Phase 0 task packages through the room daemon:
 ./bin/wt-task retry task_example_001
 ./bin/wt-task cancel task_example_001
 ./bin/wt-task close task_example_001
+./bin/wt-task reclaim task_example_001 --reason operator --message "Manual unblock - stuck after restart."
 ```
 
 The web console token panel is backed by `GET /api/tokens`. Phase 1 separates

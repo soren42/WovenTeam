@@ -110,4 +110,50 @@ JSON
 curl -fsS "$ROOM_URL/api/agents" |
   jq -e '(.agents[] | select(.agent == "gemini")).stuckTasks == 1' >/dev/null
 
+# --- Sprint 3 closeout: operator reclaim API + retry-cause projection ---
+# Operator reclaim releases the stale gemini lease so the task returns to queued.
+WT_ROOM_URL="$ROOM_URL" "$ROOT/bin/wt-task" reclaim task_stuck_lease \
+  --reason operator --message "manual reclaim coverage" >/dev/null
+curl -fsS "$ROOM_URL/api/task-detail?taskId=task_stuck_lease" |
+  jq -e '
+    .task.status == "queued" and
+    .task.lastReclaimReason == "operator" and
+    .task.reclaimCount == 1 and
+    .task.leaseOwner == "" and
+    ([.events[] | select(.eventType == "reclaim")] | length) == 1
+  ' >/dev/null
+
+# After reclaim the next wt-agent run for gemini should auto-claim and complete.
+WT_ROOM_LOG_PATH="$ROOM_LOG" WT_TASK_LEDGER_PATH="$TASK_LEDGER" "$ROOT/build/wt-agent" --agent gemini --once >/dev/null
+curl -fsS "$ROOM_URL/api/task-detail?taskId=task_stuck_lease" |
+  jq -e '.task.status == "complete" and .task.attemptCount >= 2' >/dev/null
+
+# Auto-reclaim path: stage an expired foreign lease and confirm the agent's next
+# run inserts a reclaim event (reason lease_expired) before its own lease.
+auto_old_ms="$(( ($(date +%s) - 7200) * 1000 ))"
+curl -fsS -H 'Content-Type: application/json' -d @- "$ROOM_URL/api/task-package" >/dev/null <<JSON
+{"schema":"woventeam.task_package.v0.1","taskId":"task_auto_reclaim","initiativeId":"init_workload_control","createdBy":"test","assignedRole":"backend_dev","assignedAgent":"chatgpt","modelId":"openai/gpt-5.3-codex","priority":"normal","status":"queued","title":"Auto reclaim fixture","body":"fixture","task":{"title":"Auto reclaim fixture","body":"fixture","deliverables":[]},"contextRefs":[],"acceptanceCriteria":[],"toolPolicy":{"profile":"observe"},"budget":{"maxTokens":1},"dependencies":[],"createdAtUnixMs":$auto_old_ms}
+JSON
+# Inject a stale lease held by a different (real) agent name so wt-agent will treat it as foreign.
+curl -fsS -H 'Content-Type: application/json' -d @- "$ROOM_URL/api/task-event" >/dev/null <<JSON
+{"schema":"woventeam.task_event.v0.1","taskId":"task_auto_reclaim","eventType":"lease","status":"leased","assignedAgent":"claude","message":"stale lease","createdBy":"wt-agent@claude","attempt":1,"leaseExpiresAtUnixMs":$auto_old_ms,"createdAtUnixMs":$auto_old_ms}
+JSON
+WT_ROOM_LOG_PATH="$ROOM_LOG" WT_TASK_LEDGER_PATH="$TASK_LEDGER" "$ROOT/build/wt-agent" --agent chatgpt --once >/dev/null
+curl -fsS "$ROOM_URL/api/task-detail?taskId=task_auto_reclaim" |
+  jq -e '
+    .task.status == "complete" and
+    .task.lastReclaimReason == "lease_expired" and
+    .task.reclaimCount == 1 and
+    ([.events[] | select(.eventType == "reclaim" and (.message | test("Auto-reclaim")))] | length) == 1 and
+    .task.attemptCount >= 2
+  ' >/dev/null
+
+# Retry-cause projection: synthesize a failed status event with a classified cause.
+fail_ms="$(date +%s%3N)"
+curl -fsS -H 'Content-Type: application/json' -d @- "$ROOM_URL/api/task-event" >/dev/null <<JSON
+{"schema":"woventeam.task_event.v0.1","taskId":"$task_id","eventType":"status","status":"failed","message":"synthetic failure","retryCause":"timeout","createdBy":"test","createdAtUnixMs":$fail_ms}
+JSON
+curl -fsS "$ROOM_URL/api/task-detail?taskId=$task_id" |
+  jq -e '.task.status == "failed" and .task.failureCause == "timeout"' >/dev/null
+
 echo "wt-agent-workload-control integration test passed"

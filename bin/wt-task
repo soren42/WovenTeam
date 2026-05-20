@@ -16,6 +16,7 @@ Usage:
   wt-task agent list
   wt-task agent pause AGENT [--message TEXT]
   wt-task agent resume AGENT [--message TEXT]
+  wt-task reclaim TASK_ID [--reason operator|lease_expired] [--message TEXT]
   wt-task list
   wt-task show TASK_ID
   wt-task assign TASK_ID --agent AGENT [--status assigned]
@@ -323,6 +324,34 @@ cmd_agent() {
     esac
 }
 
+# Sprint 3 closeout: operator reclaim path. Releases the most recent lease so a
+# stuck task returns to the queued pool. Reason defaults to "operator" - the
+# only other allowed value is "lease_expired" which the daemon also accepts when
+# an automated workflow detects an expired lease.
+cmd_reclaim() {
+    local task_id="${1:-}" reason="operator" message=""
+    shift || true
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --reason) reason="${2:-}"; shift 2 ;;
+            --message) message="${2:-}"; shift 2 ;;
+            *) echo "wt-task reclaim: unknown argument: $1" >&2; usage >&2; exit 2 ;;
+        esac
+    done
+    if [[ -z "$task_id" ]]; then
+        echo "wt-task reclaim: TASK_ID is required" >&2
+        exit 2
+    fi
+    if [[ "$reason" != "operator" && "$reason" != "lease_expired" ]]; then
+        echo "wt-task reclaim: --reason must be operator or lease_expired" >&2
+        exit 2
+    fi
+    [[ -n "$message" ]] || message="Lease reclaimed by wt-task ($reason)."
+    jq -cn --arg taskId "$task_id" --arg reason "$reason" --arg message "$message" \
+        '{taskId:$taskId,reason:$reason,message:$message,createdBy:"ceo"}' |
+      http_post_json "/api/task-reclaim" "$(cat)"
+}
+
 cmd_lifecycle() {
     local status="$1" default_message="$2" task_id="${3:-}" message=""
     shift || true
@@ -415,6 +444,7 @@ case "$cmd" in
     show) cmd_show "$@" ;;
     assign) cmd_assign "$@" ;;
     update-status) cmd_update_status "$@" ;;
+    reclaim) cmd_reclaim "$@" ;;
     retry) cmd_lifecycle queued "Task reopened for retry by wt-task." "$@" ;;
     cancel) cmd_lifecycle cancelled "Task cancelled by wt-task." "$@" ;;
     close) cmd_lifecycle closed "Task closed by wt-task." "$@" ;;
