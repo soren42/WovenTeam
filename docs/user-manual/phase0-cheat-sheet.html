@@ -471,9 +471,58 @@ sleep 3
 WT_ROOM_URL="$ROOM_URL" ./bin/wt-task show "$parent_task"
 WT_ROOM_URL="$ROOM_URL" ./bin/wt-task show "$child_task"</code></pre>
     </section>
+
+    <!--
+      Phase 2 commands. Additive to the Phase 0/1 commands above; nothing here
+      changes existing behavior. See docs/launch/phase2-sprint{3,4,5,6}-...html
+      for the full closeout context.
+    -->
+    <section class="full">
+      <h2>Phase 2 Commands</h2>
+      <div class="kv">
+        <div><span class="label">Reclaim a stuck task</span><span><code>./bin/wt-task reclaim TASK_ID --reason operator --message "manual unblock"</code></span></div>
+        <div><span class="label">Pause / resume an agent</span><span><code>./bin/wt-task agent pause chatgpt --message "Codex maintenance"</code></span></div>
+        <div><span class="label">Promote an artifact</span><span><code>./bin/wt-task artifact promote TASK_ID --path result.md --reviewer ceo --notes "ships"</code></span></div>
+        <div><span class="label">List initiative artifacts</span><span><code>./bin/wt-task artifact list INIT</code></span></div>
+        <div><span class="label">Export accepted artifact</span><span><code>./bin/wt-task artifact export TASK_ID --out /tmp/result.md</code></span></div>
+        <div><span class="label">Combined audit export</span><span><code>./bin/wt-task audit INIT --out /tmp/audit.json</code></span></div>
+        <div><span class="label">Live adapter rehearsal (dry run)</span><span><code>./bin/wt-rehearse-live --agent claude --max-tokens 4000</code></span></div>
+        <div><span class="label">Live adapter rehearsal (execute)</span><span><code>./bin/wt-rehearse-live --yes --agent claude --max-tokens 4000</code></span></div>
+      </div>
+      <pre><button class="copy">copy</button><code># Walk an artifact through the full Phase 2 promotion flow.
+WT_ROOM_URL=$ROOM_URL ./bin/wt-task artifact review TASK_ID --path result.md --reviewer qa --notes "spot checks ok"
+WT_ROOM_URL=$ROOM_URL ./bin/wt-task artifact promote TASK_ID --path result.md --reviewer ceo --notes "ships"
+WT_ROOM_URL=$ROOM_URL ./bin/wt-task audit INIT --out audit.json
+jq '{tasks: (.tasks|length), events: (.events|length), policy: (.policyDecisions|length), accepted: .summary.acceptedArtifacts}' audit.json</code></pre>
+    </section>
+
+    <section class="full">
+      <h2>Phase 2 Policy Reason Codes</h2>
+      <p class="muted">When the daemon returns HTTP 409 on task acceptance, the response carries one of these stable <code>reason</code> codes alongside the human-readable <code>detail</code>. The web composer surfaces the same code in the audit log.</p>
+      <div class="kv">
+        <div><span class="label">vendor_blocked</span><span>modelId family is on the <code>blockedVendors</code> list.</span></div>
+        <div><span class="label">model_agent_mismatch</span><span>operator pinned an agent + modelId that come from different families.</span></div>
+        <div><span class="label">initiative_budget</span><span>request would exceed <code>tokenBudgetPerInitiative</code>.</span></div>
+        <div><span class="label">model_family_budget</span><span>request would exceed <code>tokenBudgetPerModelFamily</code>.</span></div>
+        <div><span class="label">daily_budget / monthly_budget</span><span>request would exceed the rolling 24h or 30d token allocation.</span></div>
+        <div><span class="label">capacity_agent / capacity_initiative</span><span>request would exceed <code>maxActiveTasksPerAgent</code> or <code>maxTasksPerInitiative</code>.</span></div>
+      </div>
+    </section>
+
+    <section class="full">
+      <h2>Phase 2 Console Surfaces</h2>
+      <ul>
+        <li>Task detail meta line shows attempt count, failure cause, lease holder, reclaim history, and artifact state inline.</li>
+        <li>Agent panel adds a <code>RECLAIM TASK</code> button per agent when <code>stuckTasks &gt; 0</code>.</li>
+        <li>Initiative card carries an Audit button that opens the combined JSON in a new tab (same payload as <code>wt-task audit</code>).</li>
+        <li>Promoted-assets panel appears under the task table when an initiative is focused.</li>
+        <li>Composer budget pressure note lists active policy levers (blocked vendors, per-initiative cap, per-family cap) so the operator sees what will trip before EXECUTE.</li>
+        <li>Help overlay (<code>?</code>) lists keyboard shortcuts and a CLI ↔ UI parity table.</li>
+      </ul>
+    </section>
   </div>
 
-  <footer>WovenTeam Phase 0 reference. Keep this sheet aligned with `README.md`, `docs/api/task-ledger-v0.1.md`, and `docs/ui/phase0-console-scaffold.md`.</footer>
+  <footer>WovenTeam Phase 0 / Phase 2 reference. Keep this sheet aligned with `README.md`, `docs/api/task-ledger-v0.1.md`, `docs/ui/phase0-console-scaffold.md`, and the per-sprint closeouts in `docs/launch/`.</footer>
 </main>
 
 <script>

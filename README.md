@@ -103,6 +103,7 @@ Create and inspect Phase 0 task packages through the room daemon:
 ./bin/wt-task artifact list init_example
 ./bin/wt-task artifact export task_example_001 --out /tmp/promoted.md
 ./bin/wt-task audit init_example --out /tmp/audit.json
+./bin/wt-rehearse-live --agent claude --max-tokens 4000   # dry-run; add --yes to execute
 ```
 
 The web console token panel is backed by `GET /api/tokens`. Phase 1 separates
