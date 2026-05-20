@@ -1,0 +1,460 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>WovenTeam Phase 2 Sprint 4 Closeout</title>
+  <!--
+    Sprint 4 closeout report. Self-contained: every byte of CSS/SVG/JS is
+    inline so the report archives cleanly under docs/launch/. Style mirrors
+    the Sprint 3 closeout (docs/launch/phase2-sprint3-closeout-2026-05-20.html).
+  -->
+  <style>
+    :root {
+      color-scheme: light;
+      --ink: #17202a;
+      --muted: #5c6875;
+      --line: #d7dee6;
+      --paper: #f7f9fb;
+      --panel: #ffffff;
+      --blue: #2563a8;
+      --green: #1f7a5a;
+      --amber: #a16207;
+      --red: #b42318;
+      --violet: #6d4aff;
+      --teal: #0f766e;
+      --soft-blue: #e7f0fa;
+      --soft-green: #e7f5ee;
+      --soft-amber: #fff4db;
+      --soft-red: #fdeceb;
+      --soft-violet: #eeeafe;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      color: var(--ink);
+      background: var(--paper);
+      line-height: 1.48;
+    }
+    header.hero {
+      background: #11253a;
+      color: #fff;
+      padding: 38px clamp(18px, 5vw, 64px) 30px;
+    }
+    header.hero h1 {
+      margin: 0 0 10px;
+      max-width: 980px;
+      font-size: clamp(30px, 5vw, 54px);
+      line-height: 1.02;
+    }
+    header.hero p {
+      max-width: 900px;
+      margin: 0;
+      color: #dbe7f4;
+      font-size: 18px;
+    }
+    header.hero .meta {
+      margin-top: 14px;
+      color: #aac4dd;
+      font-size: 14px;
+    }
+    nav {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      padding: 14px clamp(18px, 5vw, 64px);
+      background: #fff;
+      border-bottom: 1px solid var(--line);
+      position: sticky;
+      top: 0;
+      z-index: 2;
+    }
+    nav a, button.filter {
+      border: 1px solid var(--line);
+      background: #fff;
+      color: var(--ink);
+      border-radius: 6px;
+      padding: 8px 10px;
+      font: inherit;
+      text-decoration: none;
+      cursor: pointer;
+    }
+    nav a:hover, button.filter:hover, button.filter.active {
+      border-color: var(--blue);
+      color: var(--blue);
+      background: var(--soft-blue);
+    }
+    main {
+      max-width: 1180px;
+      margin: 0 auto;
+      padding: 24px clamp(16px, 4vw, 28px) 48px;
+    }
+    section {
+      margin: 0 0 28px;
+      padding: 24px;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+    }
+    h2 { margin: 0 0 14px; font-size: 24px; }
+    h3 { margin: 0 0 8px; font-size: 18px; }
+    p { margin: 0 0 12px; }
+    ul, ol { margin: 0; padding-left: 22px; }
+    li + li { margin-top: 7px; }
+    code {
+      background: #eef2f6;
+      border: 1px solid #dfe6ee;
+      border-radius: 4px;
+      padding: 1px 4px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 0.95em;
+    }
+    pre {
+      margin: 12px 0;
+      padding: 12px 14px;
+      border: 1px solid var(--line);
+      border-radius: 6px;
+      background: #fbfcfe;
+      overflow-x: auto;
+      font-size: 13px;
+      line-height: 1.45;
+    }
+    pre code { background: transparent; border: 0; padding: 0; }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(12, 1fr);
+      gap: 14px;
+    }
+    .card {
+      grid-column: span 4;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 16px;
+      background: #fbfcfe;
+    }
+    .wide { grid-column: span 6; }
+    .full { grid-column: 1 / -1; }
+    .status {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      margin-bottom: 10px;
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .04em;
+    }
+    .dot {
+      width: 9px;
+      height: 9px;
+      border-radius: 999px;
+      background: var(--blue);
+    }
+    .done .dot { background: var(--green); }
+    .next .dot { background: var(--blue); }
+    .risk .dot { background: var(--amber); }
+    .problem .dot { background: var(--red); }
+    .muted { color: var(--muted); }
+    .callout {
+      border-left: 4px solid var(--green);
+      padding: 12px 14px;
+      background: var(--soft-green);
+      border-radius: 6px;
+      margin: 12px 0 0;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 14px;
+    }
+    th, td {
+      text-align: left;
+      vertical-align: top;
+      padding: 10px;
+      border-bottom: 1px solid var(--line);
+    }
+    th { background: #f0f4f8; }
+    .diagram {
+      width: 100%;
+      height: auto;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+    }
+    .hide { display: none; }
+    .pill {
+      display: inline-block;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: 3px 8px;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      background: #f6f8fa;
+      color: var(--muted);
+    }
+    .pill.pass { color: var(--green); background: var(--soft-green); border-color: #b7dfcd; }
+    .pill.warn { color: var(--amber); background: var(--soft-amber); border-color: #f0d28c; }
+    @media (max-width: 820px) {
+      nav { position: static; }
+      section { padding: 18px; }
+      .card, .wide { grid-column: 1 / -1; }
+    }
+  </style>
+</head>
+<body>
+  <header class="hero">
+    <h1>Phase 2 Sprint 4 Closeout</h1>
+    <p>Artifact promotion lands as a first-class lifecycle alongside CLI parity work on the console: alert feed, initiative + role filters, help overlay, and an artifact decision panel that records reviewer notes alongside state.</p>
+    <div class="meta">Generated 2026-05-20 · branch closeout · closes Sprint 4 of <code>phase2-functional-workbench-plan.html</code></div>
+  </header>
+
+  <nav aria-label="Report navigation">
+    <a href="#status">Status</a>
+    <a href="#technical">Technical</a>
+    <a href="#lifecycle">Lifecycle</a>
+    <a href="#console">Console</a>
+    <a href="#validation">Validation</a>
+    <a href="#followups">Follow-ups</a>
+    <button class="filter active" data-filter="all">All</button>
+    <button class="filter" data-filter="review">Review</button>
+    <button class="filter" data-filter="ops">Ops</button>
+    <button class="filter" data-filter="next">Next</button>
+  </nav>
+
+  <main>
+    <section id="status" data-kind="review ops">
+      <h2>Executive Status</h2>
+      <div class="grid">
+        <article class="card done">
+          <span class="status"><span class="dot"></span>Delivered</span>
+          <h3>Artifact Promotion</h3>
+          <p>New <code>artifact</code> task event records draft → reviewed → accepted / rejected / superseded transitions with reviewer identity, free-text notes, and the workspace-relative path being promoted. Projection latches the latest state plus accepted timestamp and path.</p>
+        </article>
+        <article class="card done">
+          <span class="status"><span class="dot"></span>Delivered</span>
+          <h3>CLI Parity</h3>
+          <p><code>wt-task artifact promote|reject|review|supersede|note|list|export</code> hits the new <code>POST /api/task-artifact</code> endpoint and the per-initiative inventory at <code>GET /api/initiative-artifacts</code>. Existing operators can drive the full flow from the terminal.</p>
+        </article>
+        <article class="card done">
+          <span class="status"><span class="dot"></span>Delivered</span>
+          <h3>Console Activation</h3>
+          <p>Artifact decision panel, accepted-asset inventory, alert feed, initiative + role filters, drawer FAB, and help overlay all live. Previously-disabled controls in <code>docs/ui/phase0-console-scaffold.md</code> shrank from five to two (topology and command palette remain on hold).</p>
+        </article>
+      </div>
+      <div class="callout">
+        <strong>Definition of Done for Sprint 4:</strong> artifact state events, promotion/export CLI, reviewer notes, accepted asset inventory, and console artifact review improvements - all present, integration-tested, and exercised by 17 passing integration tests via <code>make test</code>.
+      </div>
+    </section>
+
+    <section id="technical" data-kind="review">
+      <h2>Detailed Technical Status</h2>
+      <div class="grid">
+        <article class="card wide">
+          <h3>Ledger Schema</h3>
+          <ul>
+            <li>New <code>eventType:"artifact"</code> task event with allowlisted <code>artifactState</code> (draft, reviewed, accepted, rejected, superseded), <code>reviewer</code>, <code>reviewNotes</code>, and <code>artifactPath</code>.</li>
+            <li>Append helper <code>wtTaskAppendArtifactEvent()</code> in <code>wt_task_store.c</code> escapes every field and respects <code>fsyncEachMessage</code>.</li>
+            <li>Older ledgers without artifact events project as empty values - the schema is additive.</li>
+          </ul>
+        </article>
+        <article class="card wide">
+          <h3>Projection</h3>
+          <ul>
+            <li>Five new <code>tasks</code> columns: <code>artifact_state</code>, <code>last_reviewer</code>, <code>last_review_notes</code>, <code>accepted_at_ms</code>, <code>accepted_artifact_path</code>, plus an <code>idx_tasks_artifact</code> index.</li>
+            <li><code>accepted_at_ms</code> and <code>accepted_artifact_path</code> only latch on <code>accepted</code> events, so the inventory keeps a stable "what was accepted, by whom, when" record even after a later supersede.</li>
+            <li>Task summaries and detail JSON now include the artifact fields; clients can read state without an extra round-trip.</li>
+            <li>New endpoint helper <code>wtTaskProjectionReadInitiativeArtifactsJson()</code> powers <code>GET /api/initiative-artifacts</code> with accepted-first sort.</li>
+          </ul>
+        </article>
+        <article class="card wide">
+          <h3>Endpoints</h3>
+          <ul>
+            <li><code>POST /api/task-artifact</code> validates <code>state</code> against the allowlist, runs paths through <code>isSafeArtifactName</code>, appends the artifact event, and broadcasts a <code>task.artifact</code> room message.</li>
+            <li><code>GET /api/initiative-artifacts?initiativeId=...</code> returns <code>{ artifacts: [...], acceptedCount, pendingCount }</code> with reviewer / notes / accepted-path inline.</li>
+          </ul>
+        </article>
+        <article class="card wide">
+          <h3>CLI</h3>
+          <ul>
+            <li><code>wt-task artifact promote|reject|review|supersede TASK_ID [--path PATH] [--reviewer NAME] [--notes TEXT]</code> covers the state transitions; CLI verbs are mapped to schema-level states (promote → accepted, review → reviewed, reject → rejected, supersede → superseded).</li>
+            <li><code>wt-task artifact note TASK_ID --notes TEXT</code> records a <code>reviewed</code> state with operator notes only.</li>
+            <li><code>wt-task artifact list INIT</code> prints a TSV inventory; <code>wt-task artifact export TASK_ID [--out FILE]</code> streams the accepted (or default <code>result.md</code>) text from the workspace.</li>
+          </ul>
+        </article>
+      </div>
+    </section>
+
+    <section id="lifecycle" data-kind="review">
+      <h2>Artifact Lifecycle</h2>
+      <p class="muted">All transitions are append-only events. The projection holds the latest state in <code>artifact_state</code> with reviewer + notes; accepted_* columns latch on the first accepted event and survive later supersede transitions.</p>
+      <svg class="diagram" viewBox="0 0 1040 340" role="img" aria-label="Artifact promotion lifecycle">
+        <defs>
+          <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M 0 0 L 10 5 L 0 10 z" fill="#2563a8"></path>
+          </marker>
+          <style>
+            .node  { fill: #fff; stroke: #b9c3cc; stroke-width: 1.5; }
+            .blue  { fill: #e7f0fa; stroke: #2563a8; }
+            .green { fill: #e7f5ee; stroke: #1f7a5a; }
+            .amber { fill: #fff4db; stroke: #a16207; }
+            .red   { fill: #fdeceb; stroke: #b42318; }
+            .violet{ fill: #eeeafe; stroke: #6d4aff; }
+            .label { fill: #1f2933; font: 700 15px system-ui, sans-serif; }
+            .small { fill: #5c6875; font: 12px system-ui, sans-serif; }
+            .line  { stroke: #2563a8; stroke-width: 2; fill: none; marker-end: url(#arrow); }
+          </style>
+        </defs>
+
+        <rect class="node blue"   x="40"  y="30"  width="180" height="60" rx="8"></rect>
+        <text class="label" x="130" y="56"  text-anchor="middle">Workspace ready</text>
+        <text class="small" x="130" y="76"  text-anchor="middle">adapter produced result.md</text>
+
+        <rect class="node blue"   x="290" y="30"  width="180" height="60" rx="8"></rect>
+        <text class="label" x="380" y="56"  text-anchor="middle">draft</text>
+        <text class="small" x="380" y="76"  text-anchor="middle">first decision logged</text>
+
+        <rect class="node amber"  x="540" y="30"  width="180" height="60" rx="8"></rect>
+        <text class="label" x="630" y="56"  text-anchor="middle">reviewed</text>
+        <text class="small" x="630" y="76"  text-anchor="middle">notes + reviewer</text>
+
+        <rect class="node green"  x="790" y="20"  width="200" height="60" rx="8"></rect>
+        <text class="label" x="890" y="46"  text-anchor="middle">accepted</text>
+        <text class="small" x="890" y="66"  text-anchor="middle">accepted_at_ms + path latch</text>
+
+        <rect class="node red"    x="790" y="100" width="200" height="60" rx="8"></rect>
+        <text class="label" x="890" y="126" text-anchor="middle">rejected</text>
+        <text class="small" x="890" y="146" text-anchor="middle">no latch; remains review-able</text>
+
+        <rect class="node violet" x="540" y="180" width="200" height="60" rx="8"></rect>
+        <text class="label" x="640" y="206" text-anchor="middle">superseded</text>
+        <text class="small" x="640" y="226" text-anchor="middle">accepted_* columns persist</text>
+
+        <rect class="node" x="290" y="180" width="180" height="60" rx="8"></rect>
+        <text class="label" x="380" y="206" text-anchor="middle">Initiative inventory</text>
+        <text class="small" x="380" y="226" text-anchor="middle">GET /api/initiative-artifacts</text>
+
+        <rect class="node" x="40"  y="180" width="180" height="60" rx="8"></rect>
+        <text class="label" x="130" y="206" text-anchor="middle">CLI export</text>
+        <text class="small" x="130" y="226" text-anchor="middle">wt-task artifact export</text>
+
+        <path class="line" d="M220 60 H286"></path>
+        <path class="line" d="M470 60 H536"></path>
+        <path class="line" d="M720 60 H786"></path>
+        <path class="line" d="M720 76 C760 100 770 110 786 124"></path>
+        <path class="line" d="M890 80 V178 H736"></path>
+        <path class="line" d="M540 206 H474"></path>
+        <path class="line" d="M380 240 V280 H300 V268"></path>
+        <path class="line" d="M290 206 H222"></path>
+      </svg>
+      <p class="muted">Acceptance is the only state that latches a path - the inventory deliberately tracks "the artifact that was accepted at time T" even if a later supersede changes the live state.</p>
+    </section>
+
+    <section id="console" data-kind="review ops">
+      <h2>Console Parity And Polish</h2>
+      <div class="grid">
+        <article class="card wide">
+          <h3>Wired In This Sprint</h3>
+          <ul>
+            <li><strong>Artifact decision panel</strong> on the task detail with reviewer + notes inputs and Promote / Reject / Reviewed / Supersede / Export buttons.</li>
+            <li><strong>Promoted assets panel</strong> appears when an initiative is focused; lists accepted + pending artifacts with reviewer, timestamp, and click-to-task.</li>
+            <li><strong>Alert feed</strong> (failed, stuck, blocked, revision-requested) replaces the placeholder; rows link directly into the task detail.</li>
+            <li><strong>Initiative + role filter dropdowns</strong> in the chat panel filter the task table and alert feed.</li>
+            <li><strong>Help overlay</strong> (<code>?</code>) lists keyboard shortcuts and a CLI ↔ UI parity table.</li>
+            <li><strong>Esc</strong> closes overlays and the settings panel; the existing <code>N</code> shortcut and drawer FAB both focus the composer brief.</li>
+          </ul>
+        </article>
+        <article class="card wide">
+          <h3>Still Disabled (deliberately)</h3>
+          <ul>
+            <li><strong>Topology view</strong> - needs a graph endpoint summarizing role + agent + parent edges. Deferred until Sprint 6 launch-rehearsal load testing exposes which views actually matter under realistic ledgers.</li>
+            <li><strong>Command palette (Ctrl K)</strong> - needs a task-action index. Deferred along with the audit view.</li>
+            <li><strong>Audit view</strong> - waiting on a query endpoint over the durable JSONL ledger (today every task detail call still rebuilds projection).</li>
+          </ul>
+        </article>
+      </div>
+    </section>
+
+    <section id="validation" data-kind="ops">
+      <h2>Validation</h2>
+      <p>One new integration test plus a full sweep:</p>
+      <pre><code>make test-artifact-promotion   # new in Sprint 4
+make test                      # 17 integration tests; phase1-e2e included</code></pre>
+      <table>
+        <thead><tr><th>Coverage</th><th>Mechanism</th><th>Result</th></tr></thead>
+        <tbody>
+          <tr>
+            <td>Full lifecycle (draft → reviewed → accepted)</td>
+            <td>API draft, CLI <code>review</code>, CLI <code>promote</code>; verifies task detail surfaces state, reviewer, notes, accepted path, accepted timestamp.</td>
+            <td><span class="pill pass">Pass</span></td>
+          </tr>
+          <tr>
+            <td>CLI export streams workspace text</td>
+            <td><code>wt-task artifact export</code> reads <code>acceptedArtifactPath</code> from the detail JSON and re-fetches the artifact content.</td>
+            <td><span class="pill pass">Pass</span></td>
+          </tr>
+          <tr>
+            <td>Rejected and superseded lifecycle</td>
+            <td>Reject → supersede on a second task; projection ends with <code>artifactState == "superseded"</code> and <code>acceptedAtUnixMs == 0</code>.</td>
+            <td><span class="pill pass">Pass</span></td>
+          </tr>
+          <tr>
+            <td>Per-initiative inventory</td>
+            <td><code>GET /api/initiative-artifacts</code> returns the accepted task first, lists both, reports <code>acceptedCount=1</code> + <code>pendingCount=1</code>.</td>
+            <td><span class="pill pass">Pass</span></td>
+          </tr>
+          <tr>
+            <td>CLI list / TSV output</td>
+            <td><code>wt-task artifact list INIT</code> outputs one row per task in TSV with state and reviewer columns.</td>
+            <td><span class="pill pass">Pass</span></td>
+          </tr>
+          <tr>
+            <td>Input validation</td>
+            <td>Bad <code>state</code> rejected with 400; path traversal in <code>artifactPath</code> rejected with 400.</td>
+            <td><span class="pill pass">Pass</span></td>
+          </tr>
+          <tr>
+            <td>Full regression sweep</td>
+            <td><code>make test</code> (17 integration tests including phase1-e2e).</td>
+            <td><span class="pill pass">Pass</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </section>
+
+    <section id="followups" data-kind="next">
+      <h2>Follow-ups Into Sprint 5 (Policy And Audit)</h2>
+      <ul>
+        <li>Sprint 5 should fold artifact decisions into the audit export so the per-initiative report includes promotion history alongside gates, usage, and policy decisions.</li>
+        <li>Topology, audit, and command-palette views remain disabled. Each needs a focused query endpoint; revisit after Sprint 5 lands the policy evaluator and audit export.</li>
+        <li>The artifact decision panel currently posts free-text notes. A future enhancement could classify notes with a small allowlist (ship, blocked-on-X, revise-Y) to feed dashboards without changing the ledger contract.</li>
+        <li>Real-CLI launch rehearsal in Sprint 6 should drive at least one accepted artifact end-to-end to prove the promotion path under non-fake adapters.</li>
+      </ul>
+      <p class="muted">No new risks introduced. The artifact schema is additive, the new endpoint runs the same allowlist + safe-name validation already used by the artifact viewer, and the UI controls degrade to "No decision recorded" on tasks created before this sprint.</p>
+    </section>
+  </main>
+
+  <script>
+    /*
+     * Single-file inline filter wiring (same pattern as Sprint 3 closeout).
+     * Each filter button toggles a 'hide' class on sections whose data-kind
+     * does not intersect the chosen filter.
+     */
+    const filterButtons = document.querySelectorAll("button.filter");
+    const sections = document.querySelectorAll("section[data-kind]");
+    filterButtons.forEach(button => {
+      button.addEventListener("click", () => {
+        filterButtons.forEach(item => item.classList.toggle("active", item === button));
+        const filter = button.dataset.filter;
+        sections.forEach(section => {
+          const kinds = (section.dataset.kind || "").split(/\s+/);
+          const visible = filter === "all" || kinds.includes(filter);
+          section.classList.toggle("hide", !visible);
+        });
+      });
+    });
+  </script>
+</body>
+</html>

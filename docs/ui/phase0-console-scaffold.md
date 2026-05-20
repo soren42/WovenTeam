@@ -66,6 +66,23 @@ The Phase 0 browser UI is `WovenTeam Console (Fullscreen)` served by
 - The Phase 1 console-facing contract is now covered by
   `make test-phase1-e2e`, including task detail, artifacts, review gates,
   tokens, capacity, and restart recovery.
+- The task detail panel includes a Sprint 4 artifact decision sub-panel:
+  artifact path selector (sourced from the workspace file list), reviewer
+  field, notes textarea, and Mark Reviewed / Promote / Reject / Supersede /
+  Export buttons that hit `POST /api/task-artifact`. Each decision shows up in
+  the task detail meta line as `artifact: <state> <path>`.
+- When an initiative is focused, the Sprint 4 promoted-assets panel appears
+  under the task table and lists accepted artifacts (and pending decisions)
+  pulled from `GET /api/initiative-artifacts`.
+- The alerts panel now feeds from the task summaries projection: failed,
+  stuck, blocked, and revision-requested rows are listed with a click-to-task
+  affordance. No new backend API was required.
+- The chat panel's initiative and role filter dropdowns are wired. They filter
+  the task table (and through it the alert feed) without changing the live
+  transcript view.
+- The help overlay (`?` key or top-bar button) lists keyboard shortcuts and the
+  CLI ↔ UI parity table so operators can move between `wt-task` and the
+  console without context switching.
 
 ## Temporary Placeholders
 
@@ -96,6 +113,9 @@ The scaffold now binds to the task package and Phase 1 state paths:
 - `POST /api/task-gate`
 - `POST /api/task-usage`
 - `POST /api/agent-control`
+- `POST /api/task-reclaim`
+- `POST /api/task-artifact`
+- `GET /api/initiative-artifacts?initiativeId=...`
 
 The next backend step is to expose richer initiative, gate history, usage, and
 agent state so the console can enable the remaining disabled controls.

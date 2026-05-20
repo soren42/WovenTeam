@@ -26,7 +26,8 @@
           <span>Search disabled until indexing exists</span>
           <kbd>Ctrl K</kbd>
         </button>
-        <button id="helpButton" class="icon-button disabled-control" type="button" disabled aria-disabled="true" title="Keyboard shortcut overlay not implemented">?</button>
+        <!-- Sprint 4: help overlay listing keyboard shortcuts + CLI ↔ UI parity. -->
+        <button id="helpButton" class="icon-button" type="button" title="Show keyboard shortcuts and CLI/UI parity map">?</button>
         <div class="swatches" aria-label="Accent hue">
           <span>HUE</span>
           <button type="button" class="swatch cyan active" data-accent="cyan" aria-label="Cyan"></button>
@@ -190,11 +191,13 @@
         </article>
 
         <article class="panel alerts-panel">
-          <header><span>Alerts · failed / stuck</span><small>0 OPEN</small></header>
-          <div class="placeholder compact disabled-surface">
-            <strong>Alert feed disabled</strong>
-            <span>Needs alert and gate query endpoints. Task failures and blocked states are visible in the live task ledger below.</span>
-          </div>
+          <header><span>Alerts · failed / stuck / blocked</span><small id="alertsMeta">0 OPEN</small></header>
+          <!--
+            Sprint 4: alert feed derived from the existing task summaries
+            projection. No new API needed - we just bucket the same data the
+            task table already reads. Each row is clickable to focus the task.
+          -->
+          <div id="alertsList" class="alerts-list"></div>
         </article>
       </section>
 
@@ -238,9 +241,55 @@
               <div id="artifactFiles" class="artifact-files"></div>
               <div id="artifactViewer" class="artifact-viewer"></div>
             </div>
+            <!--
+              Sprint 4 artifact decision panel. Operator picks an artifact path,
+              optionally writes review notes, then promotes / reviews / rejects.
+              All decisions hit POST /api/task-artifact so the durable JSONL
+              ledger remains the source of truth.
+            -->
+            <div id="detailArtifactDecision" class="artifact-decision">
+              <header>
+                <strong>Artifact decision</strong>
+                <small id="artifactStateLabel">No decision recorded</small>
+              </header>
+              <div class="artifact-decision-fields">
+                <label>
+                  <span>Artifact path</span>
+                  <select id="artifactPathSelect"></select>
+                </label>
+                <label>
+                  <span>Reviewer</span>
+                  <input id="artifactReviewer" type="text" maxlength="60" placeholder="ceo">
+                </label>
+                <label class="full">
+                  <span>Notes (recorded with the decision)</span>
+                  <textarea id="artifactNotes" rows="2" maxlength="2000" placeholder="Optional — why is this the accepted output?"></textarea>
+                </label>
+              </div>
+              <div class="artifact-decision-actions">
+                <button type="button" data-artifact-action="reviewed">Mark reviewed</button>
+                <button type="button" data-artifact-action="accepted" class="accent">Promote (accept)</button>
+                <button type="button" data-artifact-action="rejected">Reject</button>
+                <button type="button" data-artifact-action="superseded">Supersede</button>
+                <button type="button" id="artifactExportButton" class="ghost" title="Copy accepted artifact text to clipboard">Export</button>
+              </div>
+            </div>
             <div id="detailEvents" class="detail-events"></div>
           </div>
         </div>
+      </section>
+
+      <!--
+        Sprint 4: accepted-asset inventory. Populated when an initiative is
+        focused. Reads /api/initiative-artifacts so promoted outputs are visible
+        without scrolling through task events.
+      -->
+      <section id="initiativeAssetsPanel" class="panel initiative-assets-panel" hidden>
+        <header>
+          <span>Promoted assets · <b id="initiativeAssetsCount">0</b> accepted</span>
+          <small id="initiativeAssetsMeta">Focus an initiative to see promoted artifacts.</small>
+        </header>
+        <div id="initiativeAssetsList" class="initiative-assets-list"></div>
       </section>
 
       <section class="workspace">
@@ -248,8 +297,13 @@
           <header>
             <span>Cross-agent meeting log</span>
             <div class="chat-controls">
-              <select id="initiativeFilter" class="disabled-control" disabled aria-disabled="true"><option>all initiatives</option></select>
-              <select id="roleFilter" class="disabled-control" disabled aria-disabled="true"><option>all roles</option></select>
+              <!--
+                Sprint 4: initiative + role filter dropdowns now drive the task
+                table and alert feed. The chat transcript still shows all room
+                events, but task focus follows the operator's choice here.
+              -->
+              <select id="initiativeFilter" title="Filter task table by initiative"><option value="">all initiatives</option></select>
+              <select id="roleFilter" title="Filter task table by lead role"><option value="all">all roles</option></select>
             </div>
           </header>
           <div id="transcript" class="transcript" aria-live="polite"></div>
@@ -329,6 +383,50 @@
       <div id="auditLog">Waiting for room events...</div>
     </footer>
     <button id="drawerFab" class="drawer-fab" type="button">+ New task <kbd>N</kbd></button>
+    <!--
+      Sprint 4: help overlay. Lists the keyboard shortcuts plus a CLI ↔ UI
+      parity table so operators can move between the wt-task command and the
+      console without context switching.
+    -->
+    <div id="helpOverlay" class="help-overlay" hidden aria-modal="true" role="dialog">
+      <div class="help-card">
+        <header>
+          <strong>Console shortcuts &amp; CLI parity</strong>
+          <button type="button" id="helpClose" class="icon-button">×</button>
+        </header>
+        <div class="help-body">
+          <section>
+            <h4>Keyboard</h4>
+            <table>
+              <tbody>
+                <tr><th>N</th><td>Focus the composer brief field (same as the drawer FAB).</td></tr>
+                <tr><th>?</th><td>Show / hide this help overlay.</td></tr>
+                <tr><th>Esc</th><td>Close overlays and dismiss focus.</td></tr>
+                <tr><th>Ctrl K</th><td>Command palette (planned).</td></tr>
+              </tbody>
+            </table>
+          </section>
+          <section>
+            <h4>UI ↔ CLI parity</h4>
+            <table>
+              <thead><tr><th>Console action</th><th>CLI equivalent</th></tr></thead>
+              <tbody>
+                <tr><td>Task package composer (EXECUTE)</td><td><code>wt-task create</code></td></tr>
+                <tr><td>Manager subtask mode (EXECUTE)</td><td><code>wt-task request</code></td></tr>
+                <tr><td>Initiative card focus</td><td><code>wt-task initiative show</code></td></tr>
+                <tr><td>Task detail Retry / Cancel / Close</td><td><code>wt-task retry|cancel|close</code></td></tr>
+                <tr><td>Agent panel Pause / Resume</td><td><code>wt-task agent pause|resume</code></td></tr>
+                <tr><td>Agent panel Reclaim Task</td><td><code>wt-task reclaim</code></td></tr>
+                <tr><td>Artifact decision Promote / Reject / Reviewed</td><td><code>wt-task artifact promote|reject|review</code></td></tr>
+                <tr><td>Artifact decision Export</td><td><code>wt-task artifact export</code></td></tr>
+                <tr><td>Promoted assets panel</td><td><code>wt-task artifact list INIT</code></td></tr>
+                <tr><td>Alert feed row → task</td><td>same task surfaces in <code>wt-task list</code></td></tr>
+              </tbody>
+            </table>
+          </section>
+        </div>
+      </div>
+    </div>
   </div>
   <script src="/app.js"></script>
 </body>

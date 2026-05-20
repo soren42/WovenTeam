@@ -83,6 +83,19 @@ int wtTaskAppendReclaimEvent(const char *ledgerPath, const char *taskId, const c
                              const char *reclaimedBy, const char *reason, const char *message,
                              bool fsyncRecord);
 /*
+ * Append an artifact decision event. Sprint 4 turns raw adapter output into a
+ * reviewed asset by recording a state transition for an artifact path.
+ *   state: draft | reviewed | accepted | rejected | superseded
+ *   reviewer: human or system identifier crediting the decision
+ *   notes: free-text justification (recorded verbatim)
+ *   artifactPath: path inside the runtime workspace (e.g. result.md)
+ * The event is a normal task_event with eventType="artifact" so projection,
+ * recovery, and ledger semantics carry over unchanged.
+ */
+int wtTaskAppendArtifactEvent(const char *ledgerPath, const char *taskId, const char *state,
+                              const char *reviewer, const char *notes, const char *artifactPath,
+                              bool fsyncRecord);
+/*
  * Inspect the most recent lease for a task. Returns 1 when a lease line is found,
  * 0 when no lease exists or the latest lease was already released by a reclaim
  * event. Out-params receive the lease holder, expiry, and attempt count. Used by

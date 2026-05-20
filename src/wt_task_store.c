@@ -373,6 +373,46 @@ int wtTaskAppendReclaimEvent(const char *ledgerPath, const char *taskId, const c
     return wtTaskAppendRecord(ledgerPath, json, fsyncRecord);
 }
 
+int wtTaskAppendArtifactEvent(const char *ledgerPath, const char *taskId, const char *state,
+                              const char *reviewer, const char *notes, const char *artifactPath,
+                              bool fsyncRecord) {
+    /*
+     * Artifact decisions are append-only task events that promote, demote, or
+     * annotate a workspace artifact. The event preserves the prior task status
+     * by NOT writing a "status" field - status transitions remain the job of
+     * lifecycle/gate events. Projection logic only updates the artifact_*
+     * columns when it sees an artifact eventType.
+     */
+    char escapedTaskId[WT_TASK_ID_SIZE * 2];
+    char escapedState[64];
+    char escapedReviewer[WT_TASK_AGENT_SIZE * 2];
+    char escapedNotes[WT_TASK_BODY_SIZE * 2];
+    /* Artifact paths are workspace-relative and bounded; 1024 covers prompt.md,
+     * stdout.log, stderr.log, manifest.json, result.md and any future promoted
+     * subpath without dragging wt_config.h into this translation unit. */
+    char escapedPath[1024];
+    /* Notes appear twice in the format string (reviewNotes + message), so the
+     * upper bound is 2 * escapedNotes + every other escaped field + JSON keys. */
+    char json[WT_TASK_BODY_SIZE * 5 + 2048];
+    if (wtJsonEscape(taskId, escapedTaskId, sizeof(escapedTaskId)) != 0 ||
+        wtJsonEscape(state ? state : "", escapedState, sizeof(escapedState)) != 0 ||
+        wtJsonEscape(reviewer ? reviewer : "", escapedReviewer, sizeof(escapedReviewer)) != 0 ||
+        wtJsonEscape(notes ? notes : "", escapedNotes, sizeof(escapedNotes)) != 0 ||
+        wtJsonEscape(artifactPath ? artifactPath : "", escapedPath, sizeof(escapedPath)) != 0) {
+        return -1;
+    }
+    snprintf(json, sizeof(json),
+             "{\"schema\":\"woventeam.task_event.v0.1\",\"taskId\":\"%s\","
+             "\"eventType\":\"artifact\",\"artifactState\":\"%s\","
+             "\"reviewer\":\"%s\",\"reviewNotes\":\"%s\","
+             "\"artifactPath\":\"%s\",\"message\":\"%s\","
+             "\"createdBy\":\"%s\",\"createdAtUnixMs\":%lld}",
+             escapedTaskId, escapedState, escapedReviewer, escapedNotes,
+             escapedPath, escapedNotes, escapedReviewer,
+             wtNowUnixMilliseconds());
+    return wtTaskAppendRecord(ledgerPath, json, fsyncRecord);
+}
+
 int wtTaskFindActiveLease(const char *ledgerPath, const char *taskId,
                           char *leaseHolder, size_t leaseHolderSize,
                           long long *leaseExpiresAtUnixMs, int *attempt) {

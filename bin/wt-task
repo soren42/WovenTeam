@@ -17,6 +17,13 @@ Usage:
   wt-task agent pause AGENT [--message TEXT]
   wt-task agent resume AGENT [--message TEXT]
   wt-task reclaim TASK_ID [--reason operator|lease_expired] [--message TEXT]
+  wt-task artifact promote TASK_ID [--path PATH] [--reviewer NAME] [--notes TEXT]
+  wt-task artifact reject TASK_ID [--path PATH] [--reviewer NAME] [--notes TEXT]
+  wt-task artifact review TASK_ID [--path PATH] [--reviewer NAME] [--notes TEXT]
+  wt-task artifact supersede TASK_ID [--path PATH] [--reviewer NAME] [--notes TEXT]
+  wt-task artifact note TASK_ID --notes TEXT [--reviewer NAME]
+  wt-task artifact list INIT
+  wt-task artifact export TASK_ID [--out FILE]
   wt-task list
   wt-task show TASK_ID
   wt-task assign TASK_ID --agent AGENT [--status assigned]
@@ -324,6 +331,117 @@ cmd_agent() {
     esac
 }
 
+# Sprint 4: artifact promotion CLI. Subcommands cover the full state lifecycle
+# (promote = accepted, reject, review = reviewed, supersede = superseded) plus
+# operator-friendly 'note' (records a 'reviewed' state with notes only) and
+# 'list' / 'export' helpers. All decisions are recorded via POST
+# /api/task-artifact so the durable JSONL ledger stays the source of truth.
+cmd_artifact() {
+    local subcmd="${1:-}"
+    shift || true
+    case "$subcmd" in
+        promote|reject|review|supersede)
+            local task_id="${1:-}" path="" reviewer="ceo" notes=""
+            shift || true
+            while [[ $# -gt 0 ]]; do
+                case "$1" in
+                    --path) path="${2:-}"; shift 2 ;;
+                    --reviewer) reviewer="${2:-}"; shift 2 ;;
+                    --notes) notes="${2:-}"; shift 2 ;;
+                    *) echo "wt-task artifact $subcmd: unknown argument: $1" >&2; usage >&2; exit 2 ;;
+                esac
+            done
+            if [[ -z "$task_id" ]]; then
+                echo "wt-task artifact $subcmd: TASK_ID is required" >&2
+                exit 2
+            fi
+            # Map CLI verb to durable state name. 'promote' is the operator's
+            # term; 'accepted' is the schema-level state recorded in the ledger.
+            local state="$subcmd"
+            case "$subcmd" in
+                promote) state="accepted" ;;
+                review) state="reviewed" ;;
+                reject) state="rejected" ;;
+                supersede) state="superseded" ;;
+            esac
+            jq -cn --arg taskId "$task_id" --arg state "$state" --arg reviewer "$reviewer" \
+                --arg notes "$notes" --arg path "$path" \
+                '{taskId:$taskId,state:$state,reviewer:$reviewer,notes:$notes,artifactPath:$path}' |
+              http_post_json "/api/task-artifact" "$(cat)"
+            ;;
+        note)
+            local task_id="${1:-}" reviewer="ceo" notes=""
+            shift || true
+            while [[ $# -gt 0 ]]; do
+                case "$1" in
+                    --notes) notes="${2:-}"; shift 2 ;;
+                    --reviewer) reviewer="${2:-}"; shift 2 ;;
+                    *) echo "wt-task artifact note: unknown argument: $1" >&2; usage >&2; exit 2 ;;
+                esac
+            done
+            if [[ -z "$task_id" || -z "$notes" ]]; then
+                echo "wt-task artifact note: TASK_ID and --notes are required" >&2
+                exit 2
+            fi
+            jq -cn --arg taskId "$task_id" --arg state "reviewed" --arg reviewer "$reviewer" \
+                --arg notes "$notes" --arg path "" \
+                '{taskId:$taskId,state:$state,reviewer:$reviewer,notes:$notes,artifactPath:$path}' |
+              http_post_json "/api/task-artifact" "$(cat)"
+            ;;
+        list)
+            local initiative="${1:-}"
+            if [[ -z "$initiative" ]]; then
+                echo "wt-task artifact list: INIT is required" >&2
+                exit 2
+            fi
+            http_get "/api/initiative-artifacts?initiativeId=$initiative" | jq -r '
+              .artifacts[] |
+              [.taskId, .artifactState, .acceptedArtifactPath, .lastReviewer, .lastReviewNotes, .title] | @tsv'
+            ;;
+        export)
+            # Print the accepted artifact's contents to stdout (or to --out).
+            # Sources the path from the projection; falls back to result.md when
+            # no explicit accepted path is recorded yet.
+            local task_id="${1:-}" out=""
+            shift || true
+            while [[ $# -gt 0 ]]; do
+                case "$1" in
+                    --out) out="${2:-}"; shift 2 ;;
+                    *) echo "wt-task artifact export: unknown argument: $1" >&2; usage >&2; exit 2 ;;
+                esac
+            done
+            if [[ -z "$task_id" ]]; then
+                echo "wt-task artifact export: TASK_ID is required" >&2
+                exit 2
+            fi
+            local detail accepted_path text
+            detail="$(http_get "/api/task-detail?taskId=$task_id")"
+            accepted_path="$(jq -r '.task.acceptedArtifactPath // ""' <<<"$detail")"
+            [[ -n "$accepted_path" ]] || accepted_path="result.md"
+            text="$(http_get "/api/task-artifacts?taskId=$task_id" | jq -r --arg name "$accepted_path" '
+              if $name == "result.md" then .resultText
+              elif $name == "stdout.log" then .stdoutText
+              elif $name == "stderr.log" then .stderrText
+              elif $name == "manifest.json" then .manifestText
+              else .resultText end')"
+            if [[ -n "$out" ]]; then
+                printf '%s' "$text" >"$out"
+                echo "exported $task_id ($accepted_path) -> $out"
+            else
+                printf '%s' "$text"
+            fi
+            ;;
+        -h|--help|help|"")
+            usage
+            ;;
+        *)
+            echo "wt-task artifact: unknown command: $subcmd" >&2
+            usage >&2
+            exit 2
+            ;;
+    esac
+}
+
 # Sprint 3 closeout: operator reclaim path. Releases the most recent lease so a
 # stuck task returns to the queued pool. Reason defaults to "operator" - the
 # only other allowed value is "lease_expired" which the daemon also accepts when
@@ -445,6 +563,7 @@ case "$cmd" in
     assign) cmd_assign "$@" ;;
     update-status) cmd_update_status "$@" ;;
     reclaim) cmd_reclaim "$@" ;;
+    artifact) cmd_artifact "$@" ;;
     retry) cmd_lifecycle queued "Task reopened for retry by wt-task." "$@" ;;
     cancel) cmd_lifecycle cancelled "Task cancelled by wt-task." "$@" ;;
     close) cmd_lifecycle closed "Task closed by wt-task." "$@" ;;

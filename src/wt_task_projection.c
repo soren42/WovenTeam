@@ -142,6 +142,16 @@ static int insertEvent(sqlite3 *db, const char *line, const char *schema) {
     }
     readStringOrDefault(line, "retryCause", retryCause, sizeof(retryCause), "");
     readStringOrDefault(line, "reclaimReason", reclaimReason, sizeof(reclaimReason), "");
+    /* Sprint 4 artifact fields parsed alongside lease/reclaim fields so a single
+     * pass over the JSON line populates everything the projection might need. */
+    char artifactState[64];
+    char artifactReviewer[WT_TASK_AGENT_SIZE];
+    char artifactNotes[WT_TASK_BODY_SIZE];
+    char artifactPath[512];
+    readStringOrDefault(line, "artifactState", artifactState, sizeof(artifactState), "");
+    readStringOrDefault(line, "reviewer", artifactReviewer, sizeof(artifactReviewer), "");
+    readStringOrDefault(line, "reviewNotes", artifactNotes, sizeof(artifactNotes), "");
+    readStringOrDefault(line, "artifactPath", artifactPath, sizeof(artifactPath), "");
     wtJsonReadLongLong(line, "createdAtUnixMs", &createdAtMs);
     wtJsonReadLongLong(line, "leaseExpiresAtUnixMs", &leaseExpiresAtMs);
     wtJsonReadLong(line, "attempt", &attempt);
@@ -159,7 +169,8 @@ static int insertEvent(sqlite3 *db, const char *line, const char *schema) {
     if (rc != 0 || taskId[0] == '\0') {
         return -1;
     }
-    if (status[0] != '\0' || assignedAgent[0] != '\0' || strcmp(eventType, "reclaim") == 0) {
+    if (status[0] != '\0' || assignedAgent[0] != '\0' ||
+        strcmp(eventType, "reclaim") == 0 || strcmp(eventType, "artifact") == 0) {
         /*
          * Apply the event to the tasks projection row. The CASE expressions are
          * narrow: each column only updates when the event_type or status warrants
@@ -194,6 +205,15 @@ static int insertEvent(sqlite3 *db, const char *line, const char *schema) {
             "  ELSE failure_cause END,"
             "last_reclaim_reason=CASE WHEN ? = 'reclaim' THEN ? ELSE last_reclaim_reason END,"
             "reclaim_count=CASE WHEN ? = 'reclaim' THEN reclaim_count + 1 ELSE reclaim_count END,"
+            /* Artifact lifecycle columns: only update when eventType=artifact.
+             * accepted_at_ms and accepted_artifact_path latch on the first
+             * 'accepted' state and stay populated even after later supersede
+             * events, so the inventory keeps a stable "what was accepted" log. */
+            "artifact_state=CASE WHEN ? = 'artifact' AND ? != '' THEN ? ELSE artifact_state END,"
+            "last_reviewer=CASE WHEN ? = 'artifact' AND ? != '' THEN ? ELSE last_reviewer END,"
+            "last_review_notes=CASE WHEN ? = 'artifact' THEN ? ELSE last_review_notes END,"
+            "accepted_at_ms=CASE WHEN ? = 'artifact' AND ? = 'accepted' THEN ? ELSE accepted_at_ms END,"
+            "accepted_artifact_path=CASE WHEN ? = 'artifact' AND ? = 'accepted' AND ? != '' THEN ? ELSE accepted_artifact_path END,"
             "updated_at_ms=max(updated_at_ms,?),"
             "event_count=event_count+1 "
             "WHERE task_id=?";
@@ -238,6 +258,25 @@ static int insertEvent(sqlite3 *db, const char *line, const char *schema) {
         bindText(update, parameterIndex++, eventType);
         bindText(update, parameterIndex++, reclaimReason);
         bindText(update, parameterIndex++, eventType);
+        /* artifact_state: only update when eventType=artifact and a state was given */
+        bindText(update, parameterIndex++, eventType);
+        bindText(update, parameterIndex++, artifactState);
+        bindText(update, parameterIndex++, artifactState);
+        /* last_reviewer: only update when eventType=artifact with a reviewer */
+        bindText(update, parameterIndex++, eventType);
+        bindText(update, parameterIndex++, artifactReviewer);
+        bindText(update, parameterIndex++, artifactReviewer);
+        /* last_review_notes: every artifact event refreshes notes (even empty) */
+        bindText(update, parameterIndex++, eventType);
+        bindText(update, parameterIndex++, artifactNotes);
+        /* accepted_at_ms / accepted_artifact_path latch on artifact + accepted */
+        bindText(update, parameterIndex++, eventType);
+        bindText(update, parameterIndex++, artifactState);
+        sqlite3_bind_int64(update, parameterIndex++, createdAtMs);
+        bindText(update, parameterIndex++, eventType);
+        bindText(update, parameterIndex++, artifactState);
+        bindText(update, parameterIndex++, artifactPath);
+        bindText(update, parameterIndex++, artifactPath);
         /* updated_at_ms + WHERE task_id */
         sqlite3_bind_int64(update, parameterIndex++, createdAtMs);
         bindText(update, parameterIndex++, taskId);
@@ -300,8 +339,20 @@ int wtTaskProjectionRebuild(const char *dbPath, const char *ledgerPath) {
              *   reclaim_count     - cumulative reclaim events recorded for this task
              */
             "failure_cause TEXT DEFAULT '',last_reclaim_reason TEXT DEFAULT '',"
-            "reclaim_count INTEGER DEFAULT 0);"
+            "reclaim_count INTEGER DEFAULT 0,"
+            /* Sprint 4 artifact promotion columns:
+             *   artifact_state          - latest artifact lifecycle state
+             *                             (draft|reviewed|accepted|rejected|superseded)
+             *   last_reviewer           - who recorded the latest artifact decision
+             *   last_review_notes       - free-text justification from latest decision
+             *   accepted_at_ms          - timestamp of the most recent accepted event
+             *   accepted_artifact_path  - workspace-relative path of accepted artifact
+             */
+            "artifact_state TEXT DEFAULT '',last_reviewer TEXT DEFAULT '',"
+            "last_review_notes TEXT DEFAULT '',accepted_at_ms INTEGER DEFAULT 0,"
+            "accepted_artifact_path TEXT DEFAULT '');"
             "CREATE INDEX idx_tasks_status ON tasks(status);"
+            "CREATE INDEX idx_tasks_artifact ON tasks(artifact_state);"
             "CREATE INDEX idx_tasks_agent ON tasks(assigned_agent);"
             "CREATE INDEX idx_tasks_initiative ON tasks(initiative_id);"
             "CREATE TABLE task_events ("
@@ -378,7 +429,8 @@ int wtTaskProjectionReadSummariesJson(const char *dbPath, char *buffer, size_t b
         "SELECT task_id,initiative_id,parent_task_id,requested_by_role,assigned_role,assigned_agent,"
         "model_id,priority,status,title,tool_profile,max_tokens,created_at_ms,updated_at_ms,event_count,"
         "lease_owner,lease_expires_at_ms,leased_at_ms,running_at_ms,attempt_count,"
-        "failure_cause,last_reclaim_reason,reclaim_count "
+        "failure_cause,last_reclaim_reason,reclaim_count,"
+        "artifact_state,last_reviewer,last_review_notes,accepted_at_ms,accepted_artifact_path "
         "FROM tasks ORDER BY updated_at_ms DESC, created_at_ms DESC LIMIT 200";
     if (sqlite3_prepare_v2(db, sql, -1, &stmt, NULL) != SQLITE_OK) {
         sqlite3_close(db);
@@ -425,8 +477,20 @@ int wtTaskProjectionReadSummariesJson(const char *dbPath, char *buffer, size_t b
         appendJsonString(buffer, bufferSize, &used, columnText(stmt, 20));
         appendRaw(buffer, bufferSize, &used, ",\"lastReclaimReason\":");
         appendJsonString(buffer, bufferSize, &used, columnText(stmt, 21));
-        snprintf(number, sizeof(number), ",\"reclaimCount\":%d}", sqlite3_column_int(stmt, 22));
+        snprintf(number, sizeof(number), ",\"reclaimCount\":%d,\"artifactState\":", sqlite3_column_int(stmt, 22));
         appendRaw(buffer, bufferSize, &used, number);
+        /* Sprint 4 artifact fields - keep snapshot-friendly order so callers can
+         * inspect promotion status without a second fetch. */
+        appendJsonString(buffer, bufferSize, &used, columnText(stmt, 23));
+        appendRaw(buffer, bufferSize, &used, ",\"lastReviewer\":");
+        appendJsonString(buffer, bufferSize, &used, columnText(stmt, 24));
+        appendRaw(buffer, bufferSize, &used, ",\"lastReviewNotes\":");
+        appendJsonString(buffer, bufferSize, &used, columnText(stmt, 25));
+        snprintf(number, sizeof(number), ",\"acceptedAtUnixMs\":%lld,\"acceptedArtifactPath\":",
+                 sqlite3_column_int64(stmt, 26));
+        appendRaw(buffer, bufferSize, &used, number);
+        appendJsonString(buffer, bufferSize, &used, columnText(stmt, 27));
+        appendRaw(buffer, bufferSize, &used, "}");
     }
     appendRaw(buffer, bufferSize, &used, "]");
     sqlite3_finalize(stmt);
@@ -445,7 +509,8 @@ int wtTaskProjectionReadDetailJson(const char *dbPath, const char *taskId, char 
         "SELECT task_id,initiative_id,parent_task_id,requested_by_role,assigned_role,assigned_agent,"
         "model_id,priority,status,title,body,tool_profile,max_tokens,created_at_ms,updated_at_ms,event_count,"
         "lease_owner,lease_expires_at_ms,leased_at_ms,running_at_ms,attempt_count,"
-        "failure_cause,last_reclaim_reason,reclaim_count "
+        "failure_cause,last_reclaim_reason,reclaim_count,"
+        "artifact_state,last_reviewer,last_review_notes,accepted_at_ms,accepted_artifact_path "
         "FROM tasks WHERE task_id=?";
     if (sqlite3_prepare_v2(db, taskSql, -1, &task, NULL) != SQLITE_OK) {
         sqlite3_close(db);
@@ -489,8 +554,18 @@ int wtTaskProjectionReadDetailJson(const char *dbPath, const char *taskId, char 
     appendJsonString(buffer, bufferSize, &used, columnText(task, 21));
     appendRaw(buffer, bufferSize, &used, ",\"lastReclaimReason\":");
     appendJsonString(buffer, bufferSize, &used, columnText(task, 22));
-    snprintf(number, sizeof(number), ",\"reclaimCount\":%d},\"events\":[", sqlite3_column_int(task, 23));
+    snprintf(number, sizeof(number), ",\"reclaimCount\":%d,\"artifactState\":", sqlite3_column_int(task, 23));
     appendRaw(buffer, bufferSize, &used, number);
+    appendJsonString(buffer, bufferSize, &used, columnText(task, 24));
+    appendRaw(buffer, bufferSize, &used, ",\"lastReviewer\":");
+    appendJsonString(buffer, bufferSize, &used, columnText(task, 25));
+    appendRaw(buffer, bufferSize, &used, ",\"lastReviewNotes\":");
+    appendJsonString(buffer, bufferSize, &used, columnText(task, 26));
+    snprintf(number, sizeof(number), ",\"acceptedAtUnixMs\":%lld,\"acceptedArtifactPath\":",
+             sqlite3_column_int64(task, 27));
+    appendRaw(buffer, bufferSize, &used, number);
+    appendJsonString(buffer, bufferSize, &used, columnText(task, 28));
+    appendRaw(buffer, bufferSize, &used, "},\"events\":[");
     sqlite3_finalize(task);
 
     sqlite3_stmt *event = NULL;
@@ -728,6 +803,74 @@ static void appendAgentWorkload(sqlite3 *db, char *buffer, size_t bufferSize, si
              "\"controlAtUnixMs\":%lld}",
              active, leased, running, stuck, attempts, updatedAtMs, controlAtMs);
     appendRaw(buffer, bufferSize, used, number);
+}
+
+int wtTaskProjectionReadInitiativeArtifactsJson(const char *dbPath, const char *initiativeId,
+                                                char *buffer, size_t bufferSize) {
+    /*
+     * Accepted-asset inventory for one initiative. The result includes any task
+     * with a non-empty artifact_state so the operator can see both pending and
+     * accepted decisions. Sort: accepted rows first (by accepted_at_ms DESC),
+     * then non-accepted rows by updated_at_ms DESC.
+     */
+    sqlite3 *db = NULL;
+    if (sqlite3_open(dbPath, &db) != SQLITE_OK) {
+        sqlite3_close(db);
+        return -1;
+    }
+    sqlite3_stmt *stmt = NULL;
+    const char *sql =
+        "SELECT task_id,title,assigned_agent,artifact_state,last_reviewer,"
+        "last_review_notes,accepted_at_ms,accepted_artifact_path,updated_at_ms "
+        "FROM tasks "
+        "WHERE initiative_id = ? AND artifact_state != '' "
+        "ORDER BY (artifact_state = 'accepted') DESC, accepted_at_ms DESC, updated_at_ms DESC "
+        "LIMIT 200";
+    if (sqlite3_prepare_v2(db, sql, -1, &stmt, NULL) != SQLITE_OK) {
+        sqlite3_close(db);
+        return -1;
+    }
+    bindText(stmt, 1, initiativeId);
+    size_t used = 0;
+    appendRaw(buffer, bufferSize, &used, "{\"ok\":true,\"initiativeId\":");
+    appendJsonString(buffer, bufferSize, &used, initiativeId);
+    appendRaw(buffer, bufferSize, &used, ",\"artifacts\":[");
+    int first = 1;
+    int accepted = 0;
+    int pending = 0;
+    while (sqlite3_step(stmt) == SQLITE_ROW) {
+        if (!first) appendRaw(buffer, bufferSize, &used, ",");
+        first = 0;
+        const char *state = columnText(stmt, 3);
+        if (strcmp(state, "accepted") == 0) accepted++;
+        else pending++;
+        appendRaw(buffer, bufferSize, &used, "{\"taskId\":");
+        appendJsonString(buffer, bufferSize, &used, columnText(stmt, 0));
+        appendRaw(buffer, bufferSize, &used, ",\"title\":");
+        appendJsonString(buffer, bufferSize, &used, columnText(stmt, 1));
+        appendRaw(buffer, bufferSize, &used, ",\"assignedAgent\":");
+        appendJsonString(buffer, bufferSize, &used, columnText(stmt, 2));
+        appendRaw(buffer, bufferSize, &used, ",\"artifactState\":");
+        appendJsonString(buffer, bufferSize, &used, state);
+        appendRaw(buffer, bufferSize, &used, ",\"lastReviewer\":");
+        appendJsonString(buffer, bufferSize, &used, columnText(stmt, 4));
+        appendRaw(buffer, bufferSize, &used, ",\"lastReviewNotes\":");
+        appendJsonString(buffer, bufferSize, &used, columnText(stmt, 5));
+        char number[160];
+        snprintf(number, sizeof(number),
+                 ",\"acceptedAtUnixMs\":%lld,\"updatedAtUnixMs\":%lld,\"acceptedArtifactPath\":",
+                 sqlite3_column_int64(stmt, 6),
+                 sqlite3_column_int64(stmt, 8));
+        appendRaw(buffer, bufferSize, &used, number);
+        appendJsonString(buffer, bufferSize, &used, columnText(stmt, 7));
+        appendRaw(buffer, bufferSize, &used, "}");
+    }
+    sqlite3_finalize(stmt);
+    char tail[128];
+    snprintf(tail, sizeof(tail), "],\"acceptedCount\":%d,\"pendingCount\":%d}\n", accepted, pending);
+    appendRaw(buffer, bufferSize, &used, tail);
+    sqlite3_close(db);
+    return 0;
 }
 
 int wtTaskProjectionReadAgentsJson(const char *dbPath, long long nowUnixMs, char *buffer, size_t bufferSize) {
