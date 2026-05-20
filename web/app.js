@@ -255,6 +255,13 @@ async function loadConfig() {
   document.querySelector("#configGptCommand").value = config.gptCommand || "codex";
   document.querySelector("#configClaudeCommand").value = config.claudeCommand || "claude";
   document.querySelector("#configGeminiCommand").value = config.geminiCommand || "gemini";
+  /* Sprint 5 policy + budget knobs. */
+  const blockedVendorsEl = document.querySelector("#configBlockedVendors");
+  if (blockedVendorsEl) blockedVendorsEl.value = config.blockedVendors || "";
+  const initiativeBudgetEl = document.querySelector("#configTokenBudgetPerInitiative");
+  if (initiativeBudgetEl) initiativeBudgetEl.value = config.tokenBudgetPerInitiative || 0;
+  const familyBudgetEl = document.querySelector("#configTokenBudgetPerModelFamily");
+  if (familyBudgetEl) familyBudgetEl.value = config.tokenBudgetPerModelFamily || 0;
   document.querySelector("#settingsStatus").textContent = config.configPath ? `Editing ${config.configPath}` : "Runtime started without a writable config path.";
   updateReadouts();
 }
@@ -278,7 +285,12 @@ async function saveConfig(event) {
     geminiMode: document.querySelector("#configGeminiMode").value,
     gptCommand: document.querySelector("#configGptCommand").value.trim() || "codex",
     claudeCommand: document.querySelector("#configClaudeCommand").value.trim() || "claude",
-    geminiCommand: document.querySelector("#configGeminiCommand").value.trim() || "gemini"
+    geminiCommand: document.querySelector("#configGeminiCommand").value.trim() || "gemini",
+    /* Sprint 5 policy knobs. blockedVendors is sent as the operator typed it
+     * (whitespace trimmed); the daemon will accept "a, b, c" the same as "a,b,c". */
+    blockedVendors: (document.querySelector("#configBlockedVendors")?.value || "").trim(),
+    tokenBudgetPerInitiative: Number(document.querySelector("#configTokenBudgetPerInitiative")?.value || 0),
+    tokenBudgetPerModelFamily: Number(document.querySelector("#configTokenBudgetPerModelFamily")?.value || 0),
   };
   const response = await fetch("/api/config", {
     method: "POST",
@@ -554,6 +566,20 @@ function renderInitiatives(initiatives) {
       await loadInitiativeAssets(state.selectedInitiativeId);
       addAudit("ui", state.selectedInitiativeId ? `focused ${state.selectedInitiativeId}` : "cleared initiative focus");
     });
+    /* Sprint 5: per-card audit button opens the initiative audit JSON in a new
+     * tab. Mirrors `wt-task audit INIT` on the CLI side. */
+    const auditButton = document.createElement("button");
+    auditButton.type = "button";
+    auditButton.className = "initiative-audit-button";
+    auditButton.textContent = "Audit";
+    auditButton.title = "Open the combined initiative audit (tasks, events, policy, usage) in a new tab.";
+    auditButton.addEventListener("click", event => {
+      event.stopPropagation();
+      const url = `/api/initiative-audit?initiativeId=${encodeURIComponent(initiative.initiativeId)}`;
+      window.open(url, "_blank", "noopener");
+      addAudit("ui", `opened audit for ${initiative.initiativeId}`);
+    });
+    card.appendChild(auditButton);
     summary.appendChild(card);
   });
 }
@@ -1003,9 +1029,23 @@ function updateReadouts() {
   document.querySelector("#burnEstimate").textContent = fmtMoneyFromCents(tokens * (state.config.tokenCostPerMillionCents || 0) / 1000000);
   document.querySelector("#subAgentSummary").textContent = `0 / ${agents}`;
   document.querySelector("#prioritySummary").textContent = priority;
-  document.querySelector("#budgetPressureNote").textContent = overBudget ?
+  /*
+   * Sprint 5: the budget pressure note also lists active policy levers so the
+   * operator knows what will trip on EXECUTE. Blocked vendors are read from
+   * config; per-initiative/per-family caps render only when configured.
+   */
+  const policySegments = [];
+  if (state.config.blockedVendors) policySegments.push(`blocked: ${state.config.blockedVendors}`);
+  if (state.config.tokenBudgetPerInitiative > 0) {
+    policySegments.push(`per-initiative cap ${fmtTokens(state.config.tokenBudgetPerInitiative)}`);
+  }
+  if (state.config.tokenBudgetPerModelFamily > 0) {
+    policySegments.push(`per-family cap ${fmtTokens(state.config.tokenBudgetPerModelFamily)}`);
+  }
+  const policyNote = policySegments.length ? ` · Policy: ${policySegments.join(", ")}.` : "";
+  document.querySelector("#budgetPressureNote").textContent = (overBudget ?
     "Budget hard stop: this package would exceed the configured 24h or 30d allocation budget." :
-    `Budget pressure: ${fmtTokens(projectedDay)} projected in 24h, ${fmtTokens(projectedMonth)} projected in 30d.`;
+    `Budget pressure: ${fmtTokens(projectedDay)} projected in 24h, ${fmtTokens(projectedMonth)} projected in 30d.`) + policyNote;
   sendButton.disabled = !state.armed || overBudget;
 }
 
@@ -1226,7 +1266,19 @@ async function submitDirective(event) {
     body: JSON.stringify(payload)
   });
   if (!response.ok) {
-    addAudit("ui", `${state.dispatchMode} dispatch failed`);
+    /* Sprint 5: surface the central policy evaluator's classified reason so
+     * the operator sees blocked_vendor / initiative_budget / etc. inline rather
+     * than a generic "dispatch failed". */
+    let detail = "";
+    try {
+      const errorPayload = await response.json();
+      if (errorPayload && errorPayload.reason) {
+        detail = `${errorPayload.reason} - ${errorPayload.detail || errorPayload.error || ""}`;
+      } else if (errorPayload && errorPayload.error) {
+        detail = errorPayload.error;
+      }
+    } catch (_) { /* response body not JSON; fall back to generic message */ }
+    addAudit("ui", `${state.dispatchMode} denied${detail ? ": " + detail : ""}`);
     disarmComposer();
     return;
   }

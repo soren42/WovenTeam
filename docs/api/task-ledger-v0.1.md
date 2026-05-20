@@ -113,12 +113,14 @@ package, and emits `task.assign`. The child package includes `parentTaskId`,
 - `POST /api/task-reclaim`
 - `POST /api/task-artifact`
 - `GET /api/initiative-artifacts?initiativeId=...`
+- `GET /api/initiative-audit?initiativeId=...`
 
 `bin/wt-task` wraps those endpoints for local operator use with `create`,
 `request`, `list`, `show`, `assign`, `update-status`, `retry`, `cancel`,
 `close`, `reopen`, `reclaim`, `initiative create/list/show/export/close`,
-`agent list/pause/resume`, and
-`artifact promote/reject/review/supersede/note/list/export` commands.
+`agent list/pause/resume`,
+`artifact promote/reject/review/supersede/note/list/export`, and
+`audit INIT [--out FILE]` commands.
 
 Phase 1 keeps the JSONL ledger as the recovery source and adds a rebuildable
 SQLite projection configured by `taskProjectionDbPath`. `wt-roomd` rebuilds the
@@ -320,3 +322,63 @@ workspace. The manifest uses:
 This keeps the Phase 0 storage model consistent with the room transcript:
 append-only, inspectable, and easy to recover after process restarts. The
 SQLite projection indexes this ledger without changing the package contract.
+
+Sprint 5 (2026-05-20) adds policy and audit. Three new config keys drive the
+central policy evaluator:
+
+- `blockedVendors` — comma-separated list of vendor prefixes (matched against
+  the family before the first `/` in `modelId`). Default: `deepseek` (existing
+  trust-boundary decision documented in `/woventeam/docs/audit/`).
+- `tokenBudgetPerInitiative` — cap on the sum of `budget.maxTokens` for active
+  (non-terminal) task packages within a single `initiativeId`. `0` disables.
+- `tokenBudgetPerModelFamily` — cap on the sum of `budget.maxTokens` for active
+  task packages whose `modelId` starts with `<family>/`. `0` disables.
+
+When the evaluator denies a request it appends a durable record:
+
+```json
+{
+  "schema": "woventeam.policy_decision.v0.1",
+  "taskId": "task_example_001",
+  "initiativeId": "init_example",
+  "decision": "deny",
+  "reason": "vendor_blocked",
+  "message": "vendor 'deepseek' is on the blockedVendors allowlist (modelId=deepseek/coder).",
+  "createdBy": "ceo",
+  "createdAtUnixMs": 1779253511752
+}
+```
+
+Reason codes (stable; consumed by both the CLI and the web console):
+`vendor_blocked`, `model_agent_mismatch`, `initiative_budget`,
+`model_family_budget`, `daily_budget`, `monthly_budget`, `capacity_agent`,
+`capacity_initiative`.
+
+`GET /api/initiative-audit?initiativeId=...` returns a single combined report:
+
+```json
+{
+  "ok": true,
+  "initiativeId": "init_example",
+  "summary": {
+    "taskCount": 7,
+    "activeTasks": 2,
+    "completeTasks": 4,
+    "failedTasks": 1,
+    "blockedTasks": 0,
+    "acceptedArtifacts": 3,
+    "maxTokens": 14000,
+    "createdAtUnixMs": 1779000000000,
+    "updatedAtUnixMs": 1779253500000,
+    "title": "Implementation initiative"
+  },
+  "tasks": [ /* full projection rows */ ],
+  "events": [ /* every task_event row in chronological order */ ],
+  "policyDecisions": [ /* every denial, including ones for rejected taskIds */ ],
+  "usage": [ /* every woventeam.task_usage.v0.1 record for these tasks */ ]
+}
+```
+
+Empty initiatives return HTTP 404 with `{"ok": false, "error": "initiative not
+found"}`. The `wt-task audit INIT [--out FILE]` CLI streams the same payload
+to stdout (or to a file with `--out`).

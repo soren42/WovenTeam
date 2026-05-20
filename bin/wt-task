@@ -24,6 +24,7 @@ Usage:
   wt-task artifact note TASK_ID --notes TEXT [--reviewer NAME]
   wt-task artifact list INIT
   wt-task artifact export TASK_ID [--out FILE]
+  wt-task audit INIT [--out FILE]
   wt-task list
   wt-task show TASK_ID
   wt-task assign TASK_ID --agent AGENT [--status assigned]
@@ -72,7 +73,11 @@ new_id() {
 }
 
 cmd_create() {
-    local title="" body="" role="" agent="" initiative="" priority="normal" model="openai/gpt-5.3-codex" tool_profile="observe" max_tokens="2000000"
+    # Sprint 5: leave model empty by default. The daemon auto-defaults to a
+    # family that matches the routed (or pinned) agent. This way an operator
+    # who passes `--agent claude` without `--model` no longer ships an OpenAI
+    # default that trips the policy model_agent_mismatch rule.
+    local title="" body="" role="" agent="" initiative="" priority="normal" model="" tool_profile="observe" max_tokens="2000000"
     while [[ $# -gt 0 ]]; do
         case "$1" in
             --title) title="${2:-}"; shift 2 ;;
@@ -140,7 +145,8 @@ cmd_create() {
 }
 
 cmd_request() {
-    local parent="" by_role="" by="" role="" title="" body="" agent="" initiative="" priority="normal" model="openai/gpt-5.3-codex" tool_profile="observe" max_tokens="2000000"
+    # Sprint 5: same blank-model default as cmd_create (see comment there).
+    local parent="" by_role="" by="" role="" title="" body="" agent="" initiative="" priority="normal" model="" tool_profile="observe" max_tokens="2000000"
     while [[ $# -gt 0 ]]; do
         case "$1" in
             --parent) parent="${2:-}"; shift 2 ;;
@@ -442,6 +448,29 @@ cmd_artifact() {
     esac
 }
 
+# Sprint 5: audit export. Returns the combined initiative audit report from
+# /api/initiative-audit and streams to stdout (default) or --out FILE.
+cmd_audit() {
+    local initiative="${1:-}" out=""
+    shift || true
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --out) out="${2:-}"; shift 2 ;;
+            *) echo "wt-task audit: unknown argument: $1" >&2; usage >&2; exit 2 ;;
+        esac
+    done
+    if [[ -z "$initiative" ]]; then
+        echo "wt-task audit: INIT is required" >&2
+        exit 2
+    fi
+    if [[ -n "$out" ]]; then
+        http_get "/api/initiative-audit?initiativeId=$initiative" >"$out"
+        echo "audit written to $out"
+    else
+        http_get "/api/initiative-audit?initiativeId=$initiative" | jq .
+    fi
+}
+
 # Sprint 3 closeout: operator reclaim path. Releases the most recent lease so a
 # stuck task returns to the queued pool. Reason defaults to "operator" - the
 # only other allowed value is "lease_expired" which the daemon also accepts when
@@ -564,6 +593,7 @@ case "$cmd" in
     update-status) cmd_update_status "$@" ;;
     reclaim) cmd_reclaim "$@" ;;
     artifact) cmd_artifact "$@" ;;
+    audit) cmd_audit "$@" ;;
     retry) cmd_lifecycle queued "Task reopened for retry by wt-task." "$@" ;;
     cancel) cmd_lifecycle cancelled "Task cancelled by wt-task." "$@" ;;
     close) cmd_lifecycle closed "Task closed by wt-task." "$@" ;;

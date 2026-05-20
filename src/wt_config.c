@@ -61,6 +61,13 @@ void wtConfigInitDefaults(WtConfig *config) {
     copyString(config->claudeCommand, sizeof(config->claudeCommand), "claude");
     copyString(config->gptCommand, sizeof(config->gptCommand), "codex");
     copyString(config->geminiCommand, sizeof(config->geminiCommand), "gemini");
+    /* Sprint 5 defaults: deepseek already removed for trust-boundary violations
+     * (see audit log 2026-05-12); pre-seed the blocklist so a config-less restart
+     * keeps the same posture. Budgets default to 0 so existing deployments
+     * continue accepting work until an operator opts in. */
+    copyString(config->blockedVendors, sizeof(config->blockedVendors), "deepseek");
+    config->tokenBudgetPerInitiative = 0;
+    config->tokenBudgetPerModelFamily = 0;
 }
 
 int wtConfigSetValue(WtConfig *config, const char *key, const char *value) {
@@ -124,6 +131,12 @@ int wtConfigSetValue(WtConfig *config, const char *key, const char *value) {
         copyString(config->gptCommand, sizeof(config->gptCommand), value);
     } else if (strcmp(key, "geminiCommand") == 0) {
         copyString(config->geminiCommand, sizeof(config->geminiCommand), value);
+    } else if (strcmp(key, "blockedVendors") == 0) {
+        copyString(config->blockedVendors, sizeof(config->blockedVendors), value);
+    } else if (strcmp(key, "tokenBudgetPerInitiative") == 0) {
+        config->tokenBudgetPerInitiative = atol(value);
+    } else if (strcmp(key, "tokenBudgetPerModelFamily") == 0) {
+        config->tokenBudgetPerModelFamily = atol(value);
     } else {
         return -1;
     }
@@ -192,7 +205,10 @@ int wtConfigWriteFile(const WtConfig *config, const char *path) {
         "geminiMode=%s\n"
         "claudeCommand=%s\n"
         "gptCommand=%s\n"
-        "geminiCommand=%s\n",
+        "geminiCommand=%s\n"
+        "blockedVendors=%s\n"
+        "tokenBudgetPerInitiative=%ld\n"
+        "tokenBudgetPerModelFamily=%ld\n",
         config->roomName,
         config->roomLogPath,
         config->taskLedgerPath,
@@ -222,7 +238,10 @@ int wtConfigWriteFile(const WtConfig *config, const char *path) {
         config->geminiMode,
         config->claudeCommand,
         config->gptCommand,
-        config->geminiCommand) > 0;
+        config->geminiCommand,
+        config->blockedVendors,
+        config->tokenBudgetPerInitiative,
+        config->tokenBudgetPerModelFamily) > 0;
     return fclose(file) == 0 && ok ? 0 : -1;
 }
 
@@ -258,4 +277,8 @@ void wtConfigApplyEnvironment(WtConfig *config) {
     if ((value = getenv("WT_CLAUDE_MODE"))) wtConfigSetValue(config, "claudeMode", value);
     if ((value = getenv("WT_CHATGPT_MODE"))) wtConfigSetValue(config, "chatgptMode", value);
     if ((value = getenv("WT_GEMINI_MODE"))) wtConfigSetValue(config, "geminiMode", value);
+    /* Sprint 5 environment overrides. */
+    if ((value = getenv("WT_BLOCKED_VENDORS"))) wtConfigSetValue(config, "blockedVendors", value);
+    if ((value = getenv("WT_TOKEN_BUDGET_PER_INITIATIVE"))) wtConfigSetValue(config, "tokenBudgetPerInitiative", value);
+    if ((value = getenv("WT_TOKEN_BUDGET_PER_MODEL_FAMILY"))) wtConfigSetValue(config, "tokenBudgetPerModelFamily", value);
 }

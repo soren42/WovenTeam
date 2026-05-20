@@ -1160,6 +1160,28 @@ kbd {
   border-color: var(--alert, #ef4444);
 }
 
+/*
+ * Sprint 5 audit button on initiative cards. Pinned to the bottom-right corner
+ * so the rest of the card click area still focuses the initiative; the audit
+ * button uses stopPropagation in JS to avoid double-handling.
+ */
+.initiative-audit-button {
+  margin-top: 8px;
+  width: 100%;
+  border: 1px solid var(--edge);
+  background: var(--panel);
+  color: var(--text-dim);
+  padding: 4px 6px;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  cursor: pointer;
+}
+.initiative-audit-button:hover {
+  border-color: var(--accent, #06b6d4);
+  color: var(--accent, #06b6d4);
+}
+
 /* Sprint 4 chat-panel filter dropdowns. */
 .chat-controls select {
   border: 1px solid var(--edge);

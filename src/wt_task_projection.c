@@ -873,6 +873,254 @@ int wtTaskProjectionReadInitiativeArtifactsJson(const char *dbPath, const char *
     return 0;
 }
 
+/*
+ * Sprint 5 audit export. Combines:
+ *   - initiative summary (counts, budget, timestamps, accepted assets count)
+ *   - tasks (full detail rows including artifact_* columns)
+ *   - events (task_events rows in chronological order)
+ *   - policy decisions (scanned from the JSONL ledger - not projected)
+ *   - usage events (scanned from the JSONL ledger - not projected)
+ *
+ * Returns 1 when the initiative has no tasks (response carries
+ * ok:false,error:"initiative not found"). Returns 0 on success, -1 on
+ * internal errors.
+ */
+int wtTaskProjectionReadInitiativeAuditJson(const char *dbPath, const char *ledgerPath,
+                                            const char *initiativeId,
+                                            char *buffer, size_t bufferSize) {
+    sqlite3 *db = NULL;
+    if (sqlite3_open(dbPath, &db) != SQLITE_OK) {
+        sqlite3_close(db);
+        return -1;
+    }
+    size_t used = 0;
+    appendRaw(buffer, bufferSize, &used, "{\"ok\":true,\"initiativeId\":");
+    appendJsonString(buffer, bufferSize, &used, initiativeId);
+
+    /* Initiative summary. */
+    sqlite3_stmt *stmt = NULL;
+    const char *summarySql =
+        "SELECT COUNT(*),"
+        "SUM(CASE WHEN status NOT IN ('complete','failed','cancelled','closed') THEN 1 ELSE 0 END),"
+        "SUM(CASE WHEN status='complete' THEN 1 ELSE 0 END),"
+        "SUM(CASE WHEN status='failed' THEN 1 ELSE 0 END),"
+        "SUM(CASE WHEN status='blocked' THEN 1 ELSE 0 END),"
+        "SUM(CASE WHEN artifact_state='accepted' THEN 1 ELSE 0 END),"
+        "SUM(max_tokens),MIN(created_at_ms),MAX(updated_at_ms),"
+        "(SELECT title FROM tasks WHERE initiative_id=? ORDER BY created_at_ms ASC, task_id ASC LIMIT 1) "
+        "FROM tasks WHERE initiative_id=?";
+    if (sqlite3_prepare_v2(db, summarySql, -1, &stmt, NULL) != SQLITE_OK) {
+        sqlite3_close(db);
+        return -1;
+    }
+    bindText(stmt, 1, initiativeId);
+    bindText(stmt, 2, initiativeId);
+    if (sqlite3_step(stmt) != SQLITE_ROW || sqlite3_column_int(stmt, 0) == 0) {
+        sqlite3_finalize(stmt);
+        sqlite3_close(db);
+        snprintf(buffer, bufferSize, "{\"ok\":false,\"error\":\"initiative not found\"}\n");
+        return 1;
+    }
+    char number[512];
+    snprintf(number, sizeof(number),
+             ",\"summary\":{\"taskCount\":%d,\"activeTasks\":%d,\"completeTasks\":%d,"
+             "\"failedTasks\":%d,\"blockedTasks\":%d,\"acceptedArtifacts\":%d,"
+             "\"maxTokens\":%lld,\"createdAtUnixMs\":%lld,\"updatedAtUnixMs\":%lld,\"title\":",
+             sqlite3_column_int(stmt, 0),
+             sqlite3_column_int(stmt, 1),
+             sqlite3_column_int(stmt, 2),
+             sqlite3_column_int(stmt, 3),
+             sqlite3_column_int(stmt, 4),
+             sqlite3_column_int(stmt, 5),
+             sqlite3_column_int64(stmt, 6),
+             sqlite3_column_int64(stmt, 7),
+             sqlite3_column_int64(stmt, 8));
+    appendRaw(buffer, bufferSize, &used, number);
+    appendJsonString(buffer, bufferSize, &used, columnText(stmt, 9));
+    appendRaw(buffer, bufferSize, &used, "}");
+    sqlite3_finalize(stmt);
+
+    /* Tasks block - one row per task with the columns audit consumers need. */
+    appendRaw(buffer, bufferSize, &used, ",\"tasks\":[");
+    sqlite3_stmt *taskStmt = NULL;
+    const char *taskSql =
+        "SELECT task_id,parent_task_id,requested_by_role,assigned_role,assigned_agent,model_id,"
+        "priority,status,title,tool_profile,max_tokens,created_at_ms,updated_at_ms,event_count,"
+        "lease_owner,attempt_count,failure_cause,last_reclaim_reason,reclaim_count,"
+        "artifact_state,last_reviewer,last_review_notes,accepted_at_ms,accepted_artifact_path "
+        "FROM tasks WHERE initiative_id=? ORDER BY created_at_ms ASC, task_id ASC";
+    if (sqlite3_prepare_v2(db, taskSql, -1, &taskStmt, NULL) != SQLITE_OK) {
+        sqlite3_close(db);
+        return -1;
+    }
+    bindText(taskStmt, 1, initiativeId);
+    int first = 1;
+    while (sqlite3_step(taskStmt) == SQLITE_ROW) {
+        if (!first) appendRaw(buffer, bufferSize, &used, ",");
+        first = 0;
+        appendRaw(buffer, bufferSize, &used, "{");
+        const char *keys[] = {"taskId","parentTaskId","requestedByRole","assignedRole","assignedAgent",
+                              "modelId","priority","status","title","toolProfile"};
+        for (int index = 0; index < 10; index++) {
+            if (index > 0) appendRaw(buffer, bufferSize, &used, ",");
+            appendRaw(buffer, bufferSize, &used, "\"");
+            appendRaw(buffer, bufferSize, &used, keys[index]);
+            appendRaw(buffer, bufferSize, &used, "\":");
+            appendJsonString(buffer, bufferSize, &used, columnText(taskStmt, index));
+        }
+        char tail[768];
+        snprintf(tail, sizeof(tail),
+                 ",\"maxTokens\":%lld,\"createdAtUnixMs\":%lld,\"updatedAtUnixMs\":%lld,"
+                 "\"eventCount\":%d,\"attemptCount\":%d,\"reclaimCount\":%d,"
+                 "\"acceptedAtUnixMs\":%lld,\"leaseOwner\":",
+                 sqlite3_column_int64(taskStmt, 10),
+                 sqlite3_column_int64(taskStmt, 11),
+                 sqlite3_column_int64(taskStmt, 12),
+                 sqlite3_column_int(taskStmt, 13),
+                 sqlite3_column_int(taskStmt, 15),
+                 sqlite3_column_int(taskStmt, 18),
+                 sqlite3_column_int64(taskStmt, 22));
+        appendRaw(buffer, bufferSize, &used, tail);
+        appendJsonString(buffer, bufferSize, &used, columnText(taskStmt, 14));
+        appendRaw(buffer, bufferSize, &used, ",\"failureCause\":");
+        appendJsonString(buffer, bufferSize, &used, columnText(taskStmt, 16));
+        appendRaw(buffer, bufferSize, &used, ",\"lastReclaimReason\":");
+        appendJsonString(buffer, bufferSize, &used, columnText(taskStmt, 17));
+        appendRaw(buffer, bufferSize, &used, ",\"artifactState\":");
+        appendJsonString(buffer, bufferSize, &used, columnText(taskStmt, 19));
+        appendRaw(buffer, bufferSize, &used, ",\"lastReviewer\":");
+        appendJsonString(buffer, bufferSize, &used, columnText(taskStmt, 20));
+        appendRaw(buffer, bufferSize, &used, ",\"lastReviewNotes\":");
+        appendJsonString(buffer, bufferSize, &used, columnText(taskStmt, 21));
+        appendRaw(buffer, bufferSize, &used, ",\"acceptedArtifactPath\":");
+        appendJsonString(buffer, bufferSize, &used, columnText(taskStmt, 23));
+        appendRaw(buffer, bufferSize, &used, "}");
+    }
+    sqlite3_finalize(taskStmt);
+
+    /* Events block - chronological task_events for any task in this initiative. */
+    appendRaw(buffer, bufferSize, &used, "],\"events\":[");
+    sqlite3_stmt *eventStmt = NULL;
+    const char *eventSql =
+        "SELECT id,task_id,schema,event_type,status,assigned_agent,message,created_by,created_at_ms "
+        "FROM task_events WHERE task_id IN (SELECT task_id FROM tasks WHERE initiative_id=?) "
+        "ORDER BY created_at_ms ASC, id ASC";
+    if (sqlite3_prepare_v2(db, eventSql, -1, &eventStmt, NULL) != SQLITE_OK) {
+        sqlite3_close(db);
+        return -1;
+    }
+    bindText(eventStmt, 1, initiativeId);
+    first = 1;
+    while (sqlite3_step(eventStmt) == SQLITE_ROW) {
+        if (!first) appendRaw(buffer, bufferSize, &used, ",");
+        first = 0;
+        char head[64];
+        snprintf(head, sizeof(head), "{\"id\":%lld,\"taskId\":", sqlite3_column_int64(eventStmt, 0));
+        appendRaw(buffer, bufferSize, &used, head);
+        appendJsonString(buffer, bufferSize, &used, columnText(eventStmt, 1));
+        const char *eventKeys[] = {"schema","eventType","status","assignedAgent","message","createdBy"};
+        for (int index = 0; index < 6; index++) {
+            appendRaw(buffer, bufferSize, &used, ",\"");
+            appendRaw(buffer, bufferSize, &used, eventKeys[index]);
+            appendRaw(buffer, bufferSize, &used, "\":");
+            appendJsonString(buffer, bufferSize, &used, columnText(eventStmt, index + 2));
+        }
+        char tail[64];
+        snprintf(tail, sizeof(tail), ",\"createdAtUnixMs\":%lld}", sqlite3_column_int64(eventStmt, 8));
+        appendRaw(buffer, bufferSize, &used, tail);
+    }
+    sqlite3_finalize(eventStmt);
+
+    /*
+     * Policy decisions + usage events are not projected into SQLite (they live
+     * only in the JSONL). Scan the ledger once and emit any records whose
+     * taskId matches a task in this initiative. We pull the task-id set into a
+     * small in-memory list first so the scan stays linear.
+     */
+    appendRaw(buffer, bufferSize, &used, "],\"policyDecisions\":[");
+    /* Build a quick membership set of taskIds for this initiative. 1024 is a
+     * generous cap matching the existing 200-task UI limit. */
+    char taskIds[1024][WT_TASK_ID_SIZE];
+    int taskIdCount = 0;
+    sqlite3_stmt *idStmt = NULL;
+    if (sqlite3_prepare_v2(db, "SELECT task_id FROM tasks WHERE initiative_id=?", -1, &idStmt, NULL) == SQLITE_OK) {
+        bindText(idStmt, 1, initiativeId);
+        while (sqlite3_step(idStmt) == SQLITE_ROW && taskIdCount < 1024) {
+            snprintf(taskIds[taskIdCount], sizeof(taskIds[taskIdCount]), "%s", columnText(idStmt, 0));
+            taskIdCount++;
+        }
+        sqlite3_finalize(idStmt);
+    }
+    sqlite3_close(db);
+
+    FILE *file = fopen(ledgerPath, "r");
+    int policyFirst = 1;
+    int usageFirst = 1;
+    /* Two-buffer approach: hold usage emissions until we close the policy array. */
+    char usageBuffer[WT_TASK_LEDGER_LINE_SIZE * 4];
+    size_t usageUsed = 0;
+    usageBuffer[0] = '\0';
+    if (file) {
+        char line[WT_TASK_LEDGER_LINE_SIZE];
+        while (fgets(line, sizeof(line), file)) {
+            char schema[128];
+            if (wtJsonReadString(line, "schema", schema, sizeof(schema)) != 0) continue;
+            int isPolicy = strcmp(schema, "woventeam.policy_decision.v0.1") == 0;
+            int isUsage = strcmp(schema, "woventeam.task_usage.v0.1") == 0;
+            if (!isPolicy && !isUsage) continue;
+            char taskId[WT_TASK_ID_SIZE];
+            if (wtJsonReadString(line, "taskId", taskId, sizeof(taskId)) != 0) continue;
+            int member = 0;
+            for (int index = 0; index < taskIdCount; index++) {
+                if (strcmp(taskIds[index], taskId) == 0) { member = 1; break; }
+            }
+            /* Policy denials carry their own initiativeId so audits can find
+             * decisions for tasks that were rejected before they were ever
+             * projected. */
+            if (!member && isPolicy) {
+                char policyInitiative[WT_TASK_ID_SIZE];
+                if (wtJsonReadString(line, "initiativeId", policyInitiative,
+                                     sizeof(policyInitiative)) == 0 &&
+                    strcmp(policyInitiative, initiativeId) == 0) {
+                    member = 1;
+                }
+            }
+            if (!member) continue;
+            /* Strip the trailing newline so the embedded JSON is valid. */
+            size_t length = strlen(line);
+            while (length > 0 && (line[length - 1] == '\n' || line[length - 1] == '\r')) {
+                line[--length] = '\0';
+            }
+            if (isPolicy) {
+                if (!policyFirst) appendRaw(buffer, bufferSize, &used, ",");
+                policyFirst = 0;
+                appendRaw(buffer, bufferSize, &used, line);
+            } else {
+                if (!usageFirst) {
+                    if (usageUsed + 2 < sizeof(usageBuffer)) {
+                        usageBuffer[usageUsed++] = ',';
+                        usageBuffer[usageUsed] = '\0';
+                    }
+                }
+                usageFirst = 0;
+                size_t copyLength = length;
+                if (usageUsed + copyLength + 1 < sizeof(usageBuffer)) {
+                    memcpy(usageBuffer + usageUsed, line, copyLength);
+                    usageUsed += copyLength;
+                    usageBuffer[usageUsed] = '\0';
+                }
+            }
+        }
+        fclose(file);
+    }
+    appendRaw(buffer, bufferSize, &used, "],\"usage\":[");
+    if (usageUsed > 0) {
+        appendRaw(buffer, bufferSize, &used, usageBuffer);
+    }
+    appendRaw(buffer, bufferSize, &used, "]}\n");
+    return 0;
+}
+
 int wtTaskProjectionReadAgentsJson(const char *dbPath, long long nowUnixMs, char *buffer, size_t bufferSize) {
     sqlite3 *db = NULL;
     if (sqlite3_open(dbPath, &db) != SQLITE_OK) {
@@ -924,6 +1172,55 @@ int wtTaskProjectionCountActiveForParent(const char *dbPath, const char *parentT
 
 int wtTaskProjectionCountActiveForInitiative(const char *dbPath, const char *initiativeId) {
     return countActiveWhere(dbPath, "initiative_id", initiativeId);
+}
+
+/*
+ * Sprint 5 policy budgets. Both helpers sum max_tokens over active (non-
+ * terminal) task packages. The model-family query uses a prefix match against
+ * "<family>/" so "openai" doesn't accidentally match "openai-experimental".
+ */
+long long wtTaskProjectionAllocatedTokensForInitiative(const char *dbPath, const char *initiativeId) {
+    sqlite3 *db = NULL;
+    if (sqlite3_open(dbPath, &db) != SQLITE_OK) {
+        sqlite3_close(db);
+        return -1;
+    }
+    sqlite3_stmt *stmt = NULL;
+    const char *sql =
+        "SELECT COALESCE(SUM(max_tokens), 0) FROM tasks WHERE initiative_id = ? "
+        "AND status NOT IN ('complete','failed','cancelled','closed')";
+    if (sqlite3_prepare_v2(db, sql, -1, &stmt, NULL) != SQLITE_OK) {
+        sqlite3_close(db);
+        return -1;
+    }
+    bindText(stmt, 1, initiativeId);
+    long long total = sqlite3_step(stmt) == SQLITE_ROW ? sqlite3_column_int64(stmt, 0) : -1;
+    sqlite3_finalize(stmt);
+    sqlite3_close(db);
+    return total;
+}
+
+long long wtTaskProjectionAllocatedTokensForModelFamily(const char *dbPath, const char *modelFamily) {
+    sqlite3 *db = NULL;
+    if (sqlite3_open(dbPath, &db) != SQLITE_OK) {
+        sqlite3_close(db);
+        return -1;
+    }
+    sqlite3_stmt *stmt = NULL;
+    const char *sql =
+        "SELECT COALESCE(SUM(max_tokens), 0) FROM tasks WHERE model_id LIKE ? "
+        "AND status NOT IN ('complete','failed','cancelled','closed')";
+    if (sqlite3_prepare_v2(db, sql, -1, &stmt, NULL) != SQLITE_OK) {
+        sqlite3_close(db);
+        return -1;
+    }
+    char prefix[128];
+    snprintf(prefix, sizeof(prefix), "%s/%%", modelFamily ? modelFamily : "");
+    bindText(stmt, 1, prefix);
+    long long total = sqlite3_step(stmt) == SQLITE_ROW ? sqlite3_column_int64(stmt, 0) : -1;
+    sqlite3_finalize(stmt);
+    sqlite3_close(db);
+    return total;
 }
 
 int wtTaskProjectionReadCapacityJson(const char *dbPath, char *buffer, size_t bufferSize) {
