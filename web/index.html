@@ -132,6 +132,47 @@
           <span>Per-model-family token budget</span>
           <input id="configTokenBudgetPerModelFamily" type="number" min="0" step="1000">
         </label>
+        <div class="settings-divider">Autonomy defaults</div>
+        <label>
+          <span>Global autonomy</span>
+          <select id="configDefaultAutonomyLevel">
+            <option value="">profile default</option>
+            <option value="observe">observe</option>
+            <option value="ask-each">ask-each</option>
+            <option value="ask-batch">ask-batch</option>
+            <option value="autonomous">autonomous</option>
+          </select>
+        </label>
+        <label>
+          <span>Claude autonomy</span>
+          <select id="configClaudeDefaultAutonomyLevel">
+            <option value="">profile/default</option>
+            <option value="observe">observe</option>
+            <option value="ask-each">ask-each</option>
+            <option value="ask-batch">ask-batch</option>
+            <option value="autonomous">autonomous</option>
+          </select>
+        </label>
+        <label>
+          <span>ChatGPT autonomy</span>
+          <select id="configChatgptDefaultAutonomyLevel">
+            <option value="">profile/default</option>
+            <option value="observe">observe</option>
+            <option value="ask-each">ask-each</option>
+            <option value="ask-batch">ask-batch</option>
+            <option value="autonomous">autonomous</option>
+          </select>
+        </label>
+        <label>
+          <span>Gemini autonomy</span>
+          <select id="configGeminiDefaultAutonomyLevel">
+            <option value="">profile/default</option>
+            <option value="observe">observe</option>
+            <option value="ask-each">ask-each</option>
+            <option value="ask-batch">ask-batch</option>
+            <option value="autonomous">autonomous</option>
+          </select>
+        </label>
         <div class="settings-divider">Adapter execution</div>
         <label>
           <span>Codex adapter</span>
@@ -218,6 +259,17 @@
           -->
           <div id="alertsList" class="alerts-list"></div>
         </article>
+
+        <article class="panel status-board-panel">
+          <header><span>Status board · heartbeats + milestones</span><small id="statusBoardMeta">no heartbeats yet</small></header>
+          <!--
+            Phase 3 Sprint 1: status board. Renders the /api/status payload's
+            heartbeats array (one row per agent with last-seen) and the most
+            recent milestone events. Browser JS only per project directive.
+          -->
+          <div id="statusBoardHeartbeats" class="status-board-heartbeats"></div>
+          <div id="statusBoardMilestones" class="status-board-milestones"></div>
+        </article>
       </section>
 
       <section class="panel initiatives-panel" data-view-panel="initiatives">
@@ -248,6 +300,7 @@
               <div class="task-actions">
                 <button type="button" data-task-action="retry">Retry</button>
                 <button type="button" data-task-action="cancel">Cancel</button>
+                <button type="button" data-task-action="revoke-autonomy">Revoke autonomy</button>
                 <button type="button" data-task-action="close">Close</button>
                 <button type="button" data-gate-action="approve">Approve</button>
                 <button type="button" data-gate-action="reject">Reject</button>
@@ -387,6 +440,11 @@
               <div><span>Sub-agents</span><b id="subAgentSummary">0 / 6</b></div>
               <div><span>Priority</span><b id="prioritySummary">normal</b></div>
             </div>
+            <div class="autonomy-controls">
+              <label><span>Autonomy</span><select id="autonomyLevel"><option value="">profile default</option><option value="observe">observe</option><option value="ask-each">ask-each</option><option value="ask-batch">ask-batch</option><option value="autonomous">autonomous</option></select></label>
+              <label><span>Grant scope</span><input id="autonomyScope" placeholder="workspace"></label>
+              <label><span>TTL seconds</span><input id="autonomyTtl" type="number" min="0" step="60" value="0"></label>
+            </div>
             <div class="launch-row">
               <button id="armButton" type="button" class="arm-button">ARM</button>
               <button id="sendButton" type="submit" class="execute-button" disabled>EXECUTE</button>
@@ -434,6 +492,7 @@
                 <tr><td>Manager subtask mode (EXECUTE)</td><td><code>wt-task request</code></td></tr>
                 <tr><td>Initiative card focus</td><td><code>wt-task initiative show</code></td></tr>
                 <tr><td>Task detail Retry / Cancel / Close</td><td><code>wt-task retry|cancel|close</code></td></tr>
+                <tr><td>Task detail Revoke autonomy</td><td><code>wt-task autonomy revoke</code></td></tr>
                 <tr><td>Agent panel Pause / Resume</td><td><code>wt-task agent pause|resume</code></td></tr>
                 <tr><td>Agent panel Reclaim Task</td><td><code>wt-task reclaim</code></td></tr>
                 <tr><td>Artifact decision Promote / Reject / Reviewed</td><td><code>wt-task artifact promote|reject|review</code></td></tr>

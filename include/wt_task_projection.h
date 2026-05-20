@@ -30,11 +30,30 @@ int wtTaskProjectionReadInitiativeArtifactsJson(const char *dbPath, const char *
  * The caller controls the buffer size; auditBuffer is typically 256 KiB or
  * larger because initiatives can accumulate hundreds of events.
  */
+/*
+ * Phase 3 Sprint 1: optional pagination.
+ *   sinceUnixMs > 0 filters task events + policy decisions + usage events
+ *   to records with createdAtUnixMs >= sinceUnixMs. The tasks list is not
+ *   filtered (task metadata is small and operators typically want the whole
+ *   set). limit > 0 caps the total event-class records emitted (events +
+ *   policyDecisions + usage). The response includes nextSinceUnixMs cursoring
+ *   the next page when the cap is hit, or 0 when the page is the final one.
+ *   sinceUnixMs <= 0 and limit <= 0 mean "no filter" / "no cap".
+ */
 int wtTaskProjectionReadInitiativeAuditJson(const char *dbPath, const char *ledgerPath,
                                             const char *initiativeId,
+                                            long long sinceUnixMs, int limit,
                                             char *buffer, size_t bufferSize);
 int wtTaskProjectionReadAgentsJson(const char *dbPath, long long nowUnixMs, char *buffer, size_t bufferSize);
 int wtTaskProjectionReadCapacityJson(const char *dbPath, char *buffer, size_t bufferSize);
+/*
+ * Phase 3 Sprint 1: heartbeats + milestones for the /api/status aggregator.
+ * Each helper writes a JSON array fragment (NOT a complete document) into the
+ * supplied buffer so the daemon can compose the aggregate response cheaply.
+ */
+int wtTaskProjectionReadHeartbeatsJson(const char *dbPath, char *buffer, size_t bufferSize);
+int wtTaskProjectionReadRecentMilestonesJson(const char *dbPath, int limit, char *buffer, size_t bufferSize);
+
 int wtTaskProjectionCountActiveForAgent(const char *dbPath, const char *agent);
 int wtTaskProjectionCountActiveForParent(const char *dbPath, const char *parentTaskId);
 int wtTaskProjectionCountActiveForInitiative(const char *dbPath, const char *initiativeId);

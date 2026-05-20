@@ -72,6 +72,23 @@ static void setDecision(WtPolicyDecision *decision, int allowed, const char *rea
     snprintf(decision->message, sizeof(decision->message), "%s", message ? message : "");
 }
 
+static int autonomyLevelIsValid(const char *level) {
+    return level && (
+        strcmp(level, "observe") == 0 ||
+        strcmp(level, "ask-each") == 0 ||
+        strcmp(level, "ask-batch") == 0 ||
+        strcmp(level, "autonomous") == 0);
+}
+
+static int autonomyScopeCoversAdapter(const char *scope) {
+    if (!scope || scope[0] == '\0') {
+        return 0;
+    }
+    return strstr(scope, "workspace") != NULL ||
+           strstr(scope, "adapter") != NULL ||
+           strstr(scope, "*") != NULL;
+}
+
 void wtPolicyEvaluateTaskPackage(const WtConfig *config, const WtPolicyInput *input,
                                  WtPolicyDecision *decision) {
     if (!config || !input || !decision) {
@@ -80,6 +97,35 @@ void wtPolicyEvaluateTaskPackage(const WtConfig *config, const WtPolicyInput *in
     }
     char modelFamily[64];
     int hasFamily = (wtPolicyExtractModelFamily(input->modelId, modelFamily, sizeof(modelFamily)) == 0);
+
+    /*
+     * Phase 3 Sprint 2: autonomy grants fail closed. Only autonomous tasks need
+     * a grant; lower levels run without elevated adapter flags.
+     */
+    if (input->autonomyLevel && input->autonomyLevel[0]) {
+        if (!autonomyLevelIsValid(input->autonomyLevel)) {
+            setDecision(decision, 0, "autonomy_required", "unknown autonomyLevel");
+            return;
+        }
+        if (strcmp(input->autonomyLevel, "autonomous") == 0) {
+            if (input->autonomyRevokedAtUnixMs > 0) {
+                setDecision(decision, 0, "autonomy_revoked", "autonomy grant was revoked");
+                return;
+            }
+            if (input->autonomyTtlSeconds <= 0 ||
+                !autonomyScopeCoversAdapter(input->autonomyScope)) {
+                setDecision(decision, 0, "autonomy_required",
+                            "autonomous tasks require a positive ttlSeconds and adapter/workspace scope");
+                return;
+            }
+            long long grantStart = input->autonomyCreatedAtUnixMs > 0 ?
+                                   input->autonomyCreatedAtUnixMs : input->nowUnixMs;
+            if (input->nowUnixMs > grantStart + input->autonomyTtlSeconds * 1000LL) {
+                setDecision(decision, 0, "autonomy_expired", "autonomy grant ttl has expired");
+                return;
+            }
+        }
+    }
 
     /*
      * 1. Blocked vendor check. Runs first so an immediately-rejected request

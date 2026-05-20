@@ -262,6 +262,10 @@ async function loadConfig() {
   if (initiativeBudgetEl) initiativeBudgetEl.value = config.tokenBudgetPerInitiative || 0;
   const familyBudgetEl = document.querySelector("#configTokenBudgetPerModelFamily");
   if (familyBudgetEl) familyBudgetEl.value = config.tokenBudgetPerModelFamily || 0;
+  document.querySelector("#configDefaultAutonomyLevel").value = config.defaultAutonomyLevel || "";
+  document.querySelector("#configClaudeDefaultAutonomyLevel").value = config.claudeDefaultAutonomyLevel || "";
+  document.querySelector("#configChatgptDefaultAutonomyLevel").value = config.chatgptDefaultAutonomyLevel || "";
+  document.querySelector("#configGeminiDefaultAutonomyLevel").value = config.geminiDefaultAutonomyLevel || "";
   document.querySelector("#settingsStatus").textContent = config.configPath ? `Editing ${config.configPath}` : "Runtime started without a writable config path.";
   updateReadouts();
 }
@@ -291,6 +295,10 @@ async function saveConfig(event) {
     blockedVendors: (document.querySelector("#configBlockedVendors")?.value || "").trim(),
     tokenBudgetPerInitiative: Number(document.querySelector("#configTokenBudgetPerInitiative")?.value || 0),
     tokenBudgetPerModelFamily: Number(document.querySelector("#configTokenBudgetPerModelFamily")?.value || 0),
+    defaultAutonomyLevel: document.querySelector("#configDefaultAutonomyLevel").value,
+    claudeDefaultAutonomyLevel: document.querySelector("#configClaudeDefaultAutonomyLevel").value,
+    chatgptDefaultAutonomyLevel: document.querySelector("#configChatgptDefaultAutonomyLevel").value,
+    geminiDefaultAutonomyLevel: document.querySelector("#configGeminiDefaultAutonomyLevel").value,
   };
   const response = await fetch("/api/config", {
     method: "POST",
@@ -370,6 +378,66 @@ async function loadAgents() {
   if (!payload.ok || !Array.isArray(payload.agents)) return;
   state.agents = payload.agents;
   renderAgentControls();
+}
+
+/*
+ * Phase 3 Sprint 1: pull the aggregated status snapshot and render the status
+ * board panel. The endpoint folds initiatives + agents + heartbeats + recent
+ * milestones + tokens + adapters + policy knobs into one payload, so a single
+ * poll keeps the board live without firing five separate requests.
+ */
+async function loadStatusBoard() {
+  const response = await fetch("/api/status");
+  if (!response.ok) return;
+  const payload = await response.json();
+  if (!payload || !payload.ok) return;
+  renderStatusBoard(payload);
+}
+
+function renderStatusBoard(payload) {
+  const heartbeatsEl = document.querySelector("#statusBoardHeartbeats");
+  const milestonesEl = document.querySelector("#statusBoardMilestones");
+  const metaEl = document.querySelector("#statusBoardMeta");
+  if (!heartbeatsEl || !milestonesEl || !metaEl) return;
+  const heartbeats = Array.isArray(payload.heartbeats) ? payload.heartbeats : [];
+  const milestones = Array.isArray(payload.recentMilestones) ? payload.recentMilestones : [];
+  const now = Number(payload.nowUnixMs || Date.now());
+  /* meta line: number of agents reporting + oldest last-seen */
+  if (!heartbeats.length) {
+    metaEl.textContent = "no heartbeats yet";
+  } else {
+    const oldestSeen = heartbeats.reduce((max, hb) =>
+      Math.max(max, now - Number(hb.lastSeenUnixMs || 0)), 0);
+    const minutes = Math.floor(oldestSeen / 60000);
+    metaEl.textContent = `${heartbeats.length} agent(s) reporting · oldest ${minutes}m ago`;
+  }
+  heartbeatsEl.innerHTML = "";
+  heartbeats.forEach(hb => {
+    const row = document.createElement("div");
+    row.className = "status-board-row";
+    const ageMs = now - Number(hb.lastSeenUnixMs || 0);
+    const ageMin = Math.floor(ageMs / 60000);
+    const ageStr = ageMin >= 60 ? `${Math.floor(ageMin / 60)}h` :
+                   ageMin >= 1 ? `${ageMin}m` : "<1m";
+    row.innerHTML = "<strong></strong><span class=\"age\"></span><small></small>";
+    row.querySelector("strong").textContent = hb.agent || "?";
+    row.querySelector(".age").textContent = ageStr;
+    const taskFragment = hb.currentTaskId ? `${hb.currentTaskId} · ` : "";
+    row.querySelector("small").textContent = `${taskFragment}${hb.statusLine || "idle"}`;
+    heartbeatsEl.appendChild(row);
+  });
+  milestonesEl.innerHTML = "";
+  /* Show the most recent 6 milestones - the panel is glanceable, not a log. */
+  milestones.slice(0, 6).forEach(milestone => {
+    const row = document.createElement("div");
+    row.className = "status-board-milestone";
+    row.dataset.milestone = milestone.milestone || "unknown";
+    row.innerHTML = "<b></b><strong></strong><small></small>";
+    row.querySelector("b").textContent = (milestone.milestone || "").toUpperCase();
+    row.querySelector("strong").textContent = milestone.taskId || "";
+    row.querySelector("small").textContent = milestone.message || milestone.createdBy || "";
+    milestonesEl.appendChild(row);
+  });
 }
 
 function summarizeTasks(rows) {
@@ -613,6 +681,7 @@ async function loadTaskDetail(taskId) {
   if (detail.task.attemptCount > 0) metaParts.push(`attempt ${detail.task.attemptCount}`);
   if (detail.task.failureCause) metaParts.push(`cause: ${detail.task.failureCause}`);
   if (detail.task.leaseOwner) metaParts.push(`lease: ${detail.task.leaseOwner}`);
+  if (detail.task.autonomyLevel) metaParts.push(`autonomy: ${detail.task.autonomyLevel}`);
   if (detail.task.reclaimCount > 0) {
     const reason = detail.task.lastReclaimReason || "operator";
     metaParts.push(`reclaimed ${detail.task.reclaimCount}× (${reason})`);
@@ -809,6 +878,29 @@ async function postTaskLifecycle(status, message) {
     return;
   }
   addAudit("ui", `${status} posted for ${state.selectedTaskId}`);
+  await loadTasks();
+  await loadTaskDetail(state.selectedTaskId);
+}
+
+async function postAutonomyRevoke() {
+  if (!state.selectedTaskId) {
+    addAudit("ui", "select a task before revoking autonomy");
+    return;
+  }
+  const response = await fetch("/api/autonomy-revoke", {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({
+      taskId: state.selectedTaskId,
+      reason: "Revoked from the web console.",
+      createdBy: "ceo"
+    })
+  });
+  if (!response.ok) {
+    addAudit("ui", `autonomy revoke failed for ${state.selectedTaskId}`);
+    return;
+  }
+  addAudit("ui", `autonomy revoked for ${state.selectedTaskId}`);
   await loadTasks();
   await loadTaskDetail(state.selectedTaskId);
 }
@@ -1179,8 +1271,11 @@ function buildTaskPackage() {
   const body = bodyEl.value.trim();
   const priority = document.querySelector("#priority").value;
   const maxTokens = Number(document.querySelector("#tokenBudget").value);
+  const autonomyLevel = document.querySelector("#autonomyLevel").value;
+  const autonomyScope = document.querySelector("#autonomyScope").value.trim();
+  const autonomyTtl = Number(document.querySelector("#autonomyTtl").value || 0);
   const taskId = newTaskId();
-  return {
+  const payload = {
     schema: "woventeam.task_package.v0.1",
     taskId,
     initiativeId: newInitiativeId(),
@@ -1200,6 +1295,20 @@ function buildTaskPackage() {
     dependencies: [],
     createdAtUnixMs: nowMs()
   };
+  if (autonomyLevel) payload.autonomyLevel = autonomyLevel;
+  if (autonomyLevel || autonomyScope || autonomyTtl > 0) {
+    payload.autonomyGrant = {
+      scope: autonomyScope,
+      ttlSeconds: autonomyTtl,
+      maxWallClockSeconds: 1800,
+      maxCostUsd: 1.0,
+      maxTokens,
+      network: autonomyScope ? "intranet" : "none",
+      credentialClass: autonomyScope.includes("git") ? "repo-write" : "none",
+      requiresCleanWorktree: false
+    };
+  }
+  return payload;
 }
 
 function buildTaskRequest() {
@@ -1208,8 +1317,11 @@ function buildTaskRequest() {
   const body = bodyEl.value.trim();
   const priority = document.querySelector("#priority").value;
   const maxTokens = Number(document.querySelector("#tokenBudget").value);
+  const autonomyLevel = document.querySelector("#autonomyLevel").value;
+  const autonomyScope = document.querySelector("#autonomyScope").value.trim();
+  const autonomyTtl = Number(document.querySelector("#autonomyTtl").value || 0);
   const requestedTaskId = newTaskId();
-  return {
+  const payload = {
     schema: "woventeam.task_request.v0.1",
     taskId: requestedTaskId,
     parentTaskId: parentTaskIdEl.value.trim(),
@@ -1227,6 +1339,19 @@ function buildTaskRequest() {
     budget: {maxTokens},
     createdAtUnixMs: nowMs()
   };
+  if (autonomyLevel) payload.autonomyLevel = autonomyLevel;
+  if (autonomyLevel || autonomyScope || autonomyTtl > 0) {
+    payload.autonomyGrant = {
+      scope: autonomyScope,
+      ttlSeconds: autonomyTtl,
+      maxWallClockSeconds: 1800,
+      maxTokens,
+      network: autonomyScope ? "intranet" : "none",
+      credentialClass: autonomyScope.includes("git") ? "repo-write" : "none",
+      requiresCleanWorktree: false
+    };
+  }
+  return payload;
 }
 
 function buildDirective() {
@@ -1338,6 +1463,7 @@ function wireControls() {
       const action = button.dataset.taskAction;
       if (action === "retry") postTaskLifecycle("queued", "Task reopened for retry from the web console.");
       if (action === "cancel") postTaskLifecycle("cancelled", "Task cancelled from the web console.");
+      if (action === "revoke-autonomy") postAutonomyRevoke();
       if (action === "close") postTaskLifecycle("closed", "Task closed from the web console.");
     });
   });
@@ -1461,6 +1587,7 @@ async function init() {
     await loadAdapters();
     await loadAgents();
     await loadCapacity();
+    await loadStatusBoard();
     connectEvents();
     setInterval(loadInitiatives, 5000);
     setInterval(loadTasks, 5000);
@@ -1468,6 +1595,11 @@ async function init() {
     setInterval(loadAdapters, 15000);
     setInterval(loadAgents, 5000);
     setInterval(loadCapacity, 5000);
+    /* Phase 3 Sprint 1: status board polls /api/status which folds heartbeats,
+     * milestones, and policy snapshot into one payload. The 7-second cadence
+     * is a deliberate offset from the 5-second poll set so the dashboard
+     * doesn't burst-load when all timers align. */
+    setInterval(loadStatusBoard, 7000);
   } catch (error) {
     setUplink(false);
     addAudit("system", "room API unavailable");

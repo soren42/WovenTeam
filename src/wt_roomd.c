@@ -10,6 +10,7 @@
 #include "wt_http.h"
 #include "wt_json.h"
 #include "wt_message.h"
+#include "wt_notify.h"
 #include "wt_policy.h"
 #include "wt_room_store.h"
 #include "wt_task_projection.h"
@@ -184,6 +185,60 @@ static int appendJsonStringValue(char *buffer, size_t bufferSize, size_t *used, 
     return ok ? 0 : -1;
 }
 
+static const char *profileDefaultAutonomy(const char *profile) {
+    if (!profile || strcmp(profile, "observe") == 0) {
+        return "observe";
+    }
+    if (strcmp(profile, "repo_branch") == 0 || strcmp(profile, "test_local") == 0) {
+        return "ask-batch";
+    }
+    return "ask-each";
+}
+
+static const char *configuredAutonomyForAgent(const WtConfig *config, const char *agent) {
+    if (agent && strcmp(agent, "claude") == 0 && config->claudeDefaultAutonomyLevel[0]) {
+        return config->claudeDefaultAutonomyLevel;
+    }
+    if (agent && strcmp(agent, "chatgpt") == 0 && config->chatgptDefaultAutonomyLevel[0]) {
+        return config->chatgptDefaultAutonomyLevel;
+    }
+    if (agent && strcmp(agent, "gemini") == 0 && config->geminiDefaultAutonomyLevel[0]) {
+        return config->geminiDefaultAutonomyLevel;
+    }
+    return config->defaultAutonomyLevel[0] ? config->defaultAutonomyLevel : NULL;
+}
+
+static void resolveAutonomyLevel(const WtConfig *config, const char *body, const char *agent,
+                                 const char *profile, char *buffer, size_t bufferSize) {
+    if (wtJsonReadString(body, "autonomyLevel", buffer, bufferSize) == 0 && buffer[0]) {
+        return;
+    }
+    const char *configured = configuredAutonomyForAgent(config, agent);
+    snprintf(buffer, bufferSize, "%s", configured ? configured : profileDefaultAutonomy(profile));
+}
+
+static void readAutonomyGrantFields(const char *body, WtPolicyInput *input) {
+    static char scope[WT_TASK_BODY_SIZE];
+    static char network[WT_TASK_POLICY_SIZE];
+    static char credentialClass[WT_TASK_POLICY_SIZE];
+    scope[0] = '\0';
+    network[0] = '\0';
+    credentialClass[0] = '\0';
+    wtJsonReadString(body, "scope", scope, sizeof(scope));
+    wtJsonReadString(body, "network", network, sizeof(network));
+    wtJsonReadString(body, "credentialClass", credentialClass, sizeof(credentialClass));
+    input->autonomyScope = scope;
+    input->autonomyNetwork = network[0] ? network : "none";
+    input->autonomyCredentialClass = credentialClass[0] ? credentialClass : "none";
+    wtJsonReadLong(body, "ttlSeconds", &input->autonomyTtlSeconds);
+    wtJsonReadLong(body, "maxWallClockSeconds", &input->autonomyMaxWallClockSeconds);
+    long requiresClean = 0;
+    if (wtJsonReadLong(body, "requiresCleanWorktree", &requiresClean) == 0) {
+        input->autonomyRequiresCleanWorktree = requiresClean != 0;
+    }
+    wtJsonReadLongLong(body, "createdAtUnixMs", &input->autonomyCreatedAtUnixMs);
+}
+
 static int isSafeArtifactName(const char *value) {
     if (!value || value[0] == '\0') return 0;
     for (const unsigned char *cursor = (const unsigned char *)value; *cursor; cursor++) {
@@ -262,7 +317,7 @@ static int roleMaySpawn(const char *requestingRole, const char *requestedRole) {
 }
 
 static int sendConfigJson(int clientFd, const WtConfig *config) {
-    char body[4096];
+    char body[8192];
     char configPath[WT_PATH_SIZE * 2];
     char claudeMode[WT_NAME_SIZE * 2];
     char chatgptMode[WT_NAME_SIZE * 2];
@@ -271,6 +326,10 @@ static int sendConfigJson(int clientFd, const WtConfig *config) {
     char gptCommand[WT_PATH_SIZE * 2];
     char geminiCommand[WT_PATH_SIZE * 2];
     char blockedVendors[WT_PATH_SIZE * 2];
+    char defaultAutonomyLevel[WT_NAME_SIZE * 2];
+    char claudeDefaultAutonomyLevel[WT_NAME_SIZE * 2];
+    char chatgptDefaultAutonomyLevel[WT_NAME_SIZE * 2];
+    char geminiDefaultAutonomyLevel[WT_NAME_SIZE * 2];
     if (wtJsonEscape(config->configPath, configPath, sizeof(configPath)) != 0 ||
         wtJsonEscape(config->claudeMode, claudeMode, sizeof(claudeMode)) != 0 ||
         wtJsonEscape(config->chatgptMode, chatgptMode, sizeof(chatgptMode)) != 0 ||
@@ -278,7 +337,11 @@ static int sendConfigJson(int clientFd, const WtConfig *config) {
         wtJsonEscape(config->claudeCommand, claudeCommand, sizeof(claudeCommand)) != 0 ||
         wtJsonEscape(config->gptCommand, gptCommand, sizeof(gptCommand)) != 0 ||
         wtJsonEscape(config->geminiCommand, geminiCommand, sizeof(geminiCommand)) != 0 ||
-        wtJsonEscape(config->blockedVendors, blockedVendors, sizeof(blockedVendors)) != 0) {
+        wtJsonEscape(config->blockedVendors, blockedVendors, sizeof(blockedVendors)) != 0 ||
+        wtJsonEscape(config->defaultAutonomyLevel, defaultAutonomyLevel, sizeof(defaultAutonomyLevel)) != 0 ||
+        wtJsonEscape(config->claudeDefaultAutonomyLevel, claudeDefaultAutonomyLevel, sizeof(claudeDefaultAutonomyLevel)) != 0 ||
+        wtJsonEscape(config->chatgptDefaultAutonomyLevel, chatgptDefaultAutonomyLevel, sizeof(chatgptDefaultAutonomyLevel)) != 0 ||
+        wtJsonEscape(config->geminiDefaultAutonomyLevel, geminiDefaultAutonomyLevel, sizeof(geminiDefaultAutonomyLevel)) != 0) {
         return wtHttpSendText(clientFd, 500, "Internal Server Error", "application/json",
                               "{\"ok\":false,\"error\":\"config serialization failed\"}\n");
     }
@@ -308,7 +371,11 @@ static int sendConfigJson(int clientFd, const WtConfig *config) {
              "\"geminiCommand\":\"%s\","
              "\"blockedVendors\":\"%s\","
              "\"tokenBudgetPerInitiative\":%ld,"
-             "\"tokenBudgetPerModelFamily\":%ld}\n",
+             "\"tokenBudgetPerModelFamily\":%ld,"
+             "\"defaultAutonomyLevel\":\"%s\","
+             "\"claudeDefaultAutonomyLevel\":\"%s\","
+             "\"chatgptDefaultAutonomyLevel\":\"%s\","
+             "\"geminiDefaultAutonomyLevel\":\"%s\"}\n",
              configPath,
              config->tokenTelemetryEnabled ? "true" : "false",
              config->tokenDailyBudget,
@@ -334,7 +401,11 @@ static int sendConfigJson(int clientFd, const WtConfig *config) {
              geminiCommand,
              blockedVendors,
              config->tokenBudgetPerInitiative,
-             config->tokenBudgetPerModelFamily);
+             config->tokenBudgetPerModelFamily,
+             defaultAutonomyLevel,
+             claudeDefaultAutonomyLevel,
+             chatgptDefaultAutonomyLevel,
+             geminiDefaultAutonomyLevel);
     return wtHttpSendText(clientFd, 200, "OK", "application/json; charset=utf-8", body);
 }
 
@@ -604,6 +675,14 @@ static int handlePostConfig(int clientFd, WtConfig *config, const char *request)
     if (wtJsonReadLong(body, "tokenBudgetPerModelFamily", &value) == 0) {
         config->tokenBudgetPerModelFamily = value < 0 ? 0 : value;
     }
+    wtJsonReadString(body, "defaultAutonomyLevel", config->defaultAutonomyLevel,
+                     sizeof(config->defaultAutonomyLevel));
+    wtJsonReadString(body, "claudeDefaultAutonomyLevel", config->claudeDefaultAutonomyLevel,
+                     sizeof(config->claudeDefaultAutonomyLevel));
+    wtJsonReadString(body, "chatgptDefaultAutonomyLevel", config->chatgptDefaultAutonomyLevel,
+                     sizeof(config->chatgptDefaultAutonomyLevel));
+    wtJsonReadString(body, "geminiDefaultAutonomyLevel", config->geminiDefaultAutonomyLevel,
+                     sizeof(config->geminiDefaultAutonomyLevel));
     if (wtConfigWriteFile(config, config->configPath) != 0) {
         return wtHttpSendText(clientFd, 500, "Internal Server Error", "application/json",
                               "{\"ok\":false,\"error\":\"config write failed\"}\n");
@@ -722,6 +801,11 @@ static void recordPolicyDenial(const WtConfig *config, const char *taskId,
              escapedTaskId, escapedInitiative, escapedReason, escapedMessage,
              escapedBy, wtNowUnixMilliseconds());
     wtTaskAppendRecord(config->taskLedgerPath, record, config->fsyncEachMessage);
+    /* Phase 3 Sprint 1: notify the configured escalate channel about the
+     * denial. Silent skip when no key is set. */
+    char headline[256];
+    snprintf(headline, sizeof(headline), "policy denial (%s)", decision->reason);
+    wtNotifySend(config, config->notificationEscalateKey, headline, decision->message);
 }
 
 /*
@@ -919,6 +1003,8 @@ static int handlePostTaskPackage(int clientFd, const WtConfig *config, const cha
         (requestedRouterAgent && !modelMatchesAgent(assignedAgent, modelId))) {
         defaultModelForAgent(assignedAgent, modelId, sizeof(modelId));
     }
+    char autonomyLevel[WT_TASK_POLICY_SIZE];
+    resolveAutonomyLevel(config, body, assignedAgent, toolProfile, autonomyLevel, sizeof(autonomyLevel));
     WtPolicyInput policyInput;
     memset(&policyInput, 0, sizeof(policyInput));
     policyInput.taskId = taskId;
@@ -927,6 +1013,8 @@ static int handlePostTaskPackage(int clientFd, const WtConfig *config, const cha
     policyInput.modelId = modelId;
     policyInput.toolProfile = toolProfile;
     policyInput.initiativeId = initiativeId;
+    policyInput.autonomyLevel = autonomyLevel;
+    readAutonomyGrantFields(body, &policyInput);
     policyInput.maxTokens = maxTokens;
     preparePolicyInput(config, &policyInput);
     WtPolicyDecision decision;
@@ -1051,6 +1139,8 @@ static int handlePostTaskRequest(int clientFd, const WtConfig *config, const cha
         (requestedRouterAgentForRequest && !modelMatchesAgent(assignedAgent, modelId))) {
         defaultModelForAgent(assignedAgent, modelId, sizeof(modelId));
     }
+    char autonomyLevel[WT_TASK_POLICY_SIZE];
+    resolveAutonomyLevel(config, body, assignedAgent, toolProfile, autonomyLevel, sizeof(autonomyLevel));
     /*
      * Sprint 5: same central policy evaluator as /api/task-package so manager-
      * driven subtasks honor blocked vendors, per-initiative caps, and per-
@@ -1068,6 +1158,8 @@ static int handlePostTaskRequest(int clientFd, const WtConfig *config, const cha
     requestInput.modelId = modelId;
     requestInput.toolProfile = toolProfile;
     requestInput.initiativeId = initiativeId;
+    requestInput.autonomyLevel = autonomyLevel;
+    readAutonomyGrantFields(body, &requestInput);
     requestInput.maxTokens = maxTokens;
     preparePolicyInput(config, &requestInput);
     /* Manager-subtask parent capacity is not part of the package check; the
@@ -1321,6 +1413,96 @@ static int sendAgentsJson(int clientFd, const WtConfig *config) {
 }
 
 /*
+ * Phase 3 Sprint 1: POST /api/task-cancel.
+ *
+ * Operator-initiated cancel. Appends a woventeam.kill_event.v0.1 record so the
+ * adapter wait loop in wt-agent can pick it up via wtTaskCancelRequested().
+ * Body: { "taskId": "task_abc", "reason": "operator|autonomy-revoke|...",
+ *         "message": "...", "createdBy": "ceo" }
+ *
+ * The endpoint records the cancel request but does NOT kill the adapter
+ * itself - wt-agent owns the child process. This separation keeps wt-roomd
+ * free of process-management responsibilities and works for remote agents
+ * unchanged.
+ */
+static int handlePostTaskCancel(int clientFd, const WtConfig *config, const char *request) {
+    const char *body = strstr(request, "\r\n\r\n");
+    if (!body) {
+        return wtHttpSendText(clientFd, 400, "Bad Request", "application/json",
+                              "{\"ok\":false,\"error\":\"missing body\"}\n");
+    }
+    body += 4;
+    char taskId[WT_TASK_ID_SIZE];
+    char reason[64];
+    char createdBy[WT_TASK_AGENT_SIZE];
+    char message[WT_TASK_TITLE_SIZE];
+    if (wtJsonReadString(body, "taskId", taskId, sizeof(taskId)) != 0) {
+        return wtHttpSendText(clientFd, 400, "Bad Request", "application/json",
+                              "{\"ok\":false,\"error\":\"taskId required\"}\n");
+    }
+    if (wtJsonReadString(body, "reason", reason, sizeof(reason)) != 0) {
+        snprintf(reason, sizeof(reason), "%s", "operator");
+    }
+    if (wtJsonReadString(body, "createdBy", createdBy, sizeof(createdBy)) != 0) {
+        snprintf(createdBy, sizeof(createdBy), "%s", "ceo");
+    }
+    if (wtJsonReadString(body, "message", message, sizeof(message)) != 0) {
+        snprintf(message, sizeof(message), "Task cancel requested (%s).", reason);
+    }
+    if (wtTaskAppendKillEvent(config->taskLedgerPath, taskId, reason, createdBy,
+                              config->fsyncEachMessage) != 0) {
+        return wtHttpSendText(clientFd, 500, "Internal Server Error", "application/json",
+                              "{\"ok\":false,\"error\":\"append failed\"}\n");
+    }
+    /* Echo to the room transcript so operators watching the chat see it. */
+    appendTaskRoomEvent(config, taskId, "all", "task.cancel", "cancel_requested", message);
+    /* Phase 3 Sprint 1: notify the escalate channel; cancel is an unusual
+     * operator event so it should reach on-call by default. */
+    char headline[256];
+    snprintf(headline, sizeof(headline), "task cancel requested (%s)", taskId);
+    wtNotifySend(config, config->notificationEscalateKey, headline, message);
+    char response[512];
+    snprintf(response, sizeof(response),
+             "{\"ok\":true,\"taskId\":\"%s\",\"reason\":\"%s\",\"createdBy\":\"%s\"}\n",
+             taskId, reason, createdBy);
+    return wtHttpSendText(clientFd, 200, "OK", "application/json; charset=utf-8", response);
+}
+
+static int handlePostAutonomyRevoke(int clientFd, const WtConfig *config, const char *request) {
+    const char *body = strstr(request, "\r\n\r\n");
+    if (!body) {
+        return wtHttpSendText(clientFd, 400, "Bad Request", "application/json", "{\"ok\":false}\n");
+    }
+    body += 4;
+    char taskId[WT_TASK_ID_SIZE];
+    char reason[256];
+    char createdBy[WT_TASK_AGENT_SIZE];
+    if (wtJsonReadString(body, "taskId", taskId, sizeof(taskId)) != 0) {
+        return wtHttpSendText(clientFd, 400, "Bad Request", "application/json",
+                              "{\"ok\":false,\"error\":\"taskId required\"}\n");
+    }
+    if (wtJsonReadString(body, "reason", reason, sizeof(reason)) != 0) {
+        snprintf(reason, sizeof(reason), "%s", "operator revocation");
+    }
+    if (wtJsonReadString(body, "createdBy", createdBy, sizeof(createdBy)) != 0) {
+        snprintf(createdBy, sizeof(createdBy), "%s", "ceo");
+    }
+    if (wtTaskAppendAutonomyEvent(config->taskLedgerPath, taskId, createdBy, taskId,
+                                  "revoked", "operator", "", reason, 1, 0,
+                                  config->fsyncEachMessage) != 0 ||
+        wtTaskAppendKillEvent(config->taskLedgerPath, taskId, "autonomy-revoke", createdBy,
+                              config->fsyncEachMessage) != 0) {
+        return wtHttpSendText(clientFd, 500, "Internal Server Error", "application/json",
+                              "{\"ok\":false,\"error\":\"append failed\"}\n");
+    }
+    appendTaskRoomEvent(config, taskId, "all", "task.autonomy", "revoked", reason);
+    char response[512];
+    snprintf(response, sizeof(response),
+             "{\"ok\":true,\"taskId\":\"%s\",\"status\":\"autonomy_revoked\"}\n", taskId);
+    return wtHttpSendText(clientFd, 200, "OK", "application/json; charset=utf-8", response);
+}
+
+/*
  * POST /api/task-artifact
  *
  * Sprint 4: artifact promotion endpoint. Records a state transition for an
@@ -1402,17 +1584,131 @@ static int handlePostTaskArtifact(int clientFd, const WtConfig *config, const ch
 }
 
 /*
+ * Phase 3 Sprint 1: GET /api/status.
+ *
+ * Aggregates initiatives + tasks + agents + heartbeats + recent milestones +
+ * tokens + adapters + config-level policy knobs into one structured payload.
+ * The browser console + remote operators get a glanceable snapshot without
+ * having to issue five different requests.
+ */
+static int sendStatusJson(int clientFd, const WtConfig *config) {
+    if (rebuildProjection(config) != 0) {
+        return wtHttpSendText(clientFd, 500, "Internal Server Error", "application/json",
+                              "{\"ok\":false,\"error\":\"projection rebuild failed\"}\n");
+    }
+    size_t responseSize = WT_TASK_LEDGER_LINE_SIZE * 32;
+    char *body = malloc(responseSize);
+    if (!body) {
+        return wtHttpSendText(clientFd, 500, "Internal Server Error", "application/json", "{\"ok\":false}\n");
+    }
+    size_t blockSize = WT_TASK_LEDGER_LINE_SIZE * 8;
+    char *initiativesJson = malloc(blockSize);
+    char *agentsJson = malloc(blockSize);
+    char *heartbeatsJson = malloc(blockSize);
+    char *milestonesJson = malloc(blockSize);
+    char *summariesJson = malloc(blockSize);
+    if (!initiativesJson || !agentsJson || !heartbeatsJson || !milestonesJson || !summariesJson) {
+        free(body); free(initiativesJson); free(agentsJson);
+        free(heartbeatsJson); free(milestonesJson); free(summariesJson);
+        return wtHttpSendText(clientFd, 500, "Internal Server Error", "application/json", "{\"ok\":false}\n");
+    }
+    initiativesJson[0] = '\0'; agentsJson[0] = '\0';
+    heartbeatsJson[0] = '\0'; milestonesJson[0] = '\0';
+    summariesJson[0] = '\0';
+    long long nowMs = wtNowUnixMilliseconds();
+    /* Fan out to existing projection helpers. Failure of any single block
+     * still leaves the others usable; we render an empty fallback on error
+     * rather than failing the whole response. */
+    if (wtTaskProjectionReadInitiativesJson(config->taskProjectionDbPath, initiativesJson, blockSize) != 0) {
+        snprintf(initiativesJson, blockSize, "{\"ok\":false,\"initiatives\":[]}");
+    }
+    if (wtTaskProjectionReadAgentsJson(config->taskProjectionDbPath, nowMs, agentsJson, blockSize) != 0) {
+        snprintf(agentsJson, blockSize, "{\"ok\":false,\"agents\":[]}");
+    }
+    if (wtTaskProjectionReadHeartbeatsJson(config->taskProjectionDbPath, heartbeatsJson, blockSize) != 0) {
+        snprintf(heartbeatsJson, blockSize, "[]");
+    }
+    if (wtTaskProjectionReadRecentMilestonesJson(config->taskProjectionDbPath, 50,
+                                                 milestonesJson, blockSize) != 0) {
+        snprintf(milestonesJson, blockSize, "[]");
+    }
+    if (wtTaskProjectionReadSummariesJson(config->taskProjectionDbPath, summariesJson, blockSize) != 0) {
+        snprintf(summariesJson, blockSize, "[]");
+    }
+    /* Token / budget pressure snapshot from the existing token summarizer. */
+    WtTokenSummary tokenSummary;
+    memset(&tokenSummary, 0, sizeof(tokenSummary));
+    wtTaskSummarizeTokenBudgets(config->taskLedgerPath, nowMs, &tokenSummary);
+    int written = snprintf(body, responseSize,
+             "{\"ok\":true,\"nowUnixMs\":%lld,"
+             "\"initiatives\":%s,"
+             "\"agents\":%s,"
+             "\"heartbeats\":%s,"
+             "\"recentMilestones\":%s,"
+             "\"taskSummaries\":%s,"
+             "\"tokens\":{"
+               "\"dayWindowAllocatedTokens\":%lld,"
+               "\"monthWindowAllocatedTokens\":%lld,"
+               "\"dayWindowActualTokens\":%lld,"
+               "\"monthWindowActualTokens\":%lld,"
+               "\"tokenDailyBudget\":%ld,"
+               "\"tokenMonthlyBudget\":%ld"
+             "},"
+             "\"adapters\":{"
+               "\"claudeEnabled\":%s,\"codexEnabled\":%s,\"geminiEnabled\":%s"
+             "},"
+             "\"policy\":{"
+               "\"blockedVendors\":\"%s\","
+               "\"tokenBudgetPerInitiative\":%ld,"
+               "\"tokenBudgetPerModelFamily\":%ld"
+             "},"
+             "\"heartbeatIntervalSeconds\":%d"
+             "}\n",
+             nowMs,
+             initiativesJson,
+             agentsJson,
+             heartbeatsJson,
+             milestonesJson,
+             summariesJson,
+             tokenSummary.dayWindowAllocatedTokens,
+             tokenSummary.monthWindowAllocatedTokens,
+             tokenSummary.dayWindowActualTokens,
+             tokenSummary.monthWindowActualTokens,
+             config->tokenDailyBudget,
+             config->tokenMonthlyBudget,
+             config->enableClaudeAdapter ? "true" : "false",
+             config->enableCodexAdapter ? "true" : "false",
+             config->enableGeminiAdapter ? "true" : "false",
+             config->blockedVendors,
+             config->tokenBudgetPerInitiative,
+             config->tokenBudgetPerModelFamily,
+             config->heartbeatIntervalSeconds);
+    int rc;
+    if (written < 0 || (size_t)written >= responseSize) {
+        rc = wtHttpSendText(clientFd, 500, "Internal Server Error", "application/json",
+                            "{\"ok\":false,\"error\":\"status payload too large\"}\n");
+    } else {
+        rc = wtHttpSendText(clientFd, 200, "OK", "application/json; charset=utf-8", body);
+    }
+    free(body); free(initiativesJson); free(agentsJson);
+    free(heartbeatsJson); free(milestonesJson); free(summariesJson);
+    return rc;
+}
+
+/*
  * Sprint 5: combined audit export for one initiative. Allocates a larger
  * buffer than other endpoints because the response folds tasks + events +
  * policy decisions + usage events into a single JSON document.
  */
-static int sendInitiativeAuditJson(int clientFd, const WtConfig *config, const char *initiativeId) {
+static int sendInitiativeAuditJson(int clientFd, const WtConfig *config, const char *initiativeId,
+                                   long long sinceUnixMs, int limit) {
     if (rebuildProjection(config) != 0) {
         return wtHttpSendText(clientFd, 500, "Internal Server Error", "application/json",
                               "{\"ok\":false,\"error\":\"projection rebuild failed\"}\n");
     }
     /* 1 MiB lets a meaningful initiative (~100 tasks, ~2000 events) fit comfortably
-     * without forcing the caller to paginate. */
+     * without forcing the caller to paginate. Phase 3 Sprint 1 adds optional
+     * since/limit cursors so large audits can be walked page-by-page. */
     size_t auditSize = WT_TASK_LEDGER_LINE_SIZE * 64;
     char *body = malloc(auditSize);
     if (!body) {
@@ -1420,6 +1716,7 @@ static int sendInitiativeAuditJson(int clientFd, const WtConfig *config, const c
     }
     int rc = wtTaskProjectionReadInitiativeAuditJson(config->taskProjectionDbPath,
                                                     config->taskLedgerPath, initiativeId,
+                                                    sinceUnixMs, limit,
                                                     body, auditSize);
     if (rc < 0) {
         free(body);
@@ -1911,6 +2208,8 @@ static void handleClient(int clientFd, WtConfig *config) {
         sendCapacityJson(clientFd, config);
     } else if (strcmp(method, "GET") == 0 && strcmp(path, "/api/agents") == 0) {
         sendAgentsJson(clientFd, config);
+    } else if (strcmp(method, "GET") == 0 && strcmp(path, "/api/status") == 0) {
+        sendStatusJson(clientFd, config);
     } else if (strcmp(method, "GET") == 0 && strcmp(path, "/api/tokens") == 0) {
         sendTokenJson(clientFd, config);
     } else if (strcmp(method, "GET") == 0 && strcmp(path, "/api/config") == 0) {
@@ -1933,6 +2232,10 @@ static void handleClient(int clientFd, WtConfig *config) {
         handlePostAgentControl(clientFd, config, request);
     } else if (strcmp(method, "POST") == 0 && strcmp(path, "/api/task-reclaim") == 0) {
         handlePostTaskReclaim(clientFd, config, request);
+    } else if (strcmp(method, "POST") == 0 && strcmp(path, "/api/task-cancel") == 0) {
+        handlePostTaskCancel(clientFd, config, request);
+    } else if (strcmp(method, "POST") == 0 && strcmp(path, "/api/autonomy-revoke") == 0) {
+        handlePostAutonomyRevoke(clientFd, config, request);
     } else if (strcmp(method, "POST") == 0 && strcmp(path, "/api/task-artifact") == 0) {
         handlePostTaskArtifact(clientFd, config, request);
     } else if (strcmp(method, "GET") == 0 && strncmp(path, "/api/initiative-artifacts", 25) == 0) {
@@ -1952,7 +2255,17 @@ static void handleClient(int clientFd, WtConfig *config) {
             char *amp = strchr(initiativeId, '&');
             if (amp) *amp = '\0';
         }
-        sendInitiativeAuditJson(clientFd, config, initiativeId);
+        /* Phase 3 Sprint 1: pagination cursors. ?since=<ms> filters events,
+         * policy decisions, and usage records to createdAtUnixMs >= since.
+         * ?limit=<N> caps the combined event/policy/usage emission so very
+         * large initiatives can be walked page by page. */
+        long long sinceUnixMs = 0;
+        int limit = 0;
+        char *sinceText = strstr(path, "since=");
+        if (sinceText) sinceUnixMs = atoll(sinceText + 6);
+        char *limitText = strstr(path, "limit=");
+        if (limitText) limit = atoi(limitText + 6);
+        sendInitiativeAuditJson(clientFd, config, initiativeId, sinceUnixMs, limit);
     } else if (strcmp(method, "POST") == 0 && strcmp(path, "/api/config") == 0) {
         handlePostConfig(clientFd, config, request);
     } else if (strcmp(method, "GET") == 0 && strcmp(path, "/api/health") == 0) {

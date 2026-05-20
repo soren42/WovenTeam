@@ -6,8 +6,8 @@ ROOM_URL="${WT_ROOM_URL:-http://127.0.0.1:8787}"
 usage() {
     cat <<'USAGE'
 Usage:
-  wt-task create --title TITLE --body BODY --role ROLE [--agent AGENT] [--initiative INIT] [--priority P] [--model MODEL] [--tool-profile PROFILE] [--max-tokens N]
-  wt-task request --parent TASK_ID --by-role ROLE --role ROLE --title TITLE --body BODY [--by NAME] [--agent AGENT] [--initiative INIT] [--priority P] [--model MODEL] [--tool-profile PROFILE] [--max-tokens N]
+  wt-task create --title TITLE --body BODY --role ROLE [--agent AGENT] [--initiative INIT] [--priority P] [--model MODEL] [--tool-profile PROFILE] [--max-tokens N] [--autonomy-level LEVEL] [--autonomy-ttl SECONDS] [--autonomy-scope SCOPE]
+  wt-task request --parent TASK_ID --by-role ROLE --role ROLE --title TITLE --body BODY [--by NAME] [--agent AGENT] [--initiative INIT] [--priority P] [--model MODEL] [--tool-profile PROFILE] [--max-tokens N] [--autonomy-level LEVEL] [--autonomy-ttl SECONDS] [--autonomy-scope SCOPE]
   wt-task initiative create --title TITLE --body BODY [--id INIT] [--role ROLE] [--agent AGENT] [--max-tokens N]
   wt-task initiative list
   wt-task initiative show INIT
@@ -17,6 +17,7 @@ Usage:
   wt-task agent pause AGENT [--message TEXT]
   wt-task agent resume AGENT [--message TEXT]
   wt-task reclaim TASK_ID [--reason operator|lease_expired] [--message TEXT]
+  wt-task cancel-task TASK_ID [--reason TEXT] [--message TEXT]
   wt-task artifact promote TASK_ID [--path PATH] [--reviewer NAME] [--notes TEXT]
   wt-task artifact reject TASK_ID [--path PATH] [--reviewer NAME] [--notes TEXT]
   wt-task artifact review TASK_ID [--path PATH] [--reviewer NAME] [--notes TEXT]
@@ -25,6 +26,7 @@ Usage:
   wt-task artifact list INIT
   wt-task artifact export TASK_ID [--out FILE]
   wt-task audit INIT [--out FILE]
+  wt-task autonomy revoke TASK_ID [--reason TEXT]
   wt-task list
   wt-task show TASK_ID
   wt-task assign TASK_ID --agent AGENT [--status assigned]
@@ -78,6 +80,7 @@ cmd_create() {
     # who passes `--agent claude` without `--model` no longer ships an OpenAI
     # default that trips the policy model_agent_mismatch rule.
     local title="" body="" role="" agent="" initiative="" priority="normal" model="" tool_profile="observe" max_tokens="2000000"
+    local autonomy_level="" autonomy_ttl="0" autonomy_scope="" autonomy_network="none" autonomy_credential="none" autonomy_clean="0"
     while [[ $# -gt 0 ]]; do
         case "$1" in
             --title) title="${2:-}"; shift 2 ;;
@@ -89,6 +92,12 @@ cmd_create() {
             --model) model="${2:-}"; shift 2 ;;
             --tool-profile) tool_profile="${2:-}"; shift 2 ;;
             --max-tokens) max_tokens="${2:-}"; shift 2 ;;
+            --autonomy-level) autonomy_level="${2:-}"; shift 2 ;;
+            --autonomy-ttl) autonomy_ttl="${2:-}"; shift 2 ;;
+            --autonomy-scope) autonomy_scope="${2:-}"; shift 2 ;;
+            --autonomy-network) autonomy_network="${2:-}"; shift 2 ;;
+            --credential-class) autonomy_credential="${2:-}"; shift 2 ;;
+            --requires-clean-worktree) autonomy_clean="1"; shift ;;
             *) echo "wt-task create: unknown argument: $1" >&2; usage >&2; exit 2 ;;
         esac
     done
@@ -113,8 +122,14 @@ cmd_create() {
         --arg toolProfile "$tool_profile" \
         --arg title "$title" \
         --arg body "$body" \
+        --arg autonomyLevel "$autonomy_level" \
+        --arg autonomyScope "$autonomy_scope" \
+        --arg autonomyNetwork "$autonomy_network" \
+        --arg autonomyCredential "$autonomy_credential" \
         --argjson createdAtUnixMs "$created_at" \
         --argjson maxTokens "$max_tokens" \
+        --argjson autonomyTtl "$autonomy_ttl" \
+        --argjson autonomyClean "$autonomy_clean" \
         '{
           schema:"woventeam.task_package.v0.1",
           taskId:$taskId,
@@ -140,13 +155,27 @@ cmd_create() {
           budget:{timeoutSeconds:1800, maxOutputBytes:1048576, maxCostUsd:1.0, maxTokens:$maxTokens},
           dependencies:[],
           createdAtUnixMs:$createdAtUnixMs
-        }')"
+        }
+        + (if $autonomyLevel == "" then {} else {autonomyLevel:$autonomyLevel} end)
+        + (if $autonomyLevel == "" and $autonomyScope == "" and $autonomyTtl == 0 then {} else {
+            autonomyGrant:{
+              scope:$autonomyScope,
+              ttlSeconds:$autonomyTtl,
+              maxWallClockSeconds:1800,
+              maxCostUsd:1.0,
+              maxTokens:$maxTokens,
+              network:$autonomyNetwork,
+              credentialClass:$autonomyCredential,
+              requiresCleanWorktree:($autonomyClean != 0)
+            }
+          } end)')"
     http_post_json "/api/task-package" "$json"
 }
 
 cmd_request() {
     # Sprint 5: same blank-model default as cmd_create (see comment there).
     local parent="" by_role="" by="" role="" title="" body="" agent="" initiative="" priority="normal" model="" tool_profile="observe" max_tokens="2000000"
+    local autonomy_level="" autonomy_ttl="0" autonomy_scope="" autonomy_network="none" autonomy_credential="none" autonomy_clean="0"
     while [[ $# -gt 0 ]]; do
         case "$1" in
             --parent) parent="${2:-}"; shift 2 ;;
@@ -161,6 +190,12 @@ cmd_request() {
             --model) model="${2:-}"; shift 2 ;;
             --tool-profile) tool_profile="${2:-}"; shift 2 ;;
             --max-tokens) max_tokens="${2:-}"; shift 2 ;;
+            --autonomy-level) autonomy_level="${2:-}"; shift 2 ;;
+            --autonomy-ttl) autonomy_ttl="${2:-}"; shift 2 ;;
+            --autonomy-scope) autonomy_scope="${2:-}"; shift 2 ;;
+            --autonomy-network) autonomy_network="${2:-}"; shift 2 ;;
+            --credential-class) autonomy_credential="${2:-}"; shift 2 ;;
+            --requires-clean-worktree) autonomy_clean="1"; shift ;;
             *) echo "wt-task request: unknown argument: $1" >&2; usage >&2; exit 2 ;;
         esac
     done
@@ -187,8 +222,14 @@ cmd_request() {
         --arg toolProfile "$tool_profile" \
         --arg title "$title" \
         --arg body "$body" \
+        --arg autonomyLevel "$autonomy_level" \
+        --arg autonomyScope "$autonomy_scope" \
+        --arg autonomyNetwork "$autonomy_network" \
+        --arg autonomyCredential "$autonomy_credential" \
         --argjson createdAtUnixMs "$created_at" \
         --argjson maxTokens "$max_tokens" \
+        --argjson autonomyTtl "$autonomy_ttl" \
+        --argjson autonomyClean "$autonomy_clean" \
         '{
           schema:"woventeam.task_request.v0.1",
           taskId:$requestedTaskId,
@@ -205,7 +246,20 @@ cmd_request() {
           toolPolicy:{profile:$toolProfile},
           budget:{maxTokens:$maxTokens},
           createdAtUnixMs:$createdAtUnixMs
-        } + (if $assignedAgent == "" then {} else {assignedAgent:$assignedAgent} end)')"
+        }
+        + (if $assignedAgent == "" then {} else {assignedAgent:$assignedAgent} end)
+        + (if $autonomyLevel == "" then {} else {autonomyLevel:$autonomyLevel} end)
+        + (if $autonomyLevel == "" and $autonomyScope == "" and $autonomyTtl == 0 then {} else {
+            autonomyGrant:{
+              scope:$autonomyScope,
+              ttlSeconds:$autonomyTtl,
+              maxWallClockSeconds:1800,
+              maxTokens:$maxTokens,
+              network:$autonomyNetwork,
+              credentialClass:$autonomyCredential,
+              requiresCleanWorktree:($autonomyClean != 0)
+            }
+          } end)')"
     http_post_json "/api/task-request" "$json"
 }
 
@@ -448,6 +502,30 @@ cmd_artifact() {
     esac
 }
 
+# Phase 3 Sprint 1: cancel a running task. Distinct from the existing
+# `cancel` lifecycle verb (which sets task status=cancelled). cancel-task
+# instructs wt-agent to terminate the running adapter process group via the
+# new POST /api/task-cancel + kill_event ledger record.
+cmd_cancel_task() {
+    local task_id="${1:-}" reason="operator" message=""
+    shift || true
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --reason) reason="${2:-}"; shift 2 ;;
+            --message) message="${2:-}"; shift 2 ;;
+            *) echo "wt-task cancel-task: unknown argument: $1" >&2; usage >&2; exit 2 ;;
+        esac
+    done
+    if [[ -z "$task_id" ]]; then
+        echo "wt-task cancel-task: TASK_ID is required" >&2
+        exit 2
+    fi
+    [[ -n "$message" ]] || message="Cancel requested by wt-task ($reason)."
+    jq -cn --arg taskId "$task_id" --arg reason "$reason" --arg message "$message" \
+        '{taskId:$taskId,reason:$reason,message:$message,createdBy:"ceo"}' |
+      http_post_json "/api/task-cancel" "$(cat)"
+}
+
 # Sprint 5: audit export. Returns the combined initiative audit report from
 # /api/initiative-audit and streams to stdout (default) or --out FILE.
 cmd_audit() {
@@ -579,6 +657,32 @@ cmd_update_status() {
     http_post_json "/api/task-event" "$json"
 }
 
+cmd_autonomy() {
+    local sub="${1:-}"
+    shift || true
+    case "$sub" in
+        revoke)
+            local task_id="${1:-}" reason="operator autonomy revocation"
+            shift || true
+            while [[ $# -gt 0 ]]; do
+                case "$1" in
+                    --reason) reason="${2:-}"; shift 2 ;;
+                    *) echo "wt-task autonomy revoke: unknown argument: $1" >&2; usage >&2; exit 2 ;;
+                esac
+            done
+            if [[ -z "$task_id" ]]; then
+                echo "wt-task autonomy revoke: TASK_ID is required" >&2
+                exit 2
+            fi
+            local json
+            json="$(jq -cn --arg taskId "$task_id" --arg reason "$reason" \
+                '{taskId:$taskId,reason:$reason,createdBy:"ceo"}')"
+            http_post_json "/api/autonomy-revoke" "$json"
+            ;;
+        *) echo "wt-task autonomy: expected revoke" >&2; usage >&2; exit 2 ;;
+    esac
+}
+
 require_jq
 cmd="${1:-}"
 shift || true
@@ -592,8 +696,10 @@ case "$cmd" in
     assign) cmd_assign "$@" ;;
     update-status) cmd_update_status "$@" ;;
     reclaim) cmd_reclaim "$@" ;;
+    cancel-task) cmd_cancel_task "$@" ;;
     artifact) cmd_artifact "$@" ;;
     audit) cmd_audit "$@" ;;
+    autonomy) cmd_autonomy "$@" ;;
     retry) cmd_lifecycle queued "Task reopened for retry by wt-task." "$@" ;;
     cancel) cmd_lifecycle cancelled "Task cancelled by wt-task." "$@" ;;
     close) cmd_lifecycle closed "Task closed by wt-task." "$@" ;;

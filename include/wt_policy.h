@@ -38,6 +38,15 @@ typedef struct {
     const char *modelId;
     const char *toolProfile;
     const char *initiativeId;
+    const char *autonomyLevel;
+    const char *autonomyScope;
+    const char *autonomyNetwork;
+    const char *autonomyCredentialClass;
+    long autonomyTtlSeconds;
+    long autonomyMaxWallClockSeconds;
+    int autonomyRequiresCleanWorktree;
+    long long autonomyCreatedAtUnixMs;
+    long long autonomyRevokedAtUnixMs;
     long maxTokens;
     long long nowUnixMs;
     /* Pre-computed projection totals so the evaluator stays a pure function. */

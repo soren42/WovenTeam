@@ -59,6 +59,47 @@ typedef struct {
     char blockedVendors[WT_PATH_SIZE];
     long tokenBudgetPerInitiative;
     long tokenBudgetPerModelFamily;
+    /*
+     * Phase 3 Sprint 1 (runtime observability + control plane).
+     *   heartbeatIntervalSeconds   - wt-agent emits a woventeam.heartbeat.v0.1
+     *                                record this often. Default 7200 (2 h).
+     *   leaseRenewalIntervalSeconds - while an adapter is running, the agent
+     *                                appends a renewal lease event this often.
+     *                                Default 600 (10 min). The renewal advances
+     *                                leaseExpiresAtUnixMs but keeps lease owner
+     *                                and attempt number stable.
+     *   leaseDurationSeconds       - new lease + each renewal extends the
+     *                                expiry by this many seconds. Default 900
+     *                                (15 min, matching the prior hard-coded
+     *                                value).
+     *   cancelPollIntervalSeconds  - wt-agent polls the ledger for cancel
+     *                                events this often inside the adapter
+     *                                wait loop. Default 5.
+     *   slackWebhookFile           - path to the keyed Slack webhook file
+     *                                (KEY=URL, one per line). Defaults to
+     *                                config/slack_webhook.txt.
+     *   notificationEscalateKey    - webhook key used for escalate / kill /
+     *                                stuck events. Empty disables.
+     *   notificationStuckKey       - webhook key used for stuck-lease events.
+     *                                Falls back to notificationEscalateKey
+     *                                when empty.
+     */
+    int heartbeatIntervalSeconds;
+    int leaseRenewalIntervalSeconds;
+    int leaseDurationSeconds;
+    int cancelPollIntervalSeconds;
+    char slackWebhookFile[WT_PATH_SIZE];
+    char notificationEscalateKey[WT_NAME_SIZE];
+    char notificationStuckKey[WT_NAME_SIZE];
+    /*
+     * Phase 3 Sprint 2 autonomy defaults. Empty per-agent values mean derive
+     * from toolPolicy.profile; explicit values are observe, ask-each,
+     * ask-batch, or autonomous.
+     */
+    char defaultAutonomyLevel[WT_NAME_SIZE];
+    char claudeDefaultAutonomyLevel[WT_NAME_SIZE];
+    char chatgptDefaultAutonomyLevel[WT_NAME_SIZE];
+    char geminiDefaultAutonomyLevel[WT_NAME_SIZE];
 } WtConfig;
 
 void wtConfigInitDefaults(WtConfig *config);

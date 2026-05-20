@@ -89,6 +89,10 @@ The Phase 0 browser UI is `WovenTeam Console (Fullscreen)` served by
   surfaces the policy evaluator's classified reason code; each initiative
   card carries an Audit button that opens the combined audit JSON in a new
   tab.
+- Phase 3 Sprint 2 adds autonomy parity. The settings panel exposes global and
+  per-agent autonomy defaults, the composer can attach `autonomyLevel` plus a
+  bounded grant scope/TTL, task detail shows the current autonomy level, and
+  the Revoke Autonomy button calls `POST /api/autonomy-revoke`.
 
 ## Temporary Placeholders
 
@@ -121,6 +125,7 @@ The scaffold now binds to the task package and Phase 1 state paths:
 - `POST /api/agent-control`
 - `POST /api/task-reclaim`
 - `POST /api/task-artifact`
+- `POST /api/autonomy-revoke`
 - `GET /api/initiative-artifacts?initiativeId=...`
 - `GET /api/initiative-audit?initiativeId=...`
 

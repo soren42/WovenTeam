@@ -173,6 +173,61 @@
         }
       }
     },
+    "autonomyLevel": {
+      "type": "string",
+      "enum": ["observe", "ask-each", "ask-batch", "autonomous"],
+      "description": "Phase 3 v1.0 autonomy contract. If omitted, the daemon derives a default from toolPolicy.profile and per-agent config."
+    },
+    "autonomyGrant": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "scope": {
+          "type": "string",
+          "description": "Compact scope string. v1.0 recognizes workspace, adapter, or * as sufficient for elevated adapter invocation."
+        },
+        "ttlSeconds": {
+          "type": "integer",
+          "minimum": 0,
+          "default": 0
+        },
+        "maxWallClockSeconds": {
+          "type": "integer",
+          "minimum": 0,
+          "default": 0
+        },
+        "maxCostUsd": {
+          "type": "number",
+          "minimum": 0
+        },
+        "maxTokens": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "network": {
+          "type": "string",
+          "enum": ["none", "intranet", "allowlist"],
+          "default": "none"
+        },
+        "credentialClass": {
+          "type": "string",
+          "enum": ["none", "repo-read", "repo-write", "release"],
+          "default": "none"
+        },
+        "requiresCleanWorktree": {
+          "type": "boolean",
+          "default": false
+        },
+        "revokedAtUnixMs": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "revokedBy": {
+          "type": "string"
+        }
+      },
+      "description": "Bounded, revocable grant required before adapters receive elevated no-prompt permission flags."
+    },
     "budget": {
       "type": "object",
       "additionalProperties": false,
