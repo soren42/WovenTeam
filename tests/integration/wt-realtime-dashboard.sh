@@ -53,6 +53,8 @@ for _ in $(seq 1 50); do
   if curl -fsS "$ROOM_URL/api/health" >/dev/null 2>&1; then break; fi
   sleep 0.1
 done
+OPERATOR_SESSION="$(curl -fsS "$ROOM_URL/api/operator-session" | jq -r .operatorSession)"
+operator_header=(-H "X-WovenTeam-Operator-Session: $OPERATOR_SESSION")
 
 initiative="init_realtime"
 
@@ -64,20 +66,20 @@ task="$(jq -r '.taskId' <<<"$resp")"
 test "$task" != "null"
 
 # --- Case 1: priority change projects ---
-curl -fsS -H 'Content-Type: application/json' \
+curl -fsS -H 'Content-Type: application/json' "${operator_header[@]}" \
   -d "{\"taskId\":\"$task\",\"priority\":\"urgent\",\"createdBy\":\"ceo\"}" \
   "$ROOM_URL/api/task-priority" | jq -e '.ok == true' >/dev/null
 curl -fsS "$ROOM_URL/api/task-detail?taskId=$task" | jq -e '.task.priority == "urgent"' >/dev/null
 
 # --- Case 2: reroute projects assignedAgent + queued status ---
-curl -fsS -H 'Content-Type: application/json' \
+curl -fsS -H 'Content-Type: application/json' "${operator_header[@]}" \
   -d "{\"taskId\":\"$task\",\"assignedAgent\":\"gemini\",\"createdBy\":\"ceo\"}" \
   "$ROOM_URL/api/task-reroute" | jq -e '.ok == true' >/dev/null
 curl -fsS "$ROOM_URL/api/task-detail?taskId=$task" |
   jq -e '.task.assignedAgent == "gemini" and .task.status == "queued"' >/dev/null
 
 # --- Case 3: operator note appends a note task_event ---
-curl -fsS -H 'Content-Type: application/json' \
+curl -fsS -H 'Content-Type: application/json' "${operator_header[@]}" \
   -d "{\"taskId\":\"$task\",\"note\":\"Watch the lease on this one.\",\"createdBy\":\"ceo\"}" \
   "$ROOM_URL/api/task-note" | jq -e '.ok == true' >/dev/null
 grep -q '"eventType":"note"' "$TASK_LEDGER"
@@ -89,7 +91,7 @@ curl -sN --max-time 4 "$ROOM_URL/events" > "$TMPDIR/stream.txt" 2>/dev/null &
 SSE_PID=$!
 sleep 0.8
 # A second priority change is a cheap, deterministic ledger append.
-curl -fsS -H 'Content-Type: application/json' \
+curl -fsS -H 'Content-Type: application/json' "${operator_header[@]}" \
   -d "{\"taskId\":\"$task\",\"priority\":\"high\",\"createdBy\":\"ceo\"}" \
   "$ROOM_URL/api/task-priority" >/dev/null
 sleep 2

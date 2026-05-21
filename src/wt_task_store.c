@@ -249,7 +249,10 @@ int wtTaskFindClaimableForAgent(const char *ledgerPath, const char *agentName,
         if (stuck && tasks[index].executionHost[0] == '\0' && strcmp(ownerAgent[index], agentName) == 0) {
             /* Restore the package's rightful owner on the returned summary so the
              * caller sees a coherent assignedAgent for downstream lease events. */
-            snprintf(tasks[index].assignedAgent, sizeof(tasks[index].assignedAgent), "%s", ownerAgent[index]);
+            size_t len = strlen(ownerAgent[index]);
+            if (len >= sizeof(tasks[index].assignedAgent)) len = sizeof(tasks[index].assignedAgent) - 1;
+            memcpy(tasks[index].assignedAgent, ownerAgent[index], len);
+            tasks[index].assignedAgent[len] = '\0';
             *task = tasks[index];
             return 1;
         }

@@ -52,11 +52,13 @@ for _ in $(seq 1 50); do
   sleep 0.1
 done
 curl -fsS "$ROOM_URL/api/health" >/dev/null
+OPERATOR_SESSION="$(curl -fsS "$ROOM_URL/api/operator-session" | jq -r .operatorSession)"
+operator_header=(-H "X-WovenTeam-Operator-Session: $OPERATOR_SESSION")
 
 issue_token() {
   local role="$1"
   local subject="$2"
-  curl -fsS -H 'Content-Type: application/json' \
+  curl -fsS -H 'Content-Type: application/json' "${operator_header[@]}" \
     -d "{\"role\":\"$role\",\"subject\":\"$subject\",\"ttlSeconds\":60}" \
     "$ROOM_URL/api/auth-token"
 }
@@ -116,7 +118,7 @@ sleep 2
 curl -fsS "$ROOM_URL/api/task-detail?taskId=task_partition" |
   jq -e '.task.status == "complete" and .task.lastReclaimReason == "lease_expired" and ([.events[] | select(.eventType == "reclaim")] | length) == 1' >/dev/null
 
-curl -fsS -H 'Content-Type: application/json' \
+curl -fsS -H 'Content-Type: application/json' "${operator_header[@]}" \
   -d "{\"tokenId\":\"$claude_token_id\"}" "$ROOM_URL/api/auth-token/revoke" |
   jq -e '.ok == true and .status == "revoked"' >/dev/null
 if "$ROOT/build/wt-agent" --agent claude --once --remote "$ROOM_URL" --bearer "$claude_token" --host remote-a 2>"$TMPDIR/revoked.err"; then
@@ -139,5 +141,10 @@ status="$(curl -sS -o "$TMPDIR/anon.json" -w '%{http_code}' \
   "$ROOM_URL/api/remote-task-event")"
 test "$status" = "401"
 jq -e '.reason == "bearer_required"' "$TMPDIR/anon.json" >/dev/null
+if grep -q "$claude_token" "$LEDGER"; then
+  echo "raw bearer token leaked to ledger" >&2
+  exit 1
+fi
+grep -q '"tokenHash":"sha256:' "$LEDGER"
 
 echo "wt-remote-execution integration test passed"

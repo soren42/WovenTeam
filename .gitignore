@@ -16,6 +16,8 @@ data/*.state
 data/*.sqlite
 data/*.sqlite-*
 data/task-packages.jsonl
+# Phase 3 Sprint 6: operator session secret — runtime-generated, never commit.
+data/*.token
 config/woventeam-phase0.conf
 
 # Local private analysis artifacts must remain outside this repository.

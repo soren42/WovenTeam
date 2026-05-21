@@ -17,6 +17,8 @@ COMMON_OBJS := \
 	$(BUILD_DIR)/wt_json.o \
 	$(BUILD_DIR)/wt_message.o \
 	$(BUILD_DIR)/wt_room_store.o \
+	$(BUILD_DIR)/wt_security.o \
+	$(BUILD_DIR)/wt_system.o \
 	$(BUILD_DIR)/wt_task_store.o \
 	$(BUILD_DIR)/wt_time.o
 
@@ -32,9 +34,14 @@ NOTIFY_OBJS := $(BUILD_DIR)/wt_notify.o
 # the ship endpoint is daemon-side; the CLI talks to it over HTTP.
 DELIVERABLE_OBJS := $(BUILD_DIR)/wt_deliverable.o
 
-.PHONY: all clean run-roomd run-demo harness-check test-smoke test-harness-check test-task-assignment test-codex-adapter test-cli-artifact-adapter test-artifact-viewer test-artifact-promotion test-adapter-capabilities test-adapter-preflight test-initiatives test-agent-workload-control test-autonomy test-observability test-deliverables test-remote-execution test-realtime-dashboard test-routing-gates test-manager-subtasks test-token-config test-task-projection test-quotas-ops test-policy-audit test-phase1-e2e test-phase2-e2e test install-roomd-service install-agent-services
+.PHONY: all clean dist-tarball run-roomd run-demo harness-check test-smoke test-harness-check test-task-assignment test-codex-adapter test-cli-artifact-adapter test-artifact-viewer test-artifact-promotion test-adapter-capabilities test-adapter-preflight test-initiatives test-agent-workload-control test-autonomy test-observability test-deliverables test-remote-execution test-realtime-dashboard test-release-hardening test-routing-gates test-manager-subtasks test-token-config test-task-projection test-quotas-ops test-policy-audit test-phase1-e2e test-phase2-e2e test install-roomd-service install-agent-services
 
 all: $(BUILD_DIR)/wt-roomd $(BUILD_DIR)/wt-say $(BUILD_DIR)/wt-tail $(BUILD_DIR)/wt-agent
+
+dist-tarball:
+	mkdir -p dist
+	git archive --format=tar.gz --prefix=WovenTeam/ -o dist/woventeam-$$(git rev-parse --short HEAD).tar.gz HEAD
+	@echo dist/woventeam-$$(git rev-parse --short HEAD).tar.gz
 
 $(BUILD_DIR):
 	mkdir -p $(BUILD_DIR)
@@ -116,6 +123,9 @@ test-remote-execution: all
 test-realtime-dashboard: all
 	./tests/integration/wt-realtime-dashboard.sh
 
+test-release-hardening: all
+	./tests/integration/wt-release-hardening.sh
+
 test-routing-gates: all
 	./tests/integration/wt-routing-gates.sh
 
@@ -140,7 +150,7 @@ test-phase1-e2e: all
 test-phase2-e2e: all
 	./tests/integration/wt-phase2-e2e.sh
 
-test: test-smoke test-harness-check test-task-assignment test-codex-adapter test-cli-artifact-adapter test-artifact-viewer test-artifact-promotion test-adapter-capabilities test-adapter-preflight test-initiatives test-agent-workload-control test-autonomy test-observability test-deliverables test-remote-execution test-realtime-dashboard test-routing-gates test-manager-subtasks test-token-config test-task-projection test-quotas-ops test-policy-audit test-phase1-e2e test-phase2-e2e
+test: test-smoke test-harness-check test-task-assignment test-codex-adapter test-cli-artifact-adapter test-artifact-viewer test-artifact-promotion test-adapter-capabilities test-adapter-preflight test-initiatives test-agent-workload-control test-autonomy test-observability test-deliverables test-remote-execution test-realtime-dashboard test-release-hardening test-routing-gates test-manager-subtasks test-token-config test-task-projection test-quotas-ops test-policy-audit test-phase1-e2e test-phase2-e2e
 
 install-roomd-service: all
 	sudo install -m 0644 deploy/systemd/wt-roomd.service /etc/systemd/system/

@@ -13,6 +13,8 @@
 #include "wt_deliverable.h"
 
 #include "wt_json.h"
+#include "wt_security.h"
+#include "wt_system.h"
 #include "wt_task_store.h"
 #include "wt_time.h"
 
@@ -40,26 +42,6 @@ typedef struct {
 } WtPattern;
 
 static long long nowMs(void) { return wtNowUnixMilliseconds(); }
-
-/*
- * The daemon installs SIGCHLD=SIG_IGN which makes system() return -1 even on
- * success because the child is auto-reaped before glibc can wait4() on it.
- * For deliverable shell-outs we need a reliable exit code, so this wrapper
- * temporarily restores SIG_DFL around the call. Adapter-side child management
- * elsewhere in the daemon explicitly waits with waitpid, so the SIG_IGN
- * default still serves its purpose for those code paths.
- */
-static int systemReliable(const char *cmd) {
-    struct sigaction prev;
-    struct sigaction dfl;
-    memset(&dfl, 0, sizeof(dfl));
-    dfl.sa_handler = SIG_DFL;
-    sigemptyset(&dfl.sa_mask);
-    sigaction(SIGCHLD, &dfl, &prev);
-    int rc = system(cmd);
-    sigaction(SIGCHLD, &prev, NULL);
-    return rc;
-}
 
 static void copyStringSafe(char *dst, size_t dstSize, const char *src) {
     if (!dst || dstSize == 0) return;
@@ -162,7 +144,7 @@ int wtDeliverableSha256(const char *path, char *hexOut, size_t hexOutSize,
     close(tmpFd);
     char cmd[WT_DELIVERABLE_PATH_SIZE + 128];
     snprintf(cmd, sizeof(cmd), "sha256sum '%s' > %s 2>/dev/null", path, tmpPath);
-    int sysRc = systemReliable(cmd);
+    int sysRc = wtSystemReliable(cmd);
     if (sysRc != 0) {
         unlink(tmpPath);
         return -1;
@@ -496,11 +478,11 @@ static int shipTarball(const WtConfig *config, const WtDeliverableRequest *req,
         parent = srcCopy;
         entry = slash + 1;
     }
-    char cmd[1024];
+    char cmd[4096];
     snprintf(cmd, sizeof(cmd),
              "tar -czf '%s' -C '%s' '%s' 2>/dev/null",
              res->deliverablePath, parent, entry);
-    if (systemReliable(cmd) != 0) {
+    if (wtSystemReliable(cmd) != 0) {
         setError(res, "tar_failed");
         return -1;
     }
@@ -516,7 +498,7 @@ static int runIn(const char *dir, const char *cmd) {
     snprintf(wrapped, sizeof(wrapped),
              "cd '%s' && %s",
              dir ? dir : ".", cmd);
-    return systemReliable(wrapped);
+    return wtSystemReliable(wrapped);
 }
 
 static int shipBranch(const WtConfig *config, const WtDeliverableRequest *req,

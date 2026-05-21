@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>WovenTeam Phase 3 Sprint 6 Hardening Closeout</title>
+  <style>
+    body{margin:0;font:15px/1.5 system-ui,-apple-system,Segoe UI,sans-serif;background:#f7f8fa;color:#17202a}
+    header{background:#101820;color:#fff;padding:32px 40px}
+    main{max-width:1100px;margin:0 auto;padding:28px 24px 48px}
+    h1,h2,h3{margin:0 0 10px} h1{font-size:32px} h2{margin-top:28px;border-bottom:1px solid #d9dee5;padding-bottom:6px}
+    .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px}
+    .card{background:#fff;border:1px solid #dfe4ea;border-radius:8px;padding:16px}
+    .pass{color:#0f6b3a;font-weight:700}.warn{color:#8a5b00;font-weight:700}
+    code{background:#eef1f5;padding:2px 5px;border-radius:4px}
+    table{width:100%;border-collapse:collapse;background:#fff;border:1px solid #dfe4ea}
+    th,td{padding:10px;border-bottom:1px solid #e8ecf1;text-align:left;vertical-align:top}
+    th{background:#eef1f5}.muted{color:#667085}
+  </style>
+</head>
+<body>
+  <header>
+    <p>Generated 2026-05-21 UTC</p>
+    <h1>Phase 3 Sprint 6: Release Hardening Rehearsal</h1>
+    <p>Final hardening pass before Sprint 7 self-improvement demo and v1.0 tag.</p>
+  </header>
+  <main>
+    <section>
+      <h2>Signoff Summary</h2>
+      <div class="grid">
+        <article class="card"><h3>Backup / Replay / Restore</h3><p class="pass">Pass</p><p><code>tests/integration/wt-release-hardening.sh</code> deletes the SQLite projection, replays <code>data/task-packages.jsonl</code> through the daemon, and byte-compares normalized status, audit, and deliverable baselines.</p></article>
+        <article class="card"><h3>Operator Auth</h3><p class="pass">Pass</p><p>Loopback TCP is no longer sufficient for mutating operator endpoints. Local browser and CLI calls now mint and send an explicit operator session from <code>/api/operator-session</code>.</p></article>
+        <article class="card"><h3>Threat Model</h3><p class="pass">Signed Off</p><p><code>docs/security/threat-model.html</code> is current for single-tenant intranet operation, mTLS before cross-network exposure, operator auth on mutation, and out-of-scope items.</p></article>
+        <article class="card"><h3>Install Rehearsal</h3><p class="warn">Documented</p><p><code>make dist-tarball</code> and the README cold-install section define the 30-minute operator path. Manual browser smoke is part of that path.</p></article>
+      </div>
+    </section>
+    <section>
+      <h2>Failure Injection Matrix</h2>
+      <table>
+        <tr><th>Scenario</th><th>Coverage</th><th>Recovery Path</th></tr>
+        <tr><td>Daemon restart</td><td>Runbook: restart <code>wt-roomd</code>, reload <code>/api/health</code>, then read task detail to force projection rebuild.</td><td>SQLite is rebuildable from JSONL; restart has no durable state loss.</td></tr>
+        <tr><td>Agent restart</td><td>Existing workload-control tests plus Sprint 6 adapter redaction test run <code>wt-agent --once</code> against queued work.</td><td>Lease/reclaim records classify retry cause; operator can reclaim or rerun agent.</td></tr>
+        <tr><td>Remote partition</td><td><code>wt-remote-execution.sh</code> leases a remote task, lets lease expire, then verifies <code>lease_expired</code> reclaim.</td><td>Expired lease returns work to the rightful owner without remote mutable state.</td></tr>
+        <tr><td>Expired token</td><td>Sprint 6 hardening test issues a 1-second token and verifies <code>token_expired</code>.</td><td>Operator issues a fresh token or revokes stale token IDs.</td></tr>
+        <tr><td>Full deliverable root</td><td>Runbook step: make deliverable root unwritable or mount a full tmpfs; ship should classify <code>deliverable_root_unwritable</code> or copy/tar failure.</td><td>Free space or repoint <code>deliverableRoot</code>, then retry ship.</td></tr>
+        <tr><td>Corrupted JSONL line</td><td>Sprint 6 hardening test appends a malformed line and verifies audit read remains available.</td><td>Preserve the ledger, append corrective records, and rebuild projection.</td></tr>
+        <tr><td>Oversized audit response</td><td>Sprint 6 hardening test appends a large audit note and verifies initiative audit still returns JSON.</td><td>Use initiative-scoped audit export; future pagination remains a v1.x hardening item.</td></tr>
+      </table>
+    </section>
+    <section>
+      <h2>Secret Handling</h2>
+      <p>Auth-token ledger records now store <code>tokenHash</code> and <code>tokenPreview</code>, not raw bearer tokens. Notification payloads and adapter stdout/stderr/result files are redacted at source before durable workspace artifacts are written. Sprint 3 pre-ship secret scanning remains active for deliverable promotion.</p>
+    </section>
+    <section>
+      <h2>Browser Smoke</h2>
+      <p>The install rehearsal README now requires a local browser pass over the board, priority controls, task detail panel, notes, and composer focus. Automated coverage verifies the same mutating endpoints and SSE ledger stream. This workstation did not have a browser automation binary available, so the live click-through remains the documented operator step on the release candidate host.</p>
+    </section>
+    <section>
+      <h2>Verification Commands</h2>
+      <p><code>make clean &amp;&amp; make</code> completed warning-free after fixing two truncation warnings. Targeted checks passed for <code>make test-release-hardening</code>, <code>make test-remote-execution</code>, and <code>make test-realtime-dashboard</code>. Full <code>make test</code> is the final gate before PR.</p>
+    </section>
+  </main>
+</body>
+</html>

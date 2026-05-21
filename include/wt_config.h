@@ -140,6 +140,7 @@ typedef struct {
      */
     char remoteAllowedIps[WT_PATH_SIZE];
     int authTokenDefaultTtlSeconds;
+    char operatorSessionPath[WT_PATH_SIZE];
 } WtConfig;
 
 void wtConfigInitDefaults(WtConfig *config);
