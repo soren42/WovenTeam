@@ -26,6 +26,48 @@ make clean
 make
 ```
 
+## Cold Install From Release Tarball
+
+These steps are the Sprint 6 operator rehearsal path. They assume a fresh
+GNU/Linux host with `cc`, `make`, `sqlite3` development headers, `curl`, `jq`,
+`tar`, `gzip`, and `git` available from the system package manager.
+
+On the build host, create the release archive:
+
+```sh
+make clean
+make
+make dist-tarball
+```
+
+Copy `dist/woventeam-<commit>.tar.gz` to the target host, then install and test:
+
+```sh
+mkdir -p ~/woventeam-install
+tar -xzf woventeam-<commit>.tar.gz -C ~/woventeam-install
+cd ~/woventeam-install/WovenTeam
+make clean
+make
+make test
+cp config/woventeam-phase0.conf.example config/woventeam-phase0.conf
+./build/wt-roomd --config config/woventeam-phase0.conf
+```
+
+In separate terminals, run the local walkthrough:
+
+```sh
+./build/wt-agent --agent claude --loop
+./build/wt-agent --agent chatgpt --loop
+./build/wt-agent --agent gemini --loop
+./bin/wt-task create --title "Cold install smoke" --body "Claim and complete this task." --role backend_dev --agent chatgpt --max-tokens 1000
+./bin/wt-task list
+```
+
+Open `http://127.0.0.1:8787/` in a browser on the host and smoke-test the task
+board, priority buttons, task detail panel, notes, and keyboard focus in the
+composer. A cold install is expected to complete within 30 minutes when the
+package prerequisites are already installed.
+
 Create local config and start the room daemon:
 
 ```sh

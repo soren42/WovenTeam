@@ -99,6 +99,7 @@ void wtConfigInitDefaults(WtConfig *config) {
                "config/secret-scan-patterns.txt");
     copyString(config->remoteAllowedIps, sizeof(config->remoteAllowedIps), "127.0.0.1,::1");
     config->authTokenDefaultTtlSeconds = 3600;
+    copyString(config->operatorSessionPath, sizeof(config->operatorSessionPath), "data/operator-session.token");
 }
 
 int wtConfigSetValue(WtConfig *config, const char *key, const char *value) {
@@ -202,6 +203,8 @@ int wtConfigSetValue(WtConfig *config, const char *key, const char *value) {
         copyString(config->remoteAllowedIps, sizeof(config->remoteAllowedIps), value);
     } else if (strcmp(key, "authTokenDefaultTtlSeconds") == 0) {
         config->authTokenDefaultTtlSeconds = atoi(value);
+    } else if (strcmp(key, "operatorSessionPath") == 0) {
+        copyString(config->operatorSessionPath, sizeof(config->operatorSessionPath), value);
     } else {
         return -1;
     }
@@ -290,7 +293,8 @@ int wtConfigWriteFile(const WtConfig *config, const char *path) {
         "deliverableBranchPrefix=%s\n"
         "secretScanPatternsFile=%s\n"
         "remoteAllowedIps=%s\n"
-        "authTokenDefaultTtlSeconds=%d\n",
+        "authTokenDefaultTtlSeconds=%d\n"
+        "operatorSessionPath=%s\n",
         config->roomName,
         config->roomLogPath,
         config->taskLedgerPath,
@@ -340,7 +344,8 @@ int wtConfigWriteFile(const WtConfig *config, const char *path) {
         config->deliverableBranchPrefix,
         config->secretScanPatternsFile,
         config->remoteAllowedIps,
-        config->authTokenDefaultTtlSeconds) > 0;
+        config->authTokenDefaultTtlSeconds,
+        config->operatorSessionPath) > 0;
     return fclose(file) == 0 && ok ? 0 : -1;
 }
 
@@ -398,4 +403,5 @@ void wtConfigApplyEnvironment(WtConfig *config) {
     if ((value = getenv("WT_SECRET_SCAN_PATTERNS_FILE"))) wtConfigSetValue(config, "secretScanPatternsFile", value);
     if ((value = getenv("WT_REMOTE_ALLOWED_IPS"))) wtConfigSetValue(config, "remoteAllowedIps", value);
     if ((value = getenv("WT_AUTH_TOKEN_DEFAULT_TTL_SECONDS"))) wtConfigSetValue(config, "authTokenDefaultTtlSeconds", value);
+    if ((value = getenv("WT_OPERATOR_SESSION_PATH"))) wtConfigSetValue(config, "operatorSessionPath", value);
 }

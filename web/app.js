@@ -15,6 +15,36 @@ const settingsPanel = document.querySelector("#settingsPanel");
 const settingsForm = document.querySelector("#settingsForm");
 const taskDetail = document.querySelector("#taskDetail");
 const seen = new Set();
+const nativeFetch = window.fetch.bind(window);
+let operatorSession = "";
+
+async function ensureOperatorSession() {
+  if (operatorSession) return operatorSession;
+  try {
+    const response = await nativeFetch("/api/operator-session");
+    if (response.ok) {
+      const payload = await response.json();
+      operatorSession = payload.operatorSession || "";
+    }
+  } catch (_) {
+    operatorSession = "";
+  }
+  return operatorSession;
+}
+
+window.fetch = async (resource, options = {}) => {
+  const method = String(options.method || "GET").toUpperCase();
+  const url = typeof resource === "string" ? resource : resource.url;
+  if (method !== "GET" && url && url.startsWith("/api/")) {
+    const session = await ensureOperatorSession();
+    if (session) {
+      const headers = new Headers(options.headers || {});
+      headers.set("X-WovenTeam-Operator-Session", session);
+      options = {...options, headers};
+    }
+  }
+  return nativeFetch(resource, options);
+};
 
 const roles = [
   ["pgm", "program_manager", "Program Manager", "PGM", 200, "claude"],

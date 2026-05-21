@@ -3,6 +3,8 @@
  */
 #include "wt_notify.h"
 #include "wt_json.h"
+#include "wt_security.h"
+#include "wt_system.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -80,8 +82,12 @@ int wtNotifySend(const WtConfig *config, const char *key,
      */
     char combined[2048];
     snprintf(combined, sizeof(combined), "%s — %s", title, message);
+    char redacted[2048];
+    if (wtRedactSecrets(combined, redacted, sizeof(redacted)) != 0) {
+        snprintf(redacted, sizeof(redacted), "%s", "[redacted]");
+    }
     char escaped[4096];
-    if (wtJsonEscape(combined, escaped, sizeof(escaped)) != 0) {
+    if (wtJsonEscape(redacted, escaped, sizeof(escaped)) != 0) {
         return -1;
     }
     /* Write the body to a tmp file so the JSON does not have to survive
@@ -105,7 +111,7 @@ int wtNotifySend(const WtConfig *config, const char *key,
              "curl -sS --max-time 5 -X POST -H 'Content-Type: application/json' "
              "-d @%s '%s' >/dev/null 2>&1",
              tmpPath, url);
-    int rc = system(cmd);
+    int rc = wtSystemReliable(cmd);
     unlink(tmpPath);
     return rc == 0 ? 0 : -1;
 }

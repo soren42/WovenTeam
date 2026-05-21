@@ -269,9 +269,9 @@
           <p>Internet-exposed daemon operation remains out of scope without mTLS or a reverse proxy.</p>
         </article>
         <article class="card risk">
-          <span class="status"><span class="dot"></span>Deferred</span>
+          <span class="status"><span class="dot"></span>Active</span>
           <h3>Secret Storage Hardening</h3>
-          <p>Token material is still stored in the JSONL ledger. The follow-up is to store token hashes only.</p>
+          <p>Sprint 6 stopped writing raw bearer tokens to the JSONL ledger. Token issuance records now store hashed token material plus a redacted preview; the plaintext token is returned only in the issuance response.</p>
         </article>
         <article class="card risk">
           <span class="status"><span class="dot"></span>Deferred</span>
@@ -285,11 +285,11 @@
       <h2>Required Hardening Before Cross-Network Use</h2>
       <ul>
         <li>Put <code>wt-roomd</code> behind mTLS or add native TLS client certificate validation.</li>
-        <li>Move token secrets out of the audit ledger, storing only hashed token material.</li>
-        <li>Replace loopback TCP operator bypass with a Unix-domain socket or explicit local operator session.</li>
+        <li>Keep the Sprint 6 explicit local operator session path enabled for browser and CLI mutation. Loopback TCP alone no longer grants operator authority.</li>
+        <li>Keep redaction-at-source in place for notification payloads and adapter workspace emissions before artifacts are written.</li>
         <li>Add per-role token issuance policy so remote agents cannot request operator-class tokens through local bootstrap paths.</li>
       </ul>
-      <p class="muted">The current acceptance test remains loopback-based on hosts that reject unprivileged network namespaces; a privileged run should repeat the same assertions across container or netns boundaries.</p>
+      <p class="muted">Sprint 6 signoff status: current for the single-tenant intranet assumption, operator-auth assumption on mutating endpoints, mTLS bar for cross-network use, and explicit out-of-scope list. The current acceptance test remains loopback-based on hosts that reject unprivileged network namespaces; a privileged run should repeat the same assertions across container or netns boundaries.</p>
     </section>
   </main>
 </body>

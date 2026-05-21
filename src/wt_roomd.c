@@ -14,6 +14,7 @@
 #include "wt_notify.h"
 #include "wt_policy.h"
 #include "wt_room_store.h"
+#include "wt_security.h"
 #include "wt_task_projection.h"
 #include "wt_task_store.h"
 #include "wt_time.h"
@@ -39,6 +40,7 @@ static int rebuildProjection(const WtConfig *config);
 static int readHostProfiles(const WtConfig *config, const char *host, const char *agent,
                             char *profiles, size_t profilesSize);
 static int profileInList(const char *profiles, const char *profile);
+static void makeToken(char *token, size_t tokenSize, char *tokenId, size_t tokenIdSize);
 
 typedef struct {
     char role[32];
@@ -224,6 +226,66 @@ static int peerIsLocal(const char *peerIp) {
     return peerIp && (strcmp(peerIp, "127.0.0.1") == 0 || strcmp(peerIp, "::1") == 0);
 }
 
+static int readFileToken(const char *path, char *token, size_t tokenSize) {
+    if (tokenSize > 0) token[0] = '\0';
+    FILE *file = fopen(path, "r");
+    if (!file) return -1;
+    if (!fgets(token, (int)tokenSize, file)) {
+        fclose(file);
+        return -1;
+    }
+    fclose(file);
+    size_t len = strlen(token);
+    while (len > 0 && (token[len - 1] == '\n' || token[len - 1] == '\r' ||
+                       token[len - 1] == ' ' || token[len - 1] == '\t')) {
+        token[--len] = '\0';
+    }
+    return token[0] ? 0 : -1;
+}
+
+static int ensureOperatorSession(const WtConfig *config, char *token, size_t tokenSize) {
+    if (readFileToken(config->operatorSessionPath, token, tokenSize) == 0) return 0;
+    char tokenId[64];
+    makeToken(token, tokenSize, tokenId, sizeof(tokenId));
+    char pathCopy[WT_PATH_SIZE];
+    snprintf(pathCopy, sizeof(pathCopy), "%s", config->operatorSessionPath);
+    char *slash = strrchr(pathCopy, '/');
+    if (slash) {
+        *slash = '\0';
+        if (pathCopy[0]) mkdir(pathCopy, 0700);
+    }
+    int fd = open(config->operatorSessionPath, O_WRONLY | O_CREAT | O_TRUNC, 0600);
+    if (fd < 0) return -1;
+    dprintf(fd, "%s\n", token);
+    close(fd);
+    return 0;
+}
+
+static int extractOperatorSession(const char *request, char *token, size_t tokenSize) {
+    if (requestHeaderValue(request, "X-WovenTeam-Operator-Session", token, tokenSize) == 0 && token[0]) {
+        return 0;
+    }
+    char cookie[1024];
+    if (requestHeaderValue(request, "Cookie", cookie, sizeof(cookie)) != 0) return -1;
+    const char *needle = "wt_operator_session=";
+    char *found = strstr(cookie, needle);
+    if (!found) return -1;
+    found += strlen(needle);
+    size_t len = strcspn(found, "; \t\r\n");
+    if (len >= tokenSize) len = tokenSize - 1;
+    memcpy(token, found, len);
+    token[len] = '\0';
+    return token[0] ? 0 : -1;
+}
+
+static int validateOperatorSession(const WtConfig *config, const char *request) {
+    char expected[512];
+    char presented[512];
+    if (readFileToken(config->operatorSessionPath, expected, sizeof(expected)) != 0) return 0;
+    if (extractOperatorSession(request, presented, sizeof(presented)) != 0) return 0;
+    return strcmp(expected, presented) == 0;
+}
+
 static int ipAllowedByConfig(const WtConfig *config, const char *peerIp) {
     if (!peerIp || !peerIp[0]) return 0;
     char copy[WT_PATH_SIZE];
@@ -299,9 +361,25 @@ static int validateBearerToken(const WtConfig *config, const char *request, cons
         char eventType[32];
         char lineToken[256];
         if (wtJsonReadString(line, "eventType", eventType, sizeof(eventType)) != 0 ||
-            strcmp(eventType, "issue") != 0 ||
-            wtJsonReadString(line, "token", lineToken, sizeof(lineToken)) != 0 ||
-            strcmp(lineToken, token) != 0) {
+            strcmp(eventType, "issue") != 0) {
+            continue;
+        }
+        char lineTokenHash[128];
+        char presentedHash[128];
+        lineTokenHash[0] = '\0';
+        lineToken[0] = '\0';
+        wtJsonReadString(line, "tokenHash", lineTokenHash, sizeof(lineTokenHash));
+        wtJsonReadString(line, "token", lineToken, sizeof(lineToken));
+        wtTokenHash(token, presentedHash, sizeof(presentedHash));
+        if (lineTokenHash[0]) {
+            if (strcmp(lineTokenHash, presentedHash) != 0) {
+                continue;
+            }
+        } else if (lineToken[0]) {
+            if (strcmp(lineToken, token) != 0) {
+                continue;
+            }
+        } else {
             continue;
         }
         wtJsonReadString(line, "role", auth->role, sizeof(auth->role));
@@ -334,7 +412,7 @@ static int validateBearerToken(const WtConfig *config, const char *request, cons
 }
 
 static int requireOperatorAuth(int clientFd, const WtConfig *config, const char *request, const char *peerIp) {
-    if (peerIsLocal(peerIp)) return 1;
+    if (validateOperatorSession(config, request)) return 1;
     WtAuthContext auth;
     if (validateBearerToken(config, request, peerIp, "operator", &auth)) return 1;
     char response[256];
@@ -2036,8 +2114,12 @@ static int handlePostAuthToken(int clientFd, const WtConfig *config, const char 
     char token[512];
     char tokenId[64];
     makeToken(token, sizeof(token), tokenId, sizeof(tokenId));
-    char escapedToken[512], escapedTokenId[128], escapedRole[64], escapedSubject[WT_TASK_AGENT_SIZE * 2];
-    if (wtJsonEscape(token, escapedToken, sizeof(escapedToken)) != 0 ||
+    char tokenHash[128], tokenPreview[64];
+    wtTokenHash(token, tokenHash, sizeof(tokenHash));
+    wtTokenPreview(token, tokenPreview, sizeof(tokenPreview));
+    char escapedTokenHash[256], escapedTokenPreview[128], escapedTokenId[128], escapedRole[64], escapedSubject[WT_TASK_AGENT_SIZE * 2];
+    if (wtJsonEscape(tokenHash, escapedTokenHash, sizeof(escapedTokenHash)) != 0 ||
+        wtJsonEscape(tokenPreview, escapedTokenPreview, sizeof(escapedTokenPreview)) != 0 ||
         wtJsonEscape(tokenId, escapedTokenId, sizeof(escapedTokenId)) != 0 ||
         wtJsonEscape(role, escapedRole, sizeof(escapedRole)) != 0 ||
         wtJsonEscape(subject, escapedSubject, sizeof(escapedSubject)) != 0) {
@@ -2048,10 +2130,11 @@ static int handlePostAuthToken(int clientFd, const WtConfig *config, const char 
     char record[2048];
     snprintf(record, sizeof(record),
              "{\"schema\":\"woventeam.auth_token.v0.1\",\"eventType\":\"issue\","
-             "\"tokenId\":\"%s\",\"token\":\"%s\",\"role\":\"%s\",\"subject\":\"%s\","
+             "\"tokenId\":\"%s\",\"tokenHash\":\"%s\",\"tokenPreview\":\"%s\","
+             "\"role\":\"%s\",\"subject\":\"%s\","
              "\"issuedAtUnixMs\":%lld,\"ttlSeconds\":%ld,\"createdBy\":\"operator\","
              "\"createdAtUnixMs\":%lld}",
-             escapedTokenId, escapedToken, escapedRole, escapedSubject, issuedAt,
+             escapedTokenId, escapedTokenHash, escapedTokenPreview, escapedRole, escapedSubject, issuedAt,
              ttlSeconds, issuedAt);
     if (wtTaskAppendRecord(config->taskLedgerPath, record, config->fsyncEachMessage) != 0) {
         return wtHttpSendText(clientFd, 500, "Internal Server Error", "application/json",
@@ -2063,6 +2146,26 @@ static int handlePostAuthToken(int clientFd, const WtConfig *config, const char 
              "\"subject\":\"%s\",\"issuedAtUnixMs\":%lld,\"ttlSeconds\":%ld}\n",
              tokenId, token, role, subject, issuedAt, ttlSeconds);
     return wtHttpSendText(clientFd, 200, "OK", "application/json; charset=utf-8", response);
+}
+
+static int handleGetOperatorSession(int clientFd, const WtConfig *config, const char *peerIp) {
+    if (!peerIsLocal(peerIp)) {
+        return wtHttpSendText(clientFd, 403, "Forbidden", "application/json; charset=utf-8",
+                              "{\"ok\":false,\"error\":\"local_origin_required\"}\n");
+    }
+    char token[512];
+    if (ensureOperatorSession(config, token, sizeof(token)) != 0) {
+        return wtHttpSendText(clientFd, 500, "Internal Server Error", "application/json; charset=utf-8",
+                              "{\"ok\":false,\"error\":\"operator_session_unavailable\"}\n");
+    }
+    char escaped[1024];
+    if (wtJsonEscape(token, escaped, sizeof(escaped)) != 0) {
+        return wtHttpSendText(clientFd, 500, "Internal Server Error", "application/json; charset=utf-8",
+                              "{\"ok\":false,\"error\":\"operator_session_encode_failed\"}\n");
+    }
+    char body[1400];
+    snprintf(body, sizeof(body), "{\"ok\":true,\"operatorSession\":\"%s\"}\n", escaped);
+    return wtHttpSendText(clientFd, 200, "OK", "application/json; charset=utf-8", body);
 }
 
 static int handlePostAuthTokenRevoke(int clientFd, const WtConfig *config, const char *request) {
@@ -3115,6 +3218,8 @@ static void handleClient(int clientFd, WtConfig *config, const char *peerIp) {
         sendConfigJson(clientFd, config);
     } else if (strcmp(method, "GET") == 0 && strcmp(path, "/api/adapters") == 0) {
         sendAdaptersJson(clientFd, config);
+    } else if (strcmp(method, "GET") == 0 && strcmp(path, "/api/operator-session") == 0) {
+        handleGetOperatorSession(clientFd, config, peerIp);
     } else if (strcmp(method, "POST") == 0 && strcmp(path, "/api/message") == 0) {
         handlePostMessage(clientFd, config, request);
     } else if (strcmp(method, "POST") == 0 && strcmp(path, "/api/task-package") == 0) {

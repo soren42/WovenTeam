@@ -9,6 +9,7 @@
 #include "wt_json.h"
 #include "wt_message.h"
 #include "wt_room_store.h"
+#include "wt_security.h"
 #include "wt_task_store.h"
 
 #include <ctype.h>
@@ -154,6 +155,28 @@ static void capFileSize(const char *path, int maxBytes) {
         int rc = truncate(path, (off_t)maxBytes);
         (void)rc;
     }
+}
+
+static void redactFileInPlace(const char *path, int maxBytes) {
+    if (!path || maxBytes <= 0 || maxBytes > 4 * 1024 * 1024) return;
+    FILE *file = fopen(path, "rb");
+    if (!file) return;
+    char *input = malloc((size_t)maxBytes + 1);
+    char *output = malloc((size_t)maxBytes + 1);
+    if (!input || !output) {
+        free(input);
+        free(output);
+        fclose(file);
+        return;
+    }
+    size_t bytes = fread(input, 1, (size_t)maxBytes, file);
+    input[bytes] = '\0';
+    fclose(file);
+    if (wtRedactSecrets(input, output, (size_t)maxBytes + 1) == 0) {
+        writeTextFile(path, output);
+    }
+    free(input);
+    free(output);
 }
 
 static const char *profileDefaultAutonomy(const char *profile) {
@@ -434,6 +457,9 @@ static int runCodexAdapter(const WtConfig *config, const char *agentName, const 
     capFileSize(stdoutPath, maxOutputBytes);
     capFileSize(stderrPath, maxOutputBytes);
     capFileSize(resultPath, maxOutputBytes);
+    redactFileInPlace(stdoutPath, maxOutputBytes);
+    redactFileInPlace(stderrPath, maxOutputBytes);
+    redactFileInPlace(resultPath, maxOutputBytes);
     char resultSnippet[1024];
     char stderrSnippet[1024];
     readFileSnippet(resultPath, maxOutputBytes < 1000 ? maxOutputBytes : 1000, resultSnippet, sizeof(resultSnippet));
@@ -609,6 +635,8 @@ static int runCliArtifactAdapter(const WtConfig *config, const char *agentName,
     }
     capFileSize(stdoutPath, maxOutputBytes);
     capFileSize(stderrPath, maxOutputBytes);
+    redactFileInPlace(stdoutPath, maxOutputBytes);
+    redactFileInPlace(stderrPath, maxOutputBytes);
     char resultSnippet[2048];
     readFileSnippet(stdoutPath, maxOutputBytes < 2000 ? maxOutputBytes : 2000, resultSnippet, sizeof(resultSnippet));
     if (resultSnippet[0] == '\0') {
