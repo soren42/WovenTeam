@@ -213,6 +213,78 @@ function renderInitiativeAssets(payload) {
   });
 }
 
+/*
+ * Phase 3 Sprint 3: deliverables sub-panel. Pulls /api/initiative-audit for
+ * the focused initiative and renders its `deliverables` + `secretScans`
+ * arrays as a single list. The audit endpoint is the canonical source - it
+ * already joins both arrays and handles pagination.
+ */
+async function loadInitiativeDeliverables(initiativeId) {
+  const panel = document.querySelector("#initiativeDeliverablesPanel");
+  if (!panel) return;
+  if (!initiativeId) { panel.hidden = true; return; }
+  panel.hidden = false;
+  const response = await fetch(`/api/initiative-audit?initiativeId=${encodeURIComponent(initiativeId)}`);
+  if (!response.ok) {
+    renderInitiativeDeliverables({initiativeId, deliverables: [], secretScans: []});
+    return;
+  }
+  const payload = await response.json();
+  if (payload.ok !== false) renderInitiativeDeliverables(payload);
+}
+
+function renderInitiativeDeliverables(payload) {
+  const list = document.querySelector("#initiativeDeliverablesList");
+  const countEl = document.querySelector("#initiativeDeliverablesCount");
+  const metaEl = document.querySelector("#initiativeDeliverablesMeta");
+  if (!list || !countEl) return;
+  const deliverables = Array.isArray(payload.deliverables) ? payload.deliverables : [];
+  const scans = Array.isArray(payload.secretScans) ? payload.secretScans : [];
+  countEl.textContent = String(deliverables.length);
+  /* Index scan results by deliverable_id for quick lookup. */
+  const scanByDeliverable = {};
+  scans.forEach(scan => { if (scan.deliverableId) scanByDeliverable[scan.deliverableId] = scan; });
+  const hitCount = scans.filter(scan => scan.matched).length;
+  metaEl.textContent = `${deliverables.length} shipped · ${hitCount} scan hits · ${payload.initiativeId || ""}`;
+  list.innerHTML = "";
+  if (!deliverables.length) {
+    const empty = document.createElement("div");
+    empty.className = "initiative-deliverable-row";
+    empty.innerHTML = "<strong>No deliverables shipped yet</strong><small></small>" +
+                      "<span class=\"deliverable-mode\">--</span><span class=\"deliverable-scan\">--</span>";
+    list.appendChild(empty);
+    return;
+  }
+  /* Newest first. */
+  deliverables.slice().sort((a, b) => (b.createdAtUnixMs || 0) - (a.createdAtUnixMs || 0)).forEach(d => {
+    const row = document.createElement("div");
+    row.className = "initiative-deliverable-row";
+    const when = d.createdAtUnixMs ? new Date(d.createdAtUnixMs).toISOString().slice(0, 19).replace("T", " ") : "";
+    const sizeKb = d.sizeBytes ? `${(d.sizeBytes / 1024).toFixed(1)} KiB` : "0 KiB";
+    const shaPrefix = (d.sha256 || "").slice(0, 12);
+    const supersedesText = d.supersedes ? ` supersedes ${d.supersedes.slice(-12)}` : "";
+    const meta = `${d.taskId || ""} · ${shaPrefix} · ${sizeKb} · ${d.reviewer || "unknown"} · ${when}`;
+    row.innerHTML = '<strong></strong><small></small>' +
+                    '<span class="deliverable-mode"></span>' +
+                    '<span class="deliverable-scan"></span>';
+    row.querySelector("strong").textContent = (d.deliverablePath || "").split("/").slice(-2).join("/");
+    row.querySelector("small").textContent = meta + supersedesText;
+    row.querySelector(".deliverable-mode").textContent = d.packagingMode || "copy";
+    const scan = scanByDeliverable[d.deliverableId];
+    const scanEl = row.querySelector(".deliverable-scan");
+    if (!scan) {
+      scanEl.textContent = "no scan";
+    } else if (scan.matched) {
+      scanEl.textContent = `${scan.hitCount} hit${scan.hitCount === 1 ? "" : "s"}`;
+      scanEl.classList.add("hit");
+    } else {
+      scanEl.textContent = "clean";
+      scanEl.classList.add("clean");
+    }
+    list.appendChild(row);
+  });
+}
+
 function summarizeProjectedTasks(tasks) {
   const roleCounts = {};
   let requestCount = 0;
@@ -632,6 +704,7 @@ function renderInitiatives(initiatives) {
       await loadTasks();
       renderInitiatives(initiatives);
       await loadInitiativeAssets(state.selectedInitiativeId);
+      await loadInitiativeDeliverables(state.selectedInitiativeId);
       addAudit("ui", state.selectedInitiativeId ? `focused ${state.selectedInitiativeId}` : "cleared initiative focus");
     });
     /* Sprint 5: per-card audit button opens the initiative audit JSON in a new
@@ -792,6 +865,71 @@ function populateArtifactDecisionPanel(artifacts, task) {
   } else {
     stateLabel.textContent = "No decision recorded";
   }
+  /* Sprint 3: reveal the ship strip only when the task has an accepted
+   * artifact - shipping a non-accepted artifact would be an operator error. */
+  const shipStrip = document.querySelector("#deliverableShipStrip");
+  if (shipStrip) {
+    shipStrip.hidden = !(task && task.artifactState === "accepted");
+    const status = document.querySelector("#deliverableShipStatus");
+    if (status) { status.textContent = ""; status.className = "deliverable-ship-status"; }
+  }
+}
+
+/*
+ * Phase 3 Sprint 3: react to mode changes - branch + pull-request need a
+ * repo path; pr also needs the operator to flip a confirmation checkbox.
+ */
+function updateDeliverableShipStripVisibility() {
+  const mode = (document.querySelector("#deliverableShipMode") || {}).value || "copy";
+  const repoLabel = document.querySelector("label.deliverable-ship-repo");
+  const yesLabel = document.querySelector("label.deliverable-ship-yes");
+  if (repoLabel) repoLabel.hidden = !(mode === "branch" || mode === "pr");
+  if (yesLabel) yesLabel.hidden = !(mode === "pr");
+}
+
+async function shipSelectedDeliverable() {
+  if (!state.selectedTaskId) {
+    addAudit("ui", "select a task before shipping a deliverable");
+    return;
+  }
+  const mode = (document.querySelector("#deliverableShipMode") || {}).value || "copy";
+  const repo = ((document.querySelector("#deliverableShipRepo") || {}).value || "").trim();
+  const yes = (document.querySelector("#deliverableShipYes") || {}).checked || false;
+  const status = document.querySelector("#deliverableShipStatus");
+  if ((mode === "branch" || mode === "pr") && !repo) {
+    if (status) { status.textContent = "repo path required for this mode"; status.className = "deliverable-ship-status error"; }
+    return;
+  }
+  if (mode === "pr" && !yes) {
+    if (status) { status.textContent = "pull-request mode requires the explicit yes checkbox"; status.className = "deliverable-ship-status error"; }
+    return;
+  }
+  if (status) { status.textContent = `shipping (${mode})...`; status.className = "deliverable-ship-status"; }
+  const body = {
+    taskId: state.selectedTaskId,
+    mode,
+    reviewer: ((document.querySelector("#artifactReviewer") || {}).value || "ceo").trim(),
+    repoPath: repo,
+    yes,
+  };
+  const response = await fetch("/api/task-deliverable", {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify(body),
+  });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok || payload.ok === false) {
+    const reason = payload.error || `http ${response.status}`;
+    if (status) { status.textContent = `ship failed: ${reason}`; status.className = "deliverable-ship-status error"; }
+    addAudit("ui", `deliverable ship failed (${reason}) for ${state.selectedTaskId}`);
+    return;
+  }
+  if (status) {
+    status.textContent = `shipped ${payload.deliverableId} -> ${payload.deliverablePath}`;
+    status.className = "deliverable-ship-status ok";
+  }
+  addAudit("ui", `deliverable shipped (${mode}) for ${state.selectedTaskId}`);
+  if (state.selectedInitiativeId) await loadInitiativeDeliverables(state.selectedInitiativeId);
 }
 
 /*
@@ -824,7 +962,10 @@ async function postTaskArtifact(decisionState) {
   addAudit("ui", `artifact ${decisionState} recorded for ${state.selectedTaskId}`);
   await loadTasks();
   await loadTaskDetail(state.selectedTaskId);
-  if (state.selectedInitiativeId) await loadInitiativeAssets(state.selectedInitiativeId);
+  if (state.selectedInitiativeId) {
+    await loadInitiativeAssets(state.selectedInitiativeId);
+    await loadInitiativeDeliverables(state.selectedInitiativeId);
+  }
 }
 
 /*
@@ -1476,6 +1617,12 @@ function wireControls() {
   });
   const exportButton = document.querySelector("#artifactExportButton");
   if (exportButton) exportButton.addEventListener("click", exportSelectedArtifact);
+  /* Sprint 3 deliverable ship wiring. */
+  const shipModeSelect = document.querySelector("#deliverableShipMode");
+  if (shipModeSelect) shipModeSelect.addEventListener("change", updateDeliverableShipStripVisibility);
+  const shipButton = document.querySelector("#deliverableShipButton");
+  if (shipButton) shipButton.addEventListener("click", shipSelectedDeliverable);
+  updateDeliverableShipStripVisibility();
 
   document.querySelectorAll(".mode-button").forEach(button => {
     button.addEventListener("click", () => setDispatchMode(button.dataset.mode));
@@ -1498,6 +1645,7 @@ function wireControls() {
       await loadTasks();
       await loadInitiatives();
       await loadInitiativeAssets(state.selectedInitiativeId);
+      await loadInitiativeDeliverables(state.selectedInitiativeId);
       addAudit("ui", state.selectedInitiativeId ? `filter focused ${state.selectedInitiativeId}` : "cleared initiative filter");
     });
   }

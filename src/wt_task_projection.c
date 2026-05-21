@@ -441,6 +441,121 @@ static int projectKillEvent(sqlite3 *db, const char *line) {
     return taskId[0] && rc == 0 ? 0 : -1;
 }
 
+/*
+ * Phase 3 Sprint 3: deliverable + secret_scan projection rows.
+ *
+ * Both are append-only - each ship produces one deliverable row and zero or
+ * one secret_scan row. The deliverable row preserves enough fields to render
+ * the audit panel and the per-initiative Deliverables sub-panel without
+ * re-parsing the ledger; the raw JSON is also stored for downstream tools
+ * that need fields we did not pre-project.
+ */
+static int projectDeliverable(sqlite3 *db, const char *line) {
+    sqlite3_stmt *stmt = NULL;
+    const char *sql =
+        "INSERT INTO deliverables ("
+        " deliverable_id,task_id,initiative_id,source_workspace_path,"
+        " deliverable_path,packaging_mode,size_bytes,sha256,reviewer,"
+        " supersedes,created_by,created_at_ms,raw_json) "
+        "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)";
+    if (sqlite3_prepare_v2(db, sql, -1, &stmt, NULL) != SQLITE_OK) {
+        return -1;
+    }
+    char deliverableId[128];
+    char taskId[WT_TASK_ID_SIZE];
+    char initiativeId[WT_TASK_ID_SIZE];
+    char sourcePath[512];
+    char deliverablePath[512];
+    char packagingMode[32];
+    char sha256[80];
+    char reviewer[WT_TASK_AGENT_SIZE];
+    char supersedes[128];
+    char createdBy[WT_TASK_AGENT_SIZE];
+    long long sizeBytes = 0;
+    long long createdAtMs = 0;
+    readStringOrDefault(line, "deliverableId", deliverableId, sizeof(deliverableId), "");
+    readStringOrDefault(line, "taskId", taskId, sizeof(taskId), "");
+    readStringOrDefault(line, "initiativeId", initiativeId, sizeof(initiativeId), "");
+    readStringOrDefault(line, "sourceWorkspacePath", sourcePath, sizeof(sourcePath), "");
+    readStringOrDefault(line, "deliverablePath", deliverablePath, sizeof(deliverablePath), "");
+    readStringOrDefault(line, "packagingMode", packagingMode, sizeof(packagingMode), "copy");
+    readStringOrDefault(line, "sha256", sha256, sizeof(sha256), "");
+    readStringOrDefault(line, "reviewer", reviewer, sizeof(reviewer), "");
+    /* `supersedes` is JSON null when not used - readStringOrDefault returns ""
+     * either way. That's fine, the column is empty string in both cases. */
+    readStringOrDefault(line, "supersedes", supersedes, sizeof(supersedes), "");
+    readStringOrDefault(line, "createdBy", createdBy, sizeof(createdBy), "");
+    wtJsonReadLongLong(line, "sizeBytes", &sizeBytes);
+    wtJsonReadLongLong(line, "createdAtUnixMs", &createdAtMs);
+    bindText(stmt, 1, deliverableId);
+    bindText(stmt, 2, taskId);
+    bindText(stmt, 3, initiativeId);
+    bindText(stmt, 4, sourcePath);
+    bindText(stmt, 5, deliverablePath);
+    bindText(stmt, 6, packagingMode);
+    sqlite3_bind_int64(stmt, 7, sizeBytes);
+    bindText(stmt, 8, sha256);
+    bindText(stmt, 9, reviewer);
+    bindText(stmt, 10, supersedes);
+    bindText(stmt, 11, createdBy);
+    sqlite3_bind_int64(stmt, 12, createdAtMs);
+    bindText(stmt, 13, line);
+    int rc = sqlite3_step(stmt) == SQLITE_DONE ? 0 : -1;
+    sqlite3_finalize(stmt);
+    return deliverableId[0] && rc == 0 ? 0 : -1;
+}
+
+static int projectSecretScan(sqlite3 *db, const char *line) {
+    sqlite3_stmt *stmt = NULL;
+    const char *sql =
+        "INSERT INTO secret_scans ("
+        " scan_id,deliverable_id,task_id,scanned_path,matched,hit_count,"
+        " packaging_mode,created_at_ms,raw_json) "
+        "VALUES (?,?,?,?,?,?,?,?,?)";
+    if (sqlite3_prepare_v2(db, sql, -1, &stmt, NULL) != SQLITE_OK) {
+        return -1;
+    }
+    char scanId[128];
+    char deliverableId[128];
+    char taskId[WT_TASK_ID_SIZE];
+    char scannedPath[512];
+    char packagingMode[32];
+    long hitCount = 0;
+    long long createdAtMs = 0;
+    int matched = 0;
+    readStringOrDefault(line, "scanId", scanId, sizeof(scanId), "");
+    readStringOrDefault(line, "deliverableId", deliverableId, sizeof(deliverableId), "");
+    readStringOrDefault(line, "taskId", taskId, sizeof(taskId), "");
+    readStringOrDefault(line, "scannedPath", scannedPath, sizeof(scannedPath), "");
+    readStringOrDefault(line, "packagingMode", packagingMode, sizeof(packagingMode), "");
+    wtJsonReadLong(line, "hitCount", &hitCount);
+    wtJsonReadLongLong(line, "createdAtUnixMs", &createdAtMs);
+    /* Boolean parse via substring scan - tolerant of spaces. */
+    {
+        const char *m = strstr(line, "\"matched\"");
+        if (m) {
+            const char *colon = strchr(m, ':');
+            if (colon) {
+                const char *v = colon + 1;
+                while (*v == ' ' || *v == '\t') v++;
+                if (strncmp(v, "true", 4) == 0) matched = 1;
+            }
+        }
+    }
+    bindText(stmt, 1, scanId);
+    bindText(stmt, 2, deliverableId);
+    bindText(stmt, 3, taskId);
+    bindText(stmt, 4, scannedPath);
+    sqlite3_bind_int(stmt, 5, matched);
+    sqlite3_bind_int64(stmt, 6, hitCount);
+    bindText(stmt, 7, packagingMode);
+    sqlite3_bind_int64(stmt, 8, createdAtMs);
+    bindText(stmt, 9, line);
+    int rc = sqlite3_step(stmt) == SQLITE_DONE ? 0 : -1;
+    sqlite3_finalize(stmt);
+    return scanId[0] && rc == 0 ? 0 : -1;
+}
+
 int wtTaskProjectionRebuild(const char *dbPath, const char *ledgerPath) {
     if (wtRoomEnsureParentDirs(dbPath) != 0) {
         return -1;
@@ -452,7 +567,7 @@ int wtTaskProjectionRebuild(const char *dbPath, const char *ledgerPath) {
     }
     if (execSql(db, "PRAGMA journal_mode=WAL;") != 0 ||
         execSql(db, "BEGIN IMMEDIATE;") != 0 ||
-        execSql(db, "DROP TABLE IF EXISTS tasks; DROP TABLE IF EXISTS task_events; DROP TABLE IF EXISTS agent_controls; DROP TABLE IF EXISTS heartbeats; DROP TABLE IF EXISTS milestones; DROP TABLE IF EXISTS kill_events;") != 0 ||
+        execSql(db, "DROP TABLE IF EXISTS tasks; DROP TABLE IF EXISTS task_events; DROP TABLE IF EXISTS agent_controls; DROP TABLE IF EXISTS heartbeats; DROP TABLE IF EXISTS milestones; DROP TABLE IF EXISTS kill_events; DROP TABLE IF EXISTS deliverables; DROP TABLE IF EXISTS secret_scans;") != 0 ||
         execSql(db,
             "CREATE TABLE tasks ("
             "task_id TEXT PRIMARY KEY,"
@@ -510,7 +625,27 @@ int wtTaskProjectionRebuild(const char *dbPath, const char *ledgerPath) {
             "CREATE TABLE kill_events ("
             "id INTEGER PRIMARY KEY AUTOINCREMENT,task_id TEXT,reason TEXT,"
             "created_by TEXT,created_at_ms INTEGER DEFAULT 0);"
-            "CREATE INDEX idx_kill_events_task ON kill_events(task_id,id);") != 0) {
+            "CREATE INDEX idx_kill_events_task ON kill_events(task_id,id);"
+            /*
+             * Phase 3 Sprint 3 projection tables:
+             *   deliverables - one row per ship event
+             *   secret_scans - zero-or-one row per ship event (only when
+             *                  patterns file is configured)
+             */
+            "CREATE TABLE deliverables ("
+            "id INTEGER PRIMARY KEY AUTOINCREMENT,deliverable_id TEXT,"
+            "task_id TEXT,initiative_id TEXT,source_workspace_path TEXT,"
+            "deliverable_path TEXT,packaging_mode TEXT,size_bytes INTEGER DEFAULT 0,"
+            "sha256 TEXT,reviewer TEXT,supersedes TEXT DEFAULT '',"
+            "created_by TEXT,created_at_ms INTEGER DEFAULT 0,raw_json TEXT);"
+            "CREATE INDEX idx_deliverables_initiative ON deliverables(initiative_id,id);"
+            "CREATE INDEX idx_deliverables_task ON deliverables(task_id,id);"
+            "CREATE TABLE secret_scans ("
+            "id INTEGER PRIMARY KEY AUTOINCREMENT,scan_id TEXT,"
+            "deliverable_id TEXT,task_id TEXT,scanned_path TEXT,"
+            "matched INTEGER DEFAULT 0,hit_count INTEGER DEFAULT 0,"
+            "packaging_mode TEXT,created_at_ms INTEGER DEFAULT 0,raw_json TEXT);"
+            "CREATE INDEX idx_secret_scans_deliverable ON secret_scans(deliverable_id,id);") != 0) {
         execSql(db, "ROLLBACK;");
         sqlite3_close(db);
         return -1;
@@ -537,6 +672,10 @@ int wtTaskProjectionRebuild(const char *dbPath, const char *ledgerPath) {
                 projectMilestone(db, line);
             } else if (lineHasSchema(line, "woventeam.kill_event.v0.1")) {
                 projectKillEvent(db, line);
+            } else if (lineHasSchema(line, "woventeam.deliverable.v0.1")) {
+                projectDeliverable(db, line);
+            } else if (lineHasSchema(line, "woventeam.secret_scan.v0.1")) {
+                projectSecretScan(db, line);
             }
         }
         fclose(file);
@@ -1317,6 +1456,73 @@ int wtTaskProjectionReadInitiativeAuditJson(const char *dbPath, const char *ledg
         appendRaw(buffer, bufferSize, &used, usageBuffer);
     }
     /*
+     * Phase 3 Sprint 3: emit deliverables[] and secretScans[] from the
+     * projection tables. These are already filtered by initiative_id (via
+     * the projected column) so the loop is cheap. since/limit pagination
+     * also applies here.
+     */
+    appendRaw(buffer, bufferSize, &used, "],\"deliverables\":[");
+    {
+        sqlite3 *db2 = NULL;
+        if (sqlite3_open(dbPath, &db2) == SQLITE_OK) {
+            sqlite3_stmt *stmt = NULL;
+            const char *sql =
+                "SELECT raw_json,created_at_ms FROM deliverables "
+                "WHERE initiative_id=? "
+                "AND (? = 0 OR created_at_ms >= ?) "
+                "ORDER BY id ASC";
+            if (sqlite3_prepare_v2(db2, sql, -1, &stmt, NULL) == SQLITE_OK) {
+                bindText(stmt, 1, initiativeId);
+                sqlite3_bind_int64(stmt, 2, sinceUnixMs);
+                sqlite3_bind_int64(stmt, 3, sinceUnixMs);
+                int first = 1;
+                while (sqlite3_step(stmt) == SQLITE_ROW) {
+                    if (limit > 0 && emittedCount >= limit) { truncated = 1; break; }
+                    const char *raw = (const char *)sqlite3_column_text(stmt, 0);
+                    long long ms = sqlite3_column_int64(stmt, 1);
+                    if (!raw) continue;
+                    if (!first) appendRaw(buffer, bufferSize, &used, ",");
+                    first = 0;
+                    appendRaw(buffer, bufferSize, &used, raw);
+                    if (ms > maxEmittedAtMs) maxEmittedAtMs = ms;
+                    emittedCount++;
+                }
+                sqlite3_finalize(stmt);
+            }
+            appendRaw(buffer, bufferSize, &used, "],\"secretScans\":[");
+            stmt = NULL;
+            /* Secret scans are keyed by deliverable_id; we filter by the
+             * deliverable_id set we just emitted by joining via the
+             * deliverables table inline. */
+            const char *scanSql =
+                "SELECT ss.raw_json, ss.created_at_ms "
+                "FROM secret_scans ss "
+                "JOIN deliverables d ON d.deliverable_id = ss.deliverable_id "
+                "WHERE d.initiative_id = ? "
+                "AND (? = 0 OR ss.created_at_ms >= ?) "
+                "ORDER BY ss.id ASC";
+            if (sqlite3_prepare_v2(db2, scanSql, -1, &stmt, NULL) == SQLITE_OK) {
+                bindText(stmt, 1, initiativeId);
+                sqlite3_bind_int64(stmt, 2, sinceUnixMs);
+                sqlite3_bind_int64(stmt, 3, sinceUnixMs);
+                int first = 1;
+                while (sqlite3_step(stmt) == SQLITE_ROW) {
+                    if (limit > 0 && emittedCount >= limit) { truncated = 1; break; }
+                    const char *raw = (const char *)sqlite3_column_text(stmt, 0);
+                    long long ms = sqlite3_column_int64(stmt, 1);
+                    if (!raw) continue;
+                    if (!first) appendRaw(buffer, bufferSize, &used, ",");
+                    first = 0;
+                    appendRaw(buffer, bufferSize, &used, raw);
+                    if (ms > maxEmittedAtMs) maxEmittedAtMs = ms;
+                    emittedCount++;
+                }
+                sqlite3_finalize(stmt);
+            }
+            sqlite3_close(db2);
+        }
+    }
+    /*
      * Tail: emit pagination metadata so the caller knows whether more pages
      * follow. nextSinceUnixMs is the highest createdAtUnixMs we emitted plus 1
      * (so the next page does not re-emit the boundary record); 0 when the
@@ -1470,6 +1676,51 @@ int wtTaskProjectionCountActiveForParent(const char *dbPath, const char *parentT
 
 int wtTaskProjectionCountActiveForInitiative(const char *dbPath, const char *initiativeId) {
     return countActiveWhere(dbPath, "initiative_id", initiativeId);
+}
+
+int wtTaskProjectionResolveAcceptedArtifact(const char *dbPath, const char *taskId,
+                                            char *initiativeId, size_t initiativeIdSize,
+                                            char *artifactPath, size_t artifactPathSize) {
+    if (!dbPath || !taskId || !initiativeId || !artifactPath) return -1;
+    if (initiativeIdSize > 0) initiativeId[0] = '\0';
+    if (artifactPathSize > 0) artifactPath[0] = '\0';
+    sqlite3 *db = NULL;
+    if (sqlite3_open(dbPath, &db) != SQLITE_OK) {
+        sqlite3_close(db);
+        return -1;
+    }
+    sqlite3_stmt *stmt = NULL;
+    const char *sql =
+        "SELECT initiative_id, artifact_state, accepted_artifact_path "
+        "FROM tasks WHERE task_id = ? LIMIT 1;";
+    if (sqlite3_prepare_v2(db, sql, -1, &stmt, NULL) != SQLITE_OK) {
+        sqlite3_close(db);
+        return -1;
+    }
+    bindText(stmt, 1, taskId);
+    int rc = sqlite3_step(stmt);
+    int outcome;
+    if (rc != SQLITE_ROW) {
+        outcome = -1;
+    } else {
+        const char *init = (const char *)sqlite3_column_text(stmt, 0);
+        const char *state = (const char *)sqlite3_column_text(stmt, 1);
+        const char *path = (const char *)sqlite3_column_text(stmt, 2);
+        if (init && initiativeIdSize > 0) {
+            snprintf(initiativeId, initiativeIdSize, "%s", init);
+        }
+        int accepted = state && strcmp(state, "accepted") == 0;
+        int hasPath = path && path[0] != '\0';
+        if (accepted && hasPath) {
+            snprintf(artifactPath, artifactPathSize, "%s", path);
+            outcome = 0;
+        } else {
+            outcome = 1;
+        }
+    }
+    sqlite3_finalize(stmt);
+    sqlite3_close(db);
+    return outcome;
 }
 
 /*
