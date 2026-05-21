@@ -108,8 +108,11 @@ WT_CHATGPT_MODE=adapter WT_GPT_COMMAND="$TMPDIR/fake-codex" \
 WT_FAKE_CODEX_ARGS="$TMPDIR/fake-codex.args" \
   "$ROOT/build/wt-agent" --agent chatgpt --once >/dev/null
 
-grep -q -- '--ask-for-approval never' "$TMPDIR/fake-codex.args"
-grep -q -- '--sandbox danger-full-access' "$TMPDIR/fake-codex.args"
+# Elevated (granted) invocation: codex runs fully non-interactive via the
+# single bypass flag. The installed codex CLI has no --ask-for-approval flag,
+# and the bypass switch replaces --sandbox danger-full-access.
+grep -q -- '--dangerously-bypass-approvals-and-sandbox' "$TMPDIR/fake-codex.args"
+! grep -q -- '--ask-for-approval' "$TMPDIR/fake-codex.args"
 jq -s -e --arg taskId "$task_id" '
   ([.[] | select(.schema == "woventeam.autonomy_event.v0.1" and .taskId == $taskId and .action == "adapter_invocation_elevated")] | length) == 1 and
   ([.[] | select(.schema == "woventeam.autonomy_event.v0.1" and .taskId == $taskId and .action == "adapter_exit_elevated" and .exitCode == 0)] | length) == 1
@@ -153,8 +156,10 @@ WT_CHATGPT_MODE=adapter WT_GPT_COMMAND="$TMPDIR/fake-codex" \
 WT_FAKE_CODEX_ARGS="$TMPDIR/fake-codex.args" \
   "$ROOT/build/wt-agent" --agent chatgpt --once >/dev/null
 
-grep -q -- '--ask-for-approval on-request' "$TMPDIR/fake-codex.args"
+# Non-elevated (revoked / ungranted) invocation: codex runs in the
+# workspace-write sandbox and must NOT receive the bypass switch.
 grep -q -- '--sandbox workspace-write' "$TMPDIR/fake-codex.args"
+! grep -q -- '--dangerously-bypass-approvals-and-sandbox' "$TMPDIR/fake-codex.args"
 jq -s -e --arg taskId "$revoked_task_id" '
   ([.[] | select(.schema == "woventeam.autonomy_event.v0.1" and .taskId == $taskId and .action == "revoked")] | length) == 1 and
   ([.[] | select(.schema == "woventeam.kill_event.v0.1" and .taskId == $taskId and .reason == "autonomy-revoke")] | length) == 1 and

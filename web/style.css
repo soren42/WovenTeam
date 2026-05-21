@@ -209,6 +209,16 @@ kbd {
   width: 28px;
   height: 28px;
   padding: 0;
+  /*
+   * iOS/iPadOS Safari does not reliably fire `click` on a button that lacks a
+   * pointer cursor, and applies a 300ms tap delay without touch-action:
+   * manipulation. Issue #45: the help-overlay close (x) was non-functional on
+   * Safari/iPadOS. These three properties make the tap register immediately on
+   * touch devices while leaving desktop behavior unchanged.
+   */
+  cursor: pointer;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: rgba(0, 0, 0, 0.15);
 }
 
 .swatches,

@@ -407,6 +407,13 @@ static int runCodexAdapter(const WtConfig *config, const char *agentName, const 
         /* Make this child the leader of its own process group so the wait
          * helper can SIGTERM/SIGKILL the whole tree on cancel or timeout. */
         setpgid(0, 0);
+        /* Redirect stdin from /dev/null. codex `exec` reads instructions from
+         * stdin when it is not a terminal ("Reading additional input from
+         * stdin...") and blocks until EOF; without this the adapter hung until
+         * the timeout (exit 124) and never ran the model. */
+        int stdinFd = open("/dev/null", O_RDONLY);
+        if (stdinFd >= 0) dup2(stdinFd, STDIN_FILENO);
+        if (stdinFd > 2) close(stdinFd);
         int stdoutFd = open(stdoutPath, O_CREAT | O_TRUNC | O_WRONLY, 0644);
         int stderrFd = open(stderrPath, O_CREAT | O_TRUNC | O_WRONLY, 0644);
         if (stdoutFd >= 0) dup2(stdoutFd, STDOUT_FILENO);
@@ -421,10 +428,22 @@ static int runCodexAdapter(const WtConfig *config, const char *agentName, const 
         args[argc++] = "--skip-git-repo-check";
         args[argc++] = "--cd";
         args[argc++] = workspace;
-        args[argc++] = "--sandbox";
-        args[argc++] = elevated ? "danger-full-access" : "workspace-write";
-        args[argc++] = "--ask-for-approval";
-        args[argc++] = elevated ? "never" : "on-request";
+        /*
+         * Approval/sandbox flags. The codex CLI exposes a single
+         * --dangerously-bypass-approvals-and-sandbox switch for fully
+         * non-interactive elevated runs (there is no separate
+         * --ask-for-approval flag). A granted (elevated) task uses that;
+         * a non-elevated task runs with the workspace-write sandbox, which
+         * is already non-interactive in `exec` mode. The earlier
+         * --ask-for-approval pair was rejected by the installed CLI with
+         * exit 2, so the adapter never actually ran a real model.
+         */
+        if (elevated) {
+            args[argc++] = "--dangerously-bypass-approvals-and-sandbox";
+        } else {
+            args[argc++] = "--sandbox";
+            args[argc++] = "workspace-write";
+        }
         args[argc++] = "--output-last-message";
         args[argc++] = resultPath;
         args[argc++] = prompt;
@@ -590,6 +609,12 @@ static int runCliArtifactAdapter(const WtConfig *config, const char *agentName,
     if (child == 0) {
         /* Process-group leader so the wait helper can SIGTERM/SIGKILL the tree. */
         setpgid(0, 0);
+        /* Redirect stdin from /dev/null so a vendor CLI that appends piped
+         * stdin to its prompt (e.g. gemini -p) does not block on an open,
+         * never-closing stdin inherited from the agent. */
+        int stdinFd = open("/dev/null", O_RDONLY);
+        if (stdinFd >= 0) dup2(stdinFd, STDIN_FILENO);
+        if (stdinFd > 2) close(stdinFd);
         int stdoutFd = open(stdoutPath, O_CREAT | O_TRUNC | O_WRONLY, 0644);
         int stderrFd = open(stderrPath, O_CREAT | O_TRUNC | O_WRONLY, 0644);
         if (stdoutFd >= 0) dup2(stdoutFd, STDOUT_FILENO);
