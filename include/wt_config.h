@@ -129,6 +129,17 @@ typedef struct {
     char deliverableDefaultMode[WT_NAME_SIZE];
     char deliverableBranchPrefix[WT_NAME_SIZE];
     char secretScanPatternsFile[WT_PATH_SIZE];
+    /*
+     * Phase 3 Sprint 4 (remote execution substrate).
+     *   remoteAllowedIps          - comma-separated peer IP allow-list for
+     *                               bearer-authenticated remote calls. Local
+     *                               operator-origin calls still bypass bearer
+     *                               auth. Default is loopback-only.
+     *   authTokenDefaultTtlSeconds - default TTL for /api/auth-token when the
+     *                                body omits ttlSeconds.
+     */
+    char remoteAllowedIps[WT_PATH_SIZE];
+    int authTokenDefaultTtlSeconds;
 } WtConfig;
 
 void wtConfigInitDefaults(WtConfig *config);

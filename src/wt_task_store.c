@@ -115,6 +115,27 @@ static void populateTaskAutonomy(const char *line, WtTaskSummary *task) {
     wtJsonReadLongLong(line, "createdAtUnixMs", &task->autonomyCreatedAtUnixMs);
 }
 
+static void populateTaskPackageFields(const char *line, WtTaskSummary *task) {
+    readOptionalString(line, "assignedAgent", task->assignedAgent, sizeof(task->assignedAgent), "");
+    readOptionalString(line, "assignedRole", task->assignedRole, sizeof(task->assignedRole), "");
+    readOptionalString(line, "status", task->status, sizeof(task->status), "queued");
+    readOptionalString(line, "title", task->title, sizeof(task->title), "Untitled task");
+    readOptionalString(line, "body", task->body, sizeof(task->body), "");
+    readOptionalString(line, "modelId", task->modelId, sizeof(task->modelId), "");
+    readOptionalString(line, "profile", task->toolProfile, sizeof(task->toolProfile), "observe");
+    readOptionalString(line, "executionHost", task->executionHost, sizeof(task->executionHost), "");
+    populateTaskAutonomy(line, task);
+    long timeout = 0;
+    long maxOutput = 0;
+    if (wtJsonReadLong(line, "timeoutSeconds", &timeout) == 0) {
+        task->timeoutSeconds = (int)timeout;
+    }
+    if (wtJsonReadLong(line, "maxOutputBytes", &maxOutput) == 0) {
+        task->maxOutputBytes = (int)maxOutput;
+    }
+    wtJsonReadLongLong(line, "createdAtUnixMs", &task->updatedAtUnixMs);
+}
+
 int wtTaskFindQueuedForAgent(const char *ledgerPath, const char *agentName, WtTaskSummary *task) {
     FILE *file = fopen(ledgerPath, "r");
     if (!file) {
@@ -136,23 +157,7 @@ int wtTaskFindQueuedForAgent(const char *ledgerPath, const char *agentName, WtTa
                 snprintf(tasks[index].taskId, sizeof(tasks[index].taskId), "%s", taskId);
             }
             if (index >= 0) {
-                readOptionalString(line, "assignedAgent", tasks[index].assignedAgent, sizeof(tasks[index].assignedAgent), "");
-                readOptionalString(line, "assignedRole", tasks[index].assignedRole, sizeof(tasks[index].assignedRole), "");
-                readOptionalString(line, "status", tasks[index].status, sizeof(tasks[index].status), "queued");
-                readOptionalString(line, "title", tasks[index].title, sizeof(tasks[index].title), "Untitled task");
-                readOptionalString(line, "body", tasks[index].body, sizeof(tasks[index].body), "");
-                readOptionalString(line, "modelId", tasks[index].modelId, sizeof(tasks[index].modelId), "");
-                readOptionalString(line, "profile", tasks[index].toolProfile, sizeof(tasks[index].toolProfile), "observe");
-                populateTaskAutonomy(line, &tasks[index]);
-                long timeout = 0;
-                long maxOutput = 0;
-                if (wtJsonReadLong(line, "timeoutSeconds", &timeout) == 0) {
-                    tasks[index].timeoutSeconds = (int)timeout;
-                }
-                if (wtJsonReadLong(line, "maxOutputBytes", &maxOutput) == 0) {
-                    tasks[index].maxOutputBytes = (int)maxOutput;
-                }
-                wtJsonReadLongLong(line, "createdAtUnixMs", &tasks[index].updatedAtUnixMs);
+                populateTaskPackageFields(line, &tasks[index]);
             }
         } else if (lineHasSchema(line, "woventeam.task_event.v0.1")) {
             if (index >= 0) {
@@ -164,7 +169,8 @@ int wtTaskFindQueuedForAgent(const char *ledgerPath, const char *agentName, WtTa
     }
     fclose(file);
     for (int index = 0; index < count; index++) {
-        if (strcmp(tasks[index].assignedAgent, agentName) == 0 &&
+        if (tasks[index].executionHost[0] == '\0' &&
+            strcmp(tasks[index].assignedAgent, agentName) == 0 &&
             (strcmp(tasks[index].status, "queued") == 0 || strcmp(tasks[index].status, "assigned") == 0)) {
             *task = tasks[index];
             return 1;
@@ -215,24 +221,8 @@ int wtTaskFindClaimableForAgent(const char *ledgerPath, const char *agentName,
                 snprintf(tasks[index].taskId, sizeof(tasks[index].taskId), "%s", taskId);
             }
             if (index >= 0) {
-                readOptionalString(line, "assignedAgent", tasks[index].assignedAgent, sizeof(tasks[index].assignedAgent), "");
+                populateTaskPackageFields(line, &tasks[index]);
                 snprintf(ownerAgent[index], sizeof(ownerAgent[index]), "%s", tasks[index].assignedAgent);
-                readOptionalString(line, "assignedRole", tasks[index].assignedRole, sizeof(tasks[index].assignedRole), "");
-                readOptionalString(line, "status", tasks[index].status, sizeof(tasks[index].status), "queued");
-                readOptionalString(line, "title", tasks[index].title, sizeof(tasks[index].title), "Untitled task");
-                readOptionalString(line, "body", tasks[index].body, sizeof(tasks[index].body), "");
-                readOptionalString(line, "modelId", tasks[index].modelId, sizeof(tasks[index].modelId), "");
-                readOptionalString(line, "profile", tasks[index].toolProfile, sizeof(tasks[index].toolProfile), "observe");
-                populateTaskAutonomy(line, &tasks[index]);
-                long timeoutSec = 0;
-                long maxOutput = 0;
-                if (wtJsonReadLong(line, "timeoutSeconds", &timeoutSec) == 0) {
-                    tasks[index].timeoutSeconds = (int)timeoutSec;
-                }
-                if (wtJsonReadLong(line, "maxOutputBytes", &maxOutput) == 0) {
-                    tasks[index].maxOutputBytes = (int)maxOutput;
-                }
-                wtJsonReadLongLong(line, "createdAtUnixMs", &tasks[index].updatedAtUnixMs);
             }
         } else if (lineHasSchema(line, "woventeam.task_event.v0.1") && index >= 0) {
             char eventType[32];
@@ -256,12 +246,79 @@ int wtTaskFindClaimableForAgent(const char *ledgerPath, const char *agentName,
         int stuck = (strcmp(tasks[index].status, "leased") == 0 ||
                      strcmp(tasks[index].status, "running") == 0) &&
                     leaseExpiresAt[index] > 0 && leaseExpiresAt[index] <= nowUnixMs;
-        if (stuck && strcmp(ownerAgent[index], agentName) == 0) {
+        if (stuck && tasks[index].executionHost[0] == '\0' && strcmp(ownerAgent[index], agentName) == 0) {
             /* Restore the package's rightful owner on the returned summary so the
              * caller sees a coherent assignedAgent for downstream lease events. */
             snprintf(tasks[index].assignedAgent, sizeof(tasks[index].assignedAgent), "%s", ownerAgent[index]);
             *task = tasks[index];
             return 1;
+        }
+    }
+    return 0;
+}
+
+int wtTaskFindClaimableForAgentOnHost(const char *ledgerPath, const char *agentName,
+                                      const char *executionHost, long long nowUnixMs,
+                                      WtTaskSummary *task, int *capabilityBlocked) {
+    if (capabilityBlocked) *capabilityBlocked = 0;
+    FILE *file = fopen(ledgerPath, "r");
+    if (!file) {
+        return 0;
+    }
+    WtTaskSummary tasks[256];
+    char ownerAgent[256][WT_TASK_AGENT_SIZE];
+    long long leaseExpiresAt[256];
+    int count = 0;
+    char line[WT_TASK_LEDGER_LINE_SIZE];
+    while (fgets(line, sizeof(line), file)) {
+        char taskId[WT_TASK_ID_SIZE];
+        if (wtJsonReadString(line, "taskId", taskId, sizeof(taskId)) != 0) {
+            continue;
+        }
+        int index = findKnownTask(tasks, count, taskId);
+        if (lineHasSchema(line, "woventeam.task_package.v0.1")) {
+            if (index < 0 && count < 256) {
+                index = count++;
+                memset(&tasks[index], 0, sizeof(tasks[index]));
+                ownerAgent[index][0] = '\0';
+                leaseExpiresAt[index] = 0;
+                snprintf(tasks[index].taskId, sizeof(tasks[index].taskId), "%s", taskId);
+            }
+            if (index >= 0) {
+                populateTaskPackageFields(line, &tasks[index]);
+                snprintf(ownerAgent[index], sizeof(ownerAgent[index]), "%s", tasks[index].assignedAgent);
+            }
+        } else if (lineHasSchema(line, "woventeam.task_event.v0.1") && index >= 0) {
+            char eventType[32];
+            readOptionalString(line, "eventType", eventType, sizeof(eventType), "");
+            readOptionalString(line, "status", tasks[index].status, sizeof(tasks[index].status), tasks[index].status);
+            wtJsonReadLongLong(line, "createdAtUnixMs", &tasks[index].updatedAtUnixMs);
+            if (strcmp(eventType, "routing") == 0 || strcmp(eventType, "assignment") == 0) {
+                readOptionalString(line, "assignedAgent", ownerAgent[index], sizeof(ownerAgent[index]), ownerAgent[index]);
+                readOptionalString(line, "assignedAgent", tasks[index].assignedAgent, sizeof(tasks[index].assignedAgent), tasks[index].assignedAgent);
+            }
+            if (strcmp(eventType, "lease") == 0 || strcmp(eventType, "lease_renewal") == 0) {
+                wtJsonReadLongLong(line, "leaseExpiresAtUnixMs", &leaseExpiresAt[index]);
+            } else if (strcmp(eventType, "reclaim") == 0) {
+                leaseExpiresAt[index] = 0;
+            }
+        }
+    }
+    fclose(file);
+    for (int index = 0; index < count; index++) {
+        int queued = strcmp(tasks[index].status, "queued") == 0 || strcmp(tasks[index].status, "assigned") == 0;
+        int stuck = (strcmp(tasks[index].status, "leased") == 0 ||
+                     strcmp(tasks[index].status, "running") == 0) &&
+                    leaseExpiresAt[index] > 0 && leaseExpiresAt[index] <= nowUnixMs;
+        if ((queued || stuck) && strcmp(ownerAgent[index], agentName) == 0) {
+            if (tasks[index].executionHost[0] != '\0' && strcmp(tasks[index].executionHost, executionHost) != 0) {
+                continue;
+            }
+            if (tasks[index].executionHost[0] == '\0' || strcmp(tasks[index].executionHost, executionHost) == 0) {
+                snprintf(tasks[index].assignedAgent, sizeof(tasks[index].assignedAgent), "%s", ownerAgent[index]);
+                *task = tasks[index];
+                return 1;
+            }
         }
     }
     return 0;
