@@ -28,30 +28,31 @@ make
 
 ## Cold Install From Release Tarball
 
-These steps are the Sprint 6 operator rehearsal path. They assume a fresh
-GNU/Linux host with `cc`, `make`, `sqlite3` development headers, `curl`, `jq`,
-`tar`, `gzip`, and `git` available from the system package manager.
+These steps assume a fresh GNU/Linux host with `cc`, `make`, `sqlite3`
+development headers, `curl`, `jq`, `tar`, `gzip`, and `git` available from the
+system package manager.
 
-On the build host, create the release archive:
-
-```sh
-make clean
-make
-make dist-tarball
-```
-
-Copy `dist/woventeam-<commit>.tar.gz` to the target host, then install and test:
+The current recommended release is **[v1.0.2](https://github.com/soren42/WovenTeam/releases/tag/v1.0.2)**
+(real adapter execution + the dashboard fix). Download the release tarball,
+verify its checksum, then install and test:
 
 ```sh
-mkdir -p ~/woventeam-install
-tar -xzf woventeam-<commit>.tar.gz -C ~/woventeam-install
-cd ~/woventeam-install/WovenTeam
+cd ~
+curl -fsSLO https://github.com/soren42/WovenTeam/releases/download/v1.0.2/woventeam-1.0.2.tar.gz
+curl -fsSLO https://github.com/soren42/WovenTeam/releases/download/v1.0.2/woventeam-1.0.2.tar.gz.sha256
+sha256sum -c woventeam-1.0.2.tar.gz.sha256
+tar -xzf woventeam-1.0.2.tar.gz
+cd WovenTeam-1.0.2
 make clean
 make
 make test
 cp config/woventeam-phase0.conf.example config/woventeam-phase0.conf
 ./build/wt-roomd --config config/woventeam-phase0.conf
 ```
+
+To build a release archive from a source checkout instead (e.g. for an
+unreleased commit), use `make dist-tarball`, which writes
+`dist/woventeam-<commit>.tar.gz`.
 
 In separate terminals, run the local walkthrough:
 
