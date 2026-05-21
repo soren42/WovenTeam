@@ -6,10 +6,12 @@
  * message ID in a tiny state file to avoid duplicate replies and loops.
  */
 #include "wt_config.h"
+#include "wt_json.h"
 #include "wt_message.h"
 #include "wt_room_store.h"
 #include "wt_task_store.h"
 
+#include <ctype.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <signal.h>
@@ -22,7 +24,7 @@
 #include <unistd.h>
 
 static void usage(const char *programName) {
-    fprintf(stderr, "Usage: %s --agent claude|chatgpt|gemini [--once|--loop] [--config FILE]\n", programName);
+    fprintf(stderr, "Usage: %s --agent claude|chatgpt|gemini [--once|--loop] [--config FILE] [--remote URL --bearer TOKEN --host HOST] [--ssh HOST]\n", programName);
 }
 
 static void sleepMilliseconds(int milliseconds) {
@@ -37,6 +39,17 @@ static int isKnownAgent(const char *agentName) {
     return strcmp(agentName, "claude") == 0 ||
            strcmp(agentName, "chatgpt") == 0 ||
            strcmp(agentName, "gemini") == 0;
+}
+
+static int shellSafeText(const char *value) {
+    if (!value || !value[0]) return 0;
+    for (const unsigned char *cursor = (const unsigned char *)value; *cursor; cursor++) {
+        if (!(isalnum(*cursor) || *cursor == '.' || *cursor == ':' || *cursor == '/' ||
+              *cursor == '_' || *cursor == '-' || *cursor == '=')) {
+            return 0;
+        }
+    }
+    return 1;
 }
 
 static int shouldHandle(const char *agentName, const WtMessage *message, long lastHandledId) {
@@ -787,10 +800,113 @@ static int handleOnce(const WtConfig *config, const char *agentName) {
     return 0;
 }
 
+static int curlPostJson(const char *baseUrl, const char *token, const char *path,
+                        const char *json, char *response, size_t responseSize) {
+    if (!shellSafeText(baseUrl) || !shellSafeText(token) || !shellSafeText(path)) {
+        fprintf(stderr, "remote URL, token, or path contains unsupported shell characters\n");
+        return -1;
+    }
+    char templatePath[] = "/tmp/wt-agent-remote-XXXXXX";
+    int fd = mkstemp(templatePath);
+    if (fd < 0) {
+        perror("mkstemp remote response");
+        return -1;
+    }
+    close(fd);
+    char command[4096];
+    snprintf(command, sizeof(command),
+             "curl -sS -H 'Content-Type: application/json' -H 'Authorization: Bearer %s' "
+             "-d '%s' '%s%s' > '%s'",
+             token, json, baseUrl, path, templatePath);
+    int rc = system(command);
+    readFileSnippet(templatePath, (int)responseSize - 1, response, responseSize);
+    unlink(templatePath);
+    return rc == 0 ? 0 : -1;
+}
+
+static int postRemoteStatus(const char *remoteUrl, const char *bearerToken,
+                            const char *agentName, const char *taskId,
+                            const char *status, const char *message) {
+    char body[1024];
+    snprintf(body, sizeof(body),
+             "{\"agent\":\"%s\",\"taskId\":\"%s\",\"status\":\"%s\",\"message\":\"%s\"}",
+             agentName, taskId, status, message);
+    char response[1024];
+    if (curlPostJson(remoteUrl, bearerToken, "/api/remote-task-event", body,
+                     response, sizeof(response)) != 0) {
+        fprintf(stderr, "remote status post failed: %s\n", response);
+        return 1;
+    }
+    if (!strstr(response, "\"ok\":true")) {
+        fprintf(stderr, "remote status rejected: %s\n", response);
+        return 1;
+    }
+    return 0;
+}
+
+static int handleRemoteOnce(const WtConfig *config, const char *agentName,
+                            const char *remoteUrl, const char *bearerToken,
+                            const char *hostName) {
+    (void)config;
+    if (!shellSafeText(remoteUrl) || !shellSafeText(bearerToken) || !shellSafeText(hostName)) {
+        fprintf(stderr, "remote mode requires shell-safe URL, token, and host\n");
+        return 2;
+    }
+    char capBody[1024];
+    const char *profiles = strcmp(agentName, "chatgpt") == 0 ? "observe,repo_branch,test_local" : "observe,ops_read";
+    snprintf(capBody, sizeof(capBody),
+             "{\"host\":\"%s\",\"agent\":\"%s\",\"profiles\":\"%s\",\"adapters\":\"%s\"}",
+             hostName, agentName, profiles, agentName);
+    char response[4096];
+    if (curlPostJson(remoteUrl, bearerToken, "/api/host-capabilities", capBody,
+                     response, sizeof(response)) != 0 || !strstr(response, "\"ok\":true")) {
+        fprintf(stderr, "host capability registration failed: %s\n", response);
+        return 1;
+    }
+    char claimBody[512];
+    snprintf(claimBody, sizeof(claimBody), "{\"host\":\"%s\",\"agent\":\"%s\"}", hostName, agentName);
+    if (curlPostJson(remoteUrl, bearerToken, "/api/remote-claim", claimBody,
+                     response, sizeof(response)) != 0) {
+        fprintf(stderr, "remote claim failed: %s\n", response);
+        return 1;
+    }
+    if (strstr(response, "token_revoked")) {
+        fprintf(stderr, "remote claim rejected: token_revoked\n");
+        return 3;
+    }
+    if (strstr(response, "capability_unmet")) {
+        fprintf(stderr, "remote claim rejected: capability_unmet\n");
+        return 4;
+    }
+    if (!strstr(response, "\"claimed\":true")) {
+        printf("[remote] %s@%s no claim: %s\n", agentName, hostName, response);
+        return 0;
+    }
+    char taskId[WT_TASK_ID_SIZE];
+    if (wtJsonReadString(response, "taskId", taskId, sizeof(taskId)) != 0) {
+        fprintf(stderr, "remote claim response missing taskId: %s\n", response);
+        return 1;
+    }
+    if (postRemoteStatus(remoteUrl, bearerToken, agentName, taskId, "running",
+                         "Remote stub agent accepted task.") != 0) {
+        return 1;
+    }
+    if (postRemoteStatus(remoteUrl, bearerToken, agentName, taskId, "complete",
+                         "Remote stub agent completed task.") != 0) {
+        return 1;
+    }
+    printf("[remote] %s@%s completed %s\n", agentName, hostName, taskId);
+    return 0;
+}
+
 int main(int argc, char **argv) {
     WtConfig config;
     wtConfigInitDefaults(&config);
     const char *agentName = NULL;
+    const char *remoteUrl = NULL;
+    const char *bearerToken = NULL;
+    const char *hostName = NULL;
+    const char *sshHost = NULL;
     int loop = 0;
     int once = 0;
     for (int index = 1; index < argc; index++) {
@@ -802,6 +918,14 @@ int main(int argc, char **argv) {
             loop = 1;
         } else if (strcmp(argv[index], "--config") == 0 && index + 1 < argc) {
             wtConfigLoadFile(&config, argv[++index]);
+        } else if (strcmp(argv[index], "--remote") == 0 && index + 1 < argc) {
+            remoteUrl = argv[++index];
+        } else if (strcmp(argv[index], "--bearer") == 0 && index + 1 < argc) {
+            bearerToken = argv[++index];
+        } else if (strcmp(argv[index], "--host") == 0 && index + 1 < argc) {
+            hostName = argv[++index];
+        } else if (strcmp(argv[index], "--ssh") == 0 && index + 1 < argc) {
+            sshHost = argv[++index];
         } else {
             usage(argv[0]);
             return 2;
@@ -814,6 +938,22 @@ int main(int argc, char **argv) {
     }
     if (!once && !loop) {
         once = 1;
+    }
+    if (sshHost) {
+        if (!shellSafeText(sshHost)) {
+            fprintf(stderr, "--ssh host contains unsupported characters\n");
+            return 2;
+        }
+        printf("operator launch target: ssh %s wt-agent --agent %s --remote <url> --bearer <token> --host %s\n",
+               sshHost, agentName, sshHost);
+        return 0;
+    }
+    if (remoteUrl || bearerToken || hostName) {
+        if (!remoteUrl || !bearerToken || !hostName || loop) {
+            usage(argv[0]);
+            return 2;
+        }
+        return handleRemoteOnce(&config, agentName, remoteUrl, bearerToken, hostName);
     }
     do {
         int rc = handleOnce(&config, agentName);

@@ -1185,6 +1185,48 @@ kbd {
   white-space: nowrap;
 }
 
+.host-panel {
+  min-height: 132px;
+}
+.host-list {
+  display: grid;
+  gap: 4px;
+  padding: 8px 12px 12px;
+}
+.host-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 4px 8px;
+  align-items: baseline;
+  padding: 7px 8px;
+  border: 1px solid var(--edge);
+  background: var(--panel-alt);
+}
+.host-row strong {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.host-row span {
+  font-family: var(--mono);
+  font-size: 10px;
+  color: var(--accent, #06b6d4);
+}
+.host-row small {
+  grid-column: 1 / -1;
+  font-size: 9.5px;
+  color: var(--text-dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.host-row.empty span {
+  display: none;
+}
+
 /*
  * Sprint 4 promoted-asset inventory panel - lists accepted artifacts under the
  * currently focused initiative.

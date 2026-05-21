@@ -27,6 +27,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/types.h>
@@ -34,6 +35,16 @@
 #include <unistd.h>
 
 static int rebuildProjection(const WtConfig *config);
+static int readHostProfiles(const WtConfig *config, const char *host, const char *agent,
+                            char *profiles, size_t profilesSize);
+static int profileInList(const char *profiles, const char *profile);
+
+typedef struct {
+    char role[32];
+    char subject[WT_TASK_AGENT_SIZE];
+    char tokenId[64];
+    char reason[64];
+} WtAuthContext;
 
 static void usage(const char *programName) {
     fprintf(stderr, "Usage: %s [--config FILE] [--port N] [--bind ADDRESS]\n", programName);
@@ -184,6 +195,159 @@ static int appendJsonStringValue(char *buffer, size_t bufferSize, size_t *used, 
              appendJsonRaw(buffer, bufferSize, used, "\"") == 0;
     free(escaped);
     return ok ? 0 : -1;
+}
+
+static int requestHeaderValue(const char *request, const char *headerName, char *buffer, size_t bufferSize) {
+    if (bufferSize > 0) buffer[0] = '\0';
+    size_t nameLen = strlen(headerName);
+    const char *cursor = request;
+    while (cursor && *cursor) {
+        const char *lineEnd = strstr(cursor, "\r\n");
+        if (!lineEnd || lineEnd == cursor) break;
+        if (strncasecmp(cursor, headerName, nameLen) == 0 && cursor[nameLen] == ':') {
+            const char *value = cursor + nameLen + 1;
+            while (*value == ' ' || *value == '\t') value++;
+            size_t length = (size_t)(lineEnd - value);
+            while (length > 0 && (value[length - 1] == ' ' || value[length - 1] == '\t')) length--;
+            if (length >= bufferSize) length = bufferSize - 1;
+            memcpy(buffer, value, length);
+            buffer[length] = '\0';
+            return 0;
+        }
+        cursor = lineEnd + 2;
+    }
+    return -1;
+}
+
+static int peerIsLocal(const char *peerIp) {
+    return peerIp && (strcmp(peerIp, "127.0.0.1") == 0 || strcmp(peerIp, "::1") == 0);
+}
+
+static int ipAllowedByConfig(const WtConfig *config, const char *peerIp) {
+    if (!peerIp || !peerIp[0]) return 0;
+    char copy[WT_PATH_SIZE];
+    snprintf(copy, sizeof(copy), "%s", config->remoteAllowedIps);
+    char *saveptr = NULL;
+    for (char *item = strtok_r(copy, ",", &saveptr); item; item = strtok_r(NULL, ",", &saveptr)) {
+        while (*item == ' ' || *item == '\t') item++;
+        char *end = item + strlen(item);
+        while (end > item && (end[-1] == ' ' || end[-1] == '\t')) *--end = '\0';
+        if (strcmp(item, "*") == 0 || strcmp(item, peerIp) == 0) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static int extractBearerToken(const char *request, char *token, size_t tokenSize) {
+    char authorization[512];
+    if (requestHeaderValue(request, "Authorization", authorization, sizeof(authorization)) != 0) {
+        return -1;
+    }
+    const char *prefix = "Bearer ";
+    if (strncmp(authorization, prefix, strlen(prefix)) != 0) {
+        return -1;
+    }
+    snprintf(token, tokenSize, "%s", authorization + strlen(prefix));
+    return token[0] ? 0 : -1;
+}
+
+static int tokenRevoked(const WtConfig *config, const char *tokenId) {
+    FILE *file = fopen(config->taskLedgerPath, "r");
+    if (!file) return 0;
+    char line[WT_TASK_LEDGER_LINE_SIZE];
+    int revoked = 0;
+    while (fgets(line, sizeof(line), file)) {
+        if (!strstr(line, "\"schema\":\"woventeam.auth_token.v0.1\"")) continue;
+        char eventType[32];
+        char lineTokenId[64];
+        if (wtJsonReadString(line, "eventType", eventType, sizeof(eventType)) == 0 &&
+            strcmp(eventType, "revoke") == 0 &&
+            wtJsonReadString(line, "tokenId", lineTokenId, sizeof(lineTokenId)) == 0 &&
+            strcmp(lineTokenId, tokenId) == 0) {
+            revoked = 1;
+        }
+    }
+    fclose(file);
+    return revoked;
+}
+
+static int validateBearerToken(const WtConfig *config, const char *request, const char *peerIp,
+                               const char *requiredRole, WtAuthContext *auth) {
+    memset(auth, 0, sizeof(*auth));
+    if (!ipAllowedByConfig(config, peerIp)) {
+        snprintf(auth->reason, sizeof(auth->reason), "%s", "ip_not_allowed");
+        return 0;
+    }
+    char token[256];
+    if (extractBearerToken(request, token, sizeof(token)) != 0) {
+        snprintf(auth->reason, sizeof(auth->reason), "%s", "bearer_required");
+        return 0;
+    }
+    FILE *file = fopen(config->taskLedgerPath, "r");
+    if (!file) {
+        snprintf(auth->reason, sizeof(auth->reason), "%s", "token_unknown");
+        return 0;
+    }
+    char line[WT_TASK_LEDGER_LINE_SIZE];
+    int found = 0;
+    long long issuedAt = 0;
+    long ttl = 0;
+    while (fgets(line, sizeof(line), file)) {
+        if (!strstr(line, "\"schema\":\"woventeam.auth_token.v0.1\"")) continue;
+        char eventType[32];
+        char lineToken[256];
+        if (wtJsonReadString(line, "eventType", eventType, sizeof(eventType)) != 0 ||
+            strcmp(eventType, "issue") != 0 ||
+            wtJsonReadString(line, "token", lineToken, sizeof(lineToken)) != 0 ||
+            strcmp(lineToken, token) != 0) {
+            continue;
+        }
+        wtJsonReadString(line, "role", auth->role, sizeof(auth->role));
+        wtJsonReadString(line, "subject", auth->subject, sizeof(auth->subject));
+        wtJsonReadString(line, "tokenId", auth->tokenId, sizeof(auth->tokenId));
+        wtJsonReadLongLong(line, "issuedAtUnixMs", &issuedAt);
+        wtJsonReadLong(line, "ttlSeconds", &ttl);
+        found = 1;
+    }
+    fclose(file);
+    if (!found) {
+        snprintf(auth->reason, sizeof(auth->reason), "%s", "token_unknown");
+        return 0;
+    }
+    if (tokenRevoked(config, auth->tokenId)) {
+        snprintf(auth->reason, sizeof(auth->reason), "%s", "token_revoked");
+        return 0;
+    }
+    long long now = wtNowUnixMilliseconds();
+    if (ttl > 0 && issuedAt > 0 && now > issuedAt + ttl * 1000LL) {
+        snprintf(auth->reason, sizeof(auth->reason), "%s", "token_expired");
+        return 0;
+    }
+    if (requiredRole && requiredRole[0] && strcmp(requiredRole, auth->role) != 0) {
+        snprintf(auth->reason, sizeof(auth->reason), "%s", "role_forbidden");
+        return 0;
+    }
+    snprintf(auth->reason, sizeof(auth->reason), "%s", "ok");
+    return 1;
+}
+
+static int requireOperatorAuth(int clientFd, const WtConfig *config, const char *request, const char *peerIp) {
+    if (peerIsLocal(peerIp)) return 1;
+    WtAuthContext auth;
+    if (validateBearerToken(config, request, peerIp, "operator", &auth)) return 1;
+    char response[256];
+    snprintf(response, sizeof(response), "{\"ok\":false,\"error\":\"operator_auth_required\",\"reason\":\"%s\"}\n",
+             auth.reason[0] ? auth.reason : "bearer_required");
+    wtHttpSendText(clientFd, 401, "Unauthorized", "application/json; charset=utf-8", response);
+    return 0;
+}
+
+static void makeToken(char *token, size_t tokenSize, char *tokenId, size_t tokenIdSize) {
+    unsigned int seed = (unsigned int)time(NULL) ^ (unsigned int)getpid() ^ (unsigned int)rand();
+    snprintf(tokenId, tokenIdSize, "tok_%lld_%u", wtNowUnixMilliseconds(), seed);
+    snprintf(token, tokenSize, "wt_%lld_%08x%08x%08x", wtNowUnixMilliseconds(),
+             seed, (unsigned int)rand(), (unsigned int)rand());
 }
 
 static const char *profileDefaultAutonomy(const char *profile) {
@@ -950,6 +1114,7 @@ static int handlePostTaskPackage(int clientFd, const WtConfig *config, const cha
     char toolProfile[WT_TASK_POLICY_SIZE];
     char status[WT_TASK_STATUS_SIZE];
     char title[WT_TASK_TITLE_SIZE];
+    char executionHost[WT_TASK_AGENT_SIZE];
     long maxTokens = 0;
     if (wtJsonReadString(body, "schema", schema, sizeof(schema)) != 0 ||
         strcmp(schema, "woventeam.task_package.v0.1") != 0 ||
@@ -971,6 +1136,9 @@ static int handlePostTaskPackage(int clientFd, const WtConfig *config, const cha
     }
     if (wtJsonReadString(body, "title", title, sizeof(title)) != 0) {
         snprintf(title, sizeof(title), "%s", "Untitled task");
+    }
+    if (wtJsonReadString(body, "executionHost", executionHost, sizeof(executionHost)) != 0) {
+        executionHost[0] = '\0';
     }
     wtJsonReadLong(body, "maxTokens", &maxTokens);
     if (maxTokens < 0) {
@@ -1037,6 +1205,20 @@ static int handlePostTaskPackage(int clientFd, const WtConfig *config, const cha
                  escapedDetail, escapedReason, escapedDetail);
         return wtHttpSendText(clientFd, 409, "Conflict", "application/json", response);
     }
+    if (executionHost[0]) {
+        char hostProfiles[256];
+        if (!readHostProfiles(config, executionHost, assignedAgent, hostProfiles, sizeof(hostProfiles)) ||
+            !profileInList(hostProfiles, toolProfile)) {
+            WtPolicyDecision capDecision;
+            memset(&capDecision, 0, sizeof(capDecision));
+            snprintf(capDecision.reason, sizeof(capDecision.reason), "%s", "capability_unmet");
+            snprintf(capDecision.message, sizeof(capDecision.message),
+                     "Host %s does not advertise %s for %s.", executionHost, toolProfile, assignedAgent);
+            recordPolicyDenial(config, taskId, initiativeId, &capDecision, "ceo");
+            return wtHttpSendText(clientFd, 409, "Conflict", "application/json",
+                                  "{\"ok\":false,\"error\":\"capability_unmet\",\"reason\":\"capability_unmet\"}\n");
+        }
+    }
     char compact[WT_TASK_LEDGER_LINE_SIZE];
     if (shouldRouteAgent(assignedAgent)) {
         compactJsonLine(body, compact, sizeof(compact));
@@ -1099,6 +1281,7 @@ static int handlePostTaskRequest(int clientFd, const WtConfig *config, const cha
     char taskBody[WT_TASK_BODY_SIZE];
     char toolProfile[WT_TASK_POLICY_SIZE];
     char modelId[WT_TASK_MODEL_SIZE];
+    char executionHost[WT_TASK_AGENT_SIZE];
     long maxTokens = 2000000;
     if (wtJsonReadString(body, "schema", schema, sizeof(schema)) != 0 ||
         strcmp(schema, "woventeam.task_request.v0.1") != 0 ||
@@ -1122,6 +1305,9 @@ static int handlePostTaskRequest(int clientFd, const WtConfig *config, const cha
     }
     if (wtJsonReadString(body, "priority", priority, sizeof(priority)) != 0) {
         snprintf(priority, sizeof(priority), "%s", "normal");
+    }
+    if (wtJsonReadString(body, "executionHost", executionHost, sizeof(executionHost)) != 0) {
+        executionHost[0] = '\0';
     }
     if (wtJsonReadString(body, "profile", toolProfile, sizeof(toolProfile)) != 0) {
         snprintf(toolProfile, sizeof(toolProfile), "%s", "observe");
@@ -1180,6 +1366,20 @@ static int handlePostTaskRequest(int clientFd, const WtConfig *config, const cha
                  escapedDetail, escapedReason, escapedDetail);
         return wtHttpSendText(clientFd, 409, "Conflict", "application/json", response);
     }
+    if (executionHost[0]) {
+        char hostProfiles[256];
+        if (!readHostProfiles(config, executionHost, assignedAgent, hostProfiles, sizeof(hostProfiles)) ||
+            !profileInList(hostProfiles, toolProfile)) {
+            WtPolicyDecision capDecision;
+            memset(&capDecision, 0, sizeof(capDecision));
+            snprintf(capDecision.reason, sizeof(capDecision.reason), "%s", "capability_unmet");
+            snprintf(capDecision.message, sizeof(capDecision.message),
+                     "Host %s does not advertise %s for %s.", executionHost, toolProfile, assignedAgent);
+            recordPolicyDenial(config, requestedTaskId, initiativeId, &capDecision, requestedBy);
+            return wtHttpSendText(clientFd, 409, "Conflict", "application/json",
+                                  "{\"ok\":false,\"error\":\"capability_unmet\",\"reason\":\"capability_unmet\"}\n");
+        }
+    }
     /* Subtasks have an extra per-parent capacity check that does not apply to
      * top-level packages; keep it separate from the central evaluator. */
     char capacityError[256];
@@ -1204,6 +1404,7 @@ static int handlePostTaskRequest(int clientFd, const WtConfig *config, const cha
     char escapedBody[WT_TASK_BODY_SIZE * 2];
     char escapedProfile[WT_TASK_POLICY_SIZE * 2];
     char escapedParent[WT_TASK_ID_SIZE * 2];
+    char escapedHost[WT_TASK_AGENT_SIZE * 2];
     if (wtJsonEscape(requestedTaskId, escapedTaskId, sizeof(escapedTaskId)) != 0 ||
         wtJsonEscape(initiativeId, escapedInitiative, sizeof(escapedInitiative)) != 0 ||
         wtJsonEscape(requestedBy, escapedRequestedBy, sizeof(escapedRequestedBy)) != 0 ||
@@ -1215,7 +1416,8 @@ static int handlePostTaskRequest(int clientFd, const WtConfig *config, const cha
         wtJsonEscape(title, escapedTitle, sizeof(escapedTitle)) != 0 ||
         wtJsonEscape(taskBody, escapedBody, sizeof(escapedBody)) != 0 ||
         wtJsonEscape(toolProfile, escapedProfile, sizeof(escapedProfile)) != 0 ||
-        wtJsonEscape(parentTaskId, escapedParent, sizeof(escapedParent)) != 0) {
+        wtJsonEscape(parentTaskId, escapedParent, sizeof(escapedParent)) != 0 ||
+        wtJsonEscape(executionHost, escapedHost, sizeof(escapedHost)) != 0) {
         return wtHttpSendText(clientFd, 400, "Bad Request", "application/json", "{\"ok\":false,\"error\":\"request too large\"}\n");
     }
     long long createdAtUnixMs = wtNowUnixMilliseconds();
@@ -1226,17 +1428,19 @@ static int handlePostTaskRequest(int clientFd, const WtConfig *config, const cha
              "\"initiativeId\":\"%s\",\"requestedBy\":\"%s\","
              "\"requestedByRole\":\"%s\",\"requestedRole\":\"%s\","
              "\"assignedAgent\":\"%s\",\"modelId\":\"%s\",\"priority\":\"%s\","
+             "\"executionHost\":\"%s\","
              "\"title\":\"%s\",\"body\":\"%s\","
              "\"toolPolicy\":{\"profile\":\"%s\"},\"createdAtUnixMs\":%lld}",
              escapedTaskId, escapedParent, escapedTaskId, escapedInitiative,
              escapedRequestedBy, escapedRequestedByRole, escapedRole,
-             escapedAgent, escapedModel, escapedPriority, escapedTitle,
+             escapedAgent, escapedModel, escapedPriority, escapedHost, escapedTitle,
              escapedBody, escapedProfile, createdAtUnixMs);
     char taskPackage[WT_TASK_LEDGER_LINE_SIZE];
     snprintf(taskPackage, sizeof(taskPackage),
              "{\"schema\":\"woventeam.task_package.v0.1\",\"taskId\":\"%s\","
              "\"initiativeId\":\"%s\",\"createdBy\":\"%s\",\"assignedRole\":\"%s\","
              "\"assignedAgent\":\"%s\",\"modelId\":\"%s\",\"priority\":\"%s\","
+             "\"executionHost\":\"%s\","
              "\"status\":\"queued\",\"title\":\"%s\",\"body\":\"%s\","
              "\"parentTaskId\":\"%s\",\"requestedByRole\":\"%s\","
              "\"task\":{\"title\":\"%s\",\"body\":\"%s\",\"deliverables\":[]},"
@@ -1245,7 +1449,7 @@ static int handlePostTaskRequest(int clientFd, const WtConfig *config, const cha
              "\"budget\":{\"timeoutSeconds\":1800,\"maxOutputBytes\":1048576,\"maxCostUsd\":1.0,\"maxTokens\":%ld},"
              "\"dependencies\":[\"%s\"],\"createdAtUnixMs\":%lld}",
              escapedTaskId, escapedInitiative, escapedRequestedBy, escapedRole,
-             escapedAgent, escapedModel, escapedPriority, escapedTitle, escapedBody,
+             escapedAgent, escapedModel, escapedPriority, escapedHost, escapedTitle, escapedBody,
              escapedParent, escapedRequestedByRole, escapedTitle, escapedBody, escapedProfile,
              strcmp(toolProfile, "repo_branch") == 0 || strcmp(toolProfile, "test_local") == 0 ? "workspace_write" : "read_only",
              strcmp(toolProfile, "test_local") == 0 ? "loopback" : "none",
@@ -1766,6 +1970,368 @@ static int handlePostTaskDeliverable(int clientFd, const WtConfig *config, const
              result.scanMatched ? "true" : "false",
              result.scanHitCount);
     return wtHttpSendText(clientFd, 200, "OK", "application/json; charset=utf-8", response);
+}
+
+static int handlePostAuthToken(int clientFd, const WtConfig *config, const char *request) {
+    const char *body = strstr(request, "\r\n\r\n");
+    body = body ? body + 4 : "";
+    char role[32];
+    char subject[WT_TASK_AGENT_SIZE];
+    long ttlSeconds = config->authTokenDefaultTtlSeconds > 0 ? config->authTokenDefaultTtlSeconds : 3600;
+    if (wtJsonReadString(body, "role", role, sizeof(role)) != 0) snprintf(role, sizeof(role), "%s", "agent");
+    if (strcmp(role, "operator") != 0 && strcmp(role, "agent") != 0) {
+        return wtHttpSendText(clientFd, 400, "Bad Request", "application/json",
+                              "{\"ok\":false,\"error\":\"invalid_role\"}\n");
+    }
+    if (wtJsonReadString(body, "subject", subject, sizeof(subject)) != 0) snprintf(subject, sizeof(subject), "%s", role);
+    wtJsonReadLong(body, "ttlSeconds", &ttlSeconds);
+    if (ttlSeconds < 1) ttlSeconds = 1;
+    char token[256];
+    char tokenId[64];
+    makeToken(token, sizeof(token), tokenId, sizeof(tokenId));
+    char escapedToken[512], escapedTokenId[128], escapedRole[64], escapedSubject[WT_TASK_AGENT_SIZE * 2];
+    if (wtJsonEscape(token, escapedToken, sizeof(escapedToken)) != 0 ||
+        wtJsonEscape(tokenId, escapedTokenId, sizeof(escapedTokenId)) != 0 ||
+        wtJsonEscape(role, escapedRole, sizeof(escapedRole)) != 0 ||
+        wtJsonEscape(subject, escapedSubject, sizeof(escapedSubject)) != 0) {
+        return wtHttpSendText(clientFd, 500, "Internal Server Error", "application/json",
+                              "{\"ok\":false,\"error\":\"token_escape_failed\"}\n");
+    }
+    long long issuedAt = wtNowUnixMilliseconds();
+    char record[2048];
+    snprintf(record, sizeof(record),
+             "{\"schema\":\"woventeam.auth_token.v0.1\",\"eventType\":\"issue\","
+             "\"tokenId\":\"%s\",\"token\":\"%s\",\"role\":\"%s\",\"subject\":\"%s\","
+             "\"issuedAtUnixMs\":%lld,\"ttlSeconds\":%ld,\"createdBy\":\"operator\","
+             "\"createdAtUnixMs\":%lld}",
+             escapedTokenId, escapedToken, escapedRole, escapedSubject, issuedAt,
+             ttlSeconds, issuedAt);
+    if (wtTaskAppendRecord(config->taskLedgerPath, record, config->fsyncEachMessage) != 0) {
+        return wtHttpSendText(clientFd, 500, "Internal Server Error", "application/json",
+                              "{\"ok\":false,\"error\":\"append_failed\"}\n");
+    }
+    char response[1024];
+    snprintf(response, sizeof(response),
+             "{\"ok\":true,\"tokenId\":\"%s\",\"token\":\"%s\",\"role\":\"%s\","
+             "\"subject\":\"%s\",\"issuedAtUnixMs\":%lld,\"ttlSeconds\":%ld}\n",
+             tokenId, token, role, subject, issuedAt, ttlSeconds);
+    return wtHttpSendText(clientFd, 200, "OK", "application/json; charset=utf-8", response);
+}
+
+static int handlePostAuthTokenRevoke(int clientFd, const WtConfig *config, const char *request) {
+    const char *body = strstr(request, "\r\n\r\n");
+    body = body ? body + 4 : "";
+    char tokenId[64];
+    if (wtJsonReadString(body, "tokenId", tokenId, sizeof(tokenId)) != 0) {
+        return wtHttpSendText(clientFd, 400, "Bad Request", "application/json",
+                              "{\"ok\":false,\"error\":\"tokenId_required\"}\n");
+    }
+    char escapedTokenId[128];
+    wtJsonEscape(tokenId, escapedTokenId, sizeof(escapedTokenId));
+    char record[512];
+    snprintf(record, sizeof(record),
+             "{\"schema\":\"woventeam.auth_token.v0.1\",\"eventType\":\"revoke\","
+             "\"tokenId\":\"%s\",\"createdBy\":\"operator\",\"createdAtUnixMs\":%lld}",
+             escapedTokenId, wtNowUnixMilliseconds());
+    if (wtTaskAppendRecord(config->taskLedgerPath, record, config->fsyncEachMessage) != 0) {
+        return wtHttpSendText(clientFd, 500, "Internal Server Error", "application/json",
+                              "{\"ok\":false,\"error\":\"append_failed\"}\n");
+    }
+    char response[256];
+    snprintf(response, sizeof(response), "{\"ok\":true,\"tokenId\":\"%s\",\"status\":\"revoked\"}\n", tokenId);
+    return wtHttpSendText(clientFd, 200, "OK", "application/json; charset=utf-8", response);
+}
+
+static int handlePostHostCapabilities(int clientFd, const WtConfig *config, const char *request,
+                                      const WtAuthContext *auth) {
+    const char *body = strstr(request, "\r\n\r\n");
+    body = body ? body + 4 : "";
+    char host[WT_TASK_AGENT_SIZE];
+    char agent[WT_TASK_AGENT_SIZE];
+    char profiles[256];
+    char adapters[256];
+    if (wtJsonReadString(body, "host", host, sizeof(host)) != 0 ||
+        wtJsonReadString(body, "agent", agent, sizeof(agent)) != 0) {
+        return wtHttpSendText(clientFd, 400, "Bad Request", "application/json",
+                              "{\"ok\":false,\"error\":\"host_agent_required\"}\n");
+    }
+    if (auth && auth->role[0] && strcmp(auth->role, "agent") == 0 &&
+        auth->subject[0] && strcmp(auth->subject, agent) != 0 && strcmp(auth->subject, host) != 0) {
+        return wtHttpSendText(clientFd, 403, "Forbidden", "application/json",
+                              "{\"ok\":false,\"error\":\"subject_mismatch\"}\n");
+    }
+    if (wtJsonReadString(body, "profiles", profiles, sizeof(profiles)) != 0) snprintf(profiles, sizeof(profiles), "%s", "observe");
+    if (wtJsonReadString(body, "adapters", adapters, sizeof(adapters)) != 0) snprintf(adapters, sizeof(adapters), "%s", agent);
+    char escapedHost[WT_TASK_AGENT_SIZE * 2], escapedAgent[WT_TASK_AGENT_SIZE * 2];
+    char escapedProfiles[512], escapedAdapters[512];
+    if (wtJsonEscape(host, escapedHost, sizeof(escapedHost)) != 0 ||
+        wtJsonEscape(agent, escapedAgent, sizeof(escapedAgent)) != 0 ||
+        wtJsonEscape(profiles, escapedProfiles, sizeof(escapedProfiles)) != 0 ||
+        wtJsonEscape(adapters, escapedAdapters, sizeof(escapedAdapters)) != 0) {
+        return wtHttpSendText(clientFd, 400, "Bad Request", "application/json",
+                              "{\"ok\":false,\"error\":\"capability_too_large\"}\n");
+    }
+    char record[2048];
+    snprintf(record, sizeof(record),
+             "{\"schema\":\"woventeam.host_event.v0.1\",\"eventType\":\"capabilities\","
+             "\"host\":\"%s\",\"agent\":\"%s\",\"profiles\":\"%s\",\"adapters\":\"%s\","
+             "\"createdBy\":\"wt-agent@%s\",\"createdAtUnixMs\":%lld}",
+             escapedHost, escapedAgent, escapedProfiles, escapedAdapters, escapedAgent,
+             wtNowUnixMilliseconds());
+    if (wtTaskAppendRecord(config->taskLedgerPath, record, config->fsyncEachMessage) != 0) {
+        return wtHttpSendText(clientFd, 500, "Internal Server Error", "application/json",
+                              "{\"ok\":false,\"error\":\"append_failed\"}\n");
+    }
+    char response[512];
+    snprintf(response, sizeof(response), "{\"ok\":true,\"host\":\"%s\",\"agent\":\"%s\",\"profiles\":\"%s\"}\n",
+             host, agent, profiles);
+    return wtHttpSendText(clientFd, 200, "OK", "application/json; charset=utf-8", response);
+}
+
+static int readHostProfiles(const WtConfig *config, const char *host, const char *agent,
+                            char *profiles, size_t profilesSize) {
+    if (profilesSize > 0) profiles[0] = '\0';
+    FILE *file = fopen(config->taskLedgerPath, "r");
+    if (!file) return 0;
+    char line[WT_TASK_LEDGER_LINE_SIZE];
+    int found = 0;
+    while (fgets(line, sizeof(line), file)) {
+        if (!strstr(line, "\"schema\":\"woventeam.host_event.v0.1\"")) continue;
+        char lineHost[WT_TASK_AGENT_SIZE], lineAgent[WT_TASK_AGENT_SIZE];
+        if (wtJsonReadString(line, "host", lineHost, sizeof(lineHost)) != 0 ||
+            strcmp(lineHost, host) != 0 ||
+            wtJsonReadString(line, "agent", lineAgent, sizeof(lineAgent)) != 0 ||
+            strcmp(lineAgent, agent) != 0) {
+            continue;
+        }
+        wtJsonReadString(line, "profiles", profiles, profilesSize);
+        found = 1;
+    }
+    fclose(file);
+    return found;
+}
+
+static int profileInList(const char *profiles, const char *profile) {
+    if (!profile || !profile[0]) return 1;
+    if (!profiles || !profiles[0]) return 0;
+    char copy[256];
+    snprintf(copy, sizeof(copy), "%s", profiles);
+    char *saveptr = NULL;
+    for (char *item = strtok_r(copy, ",", &saveptr); item; item = strtok_r(NULL, ",", &saveptr)) {
+        while (*item == ' ' || *item == '\t') item++;
+        char *end = item + strlen(item);
+        while (end > item && (end[-1] == ' ' || end[-1] == '\t')) *--end = '\0';
+        if (strcmp(item, "*") == 0 || strcmp(item, profile) == 0) return 1;
+    }
+    return 0;
+}
+
+static int sendHostsJson(int clientFd, const WtConfig *config) {
+    FILE *file = fopen(config->taskLedgerPath, "r");
+    char *body = malloc(WT_TASK_LEDGER_LINE_SIZE * 4);
+    if (!body) return wtHttpSendText(clientFd, 500, "Internal Server Error", "application/json", "{\"ok\":false}\n");
+    size_t used = 0;
+    appendJsonRaw(body, WT_TASK_LEDGER_LINE_SIZE * 4, &used, "{\"ok\":true,\"hosts\":[");
+    int first = 1;
+    if (file) {
+        char line[WT_TASK_LEDGER_LINE_SIZE];
+        while (fgets(line, sizeof(line), file)) {
+            if (!strstr(line, "\"schema\":\"woventeam.host_event.v0.1\"")) continue;
+            char host[WT_TASK_AGENT_SIZE], agent[WT_TASK_AGENT_SIZE], profiles[256], adapters[256];
+            if (wtJsonReadString(line, "host", host, sizeof(host)) != 0 ||
+                wtJsonReadString(line, "agent", agent, sizeof(agent)) != 0) continue;
+            if (wtJsonReadString(line, "profiles", profiles, sizeof(profiles)) != 0) profiles[0] = '\0';
+            if (wtJsonReadString(line, "adapters", adapters, sizeof(adapters)) != 0) adapters[0] = '\0';
+            if (!first) appendJsonRaw(body, WT_TASK_LEDGER_LINE_SIZE * 4, &used, ",");
+            first = 0;
+            appendJsonRaw(body, WT_TASK_LEDGER_LINE_SIZE * 4, &used, "{\"host\":");
+            appendJsonStringValue(body, WT_TASK_LEDGER_LINE_SIZE * 4, &used, host);
+            appendJsonRaw(body, WT_TASK_LEDGER_LINE_SIZE * 4, &used, ",\"agent\":");
+            appendJsonStringValue(body, WT_TASK_LEDGER_LINE_SIZE * 4, &used, agent);
+            appendJsonRaw(body, WT_TASK_LEDGER_LINE_SIZE * 4, &used, ",\"profiles\":");
+            appendJsonStringValue(body, WT_TASK_LEDGER_LINE_SIZE * 4, &used, profiles);
+            appendJsonRaw(body, WT_TASK_LEDGER_LINE_SIZE * 4, &used, ",\"adapters\":");
+            appendJsonStringValue(body, WT_TASK_LEDGER_LINE_SIZE * 4, &used, adapters);
+            appendJsonRaw(body, WT_TASK_LEDGER_LINE_SIZE * 4, &used, "}");
+        }
+        fclose(file);
+    }
+    appendJsonRaw(body, WT_TASK_LEDGER_LINE_SIZE * 4, &used, "]}\n");
+    int rc = wtHttpSendText(clientFd, 200, "OK", "application/json; charset=utf-8", body);
+    free(body);
+    return rc;
+}
+
+static int handlePostRemoteClaim(int clientFd, const WtConfig *config, const char *request,
+                                 const WtAuthContext *auth) {
+    const char *body = strstr(request, "\r\n\r\n");
+    body = body ? body + 4 : "";
+    char agent[WT_TASK_AGENT_SIZE], host[WT_TASK_AGENT_SIZE];
+    if (wtJsonReadString(body, "agent", agent, sizeof(agent)) != 0 ||
+        wtJsonReadString(body, "host", host, sizeof(host)) != 0) {
+        return wtHttpSendText(clientFd, 400, "Bad Request", "application/json",
+                              "{\"ok\":false,\"error\":\"agent_host_required\"}\n");
+    }
+    if (auth && strcmp(auth->role, "agent") == 0 && auth->subject[0] &&
+        strcmp(auth->subject, agent) != 0 && strcmp(auth->subject, host) != 0) {
+        return wtHttpSendText(clientFd, 403, "Forbidden", "application/json",
+                              "{\"ok\":false,\"error\":\"subject_mismatch\"}\n");
+    }
+    WtTaskSummary task;
+    int capabilityBlocked = 0;
+    long long nowMs = wtNowUnixMilliseconds();
+    int found = wtTaskFindClaimableForAgentOnHost(config->taskLedgerPath, agent, host, nowMs,
+                                                  &task, &capabilityBlocked);
+    if (found <= 0) {
+        return wtHttpSendText(clientFd, 200, "OK", "application/json; charset=utf-8",
+                              "{\"ok\":true,\"claimed\":false,\"reason\":\"no_task\"}\n");
+    }
+    char profiles[256];
+    if (!readHostProfiles(config, host, agent, profiles, sizeof(profiles)) ||
+        !profileInList(profiles, task.toolProfile)) {
+        return wtHttpSendText(clientFd, 409, "Conflict", "application/json; charset=utf-8",
+                              "{\"ok\":false,\"error\":\"capability_unmet\",\"reason\":\"capability_unmet\"}\n");
+    }
+    char leaseHolder[WT_TASK_AGENT_SIZE] = "";
+    long long previousLeaseExpiresAt = 0;
+    int previousAttempt = 0;
+    int hasActiveLease = wtTaskFindActiveLease(config->taskLedgerPath, task.taskId,
+                                               leaseHolder, sizeof(leaseHolder),
+                                               &previousLeaseExpiresAt, &previousAttempt);
+    if (hasActiveLease && previousLeaseExpiresAt > nowMs && strcmp(leaseHolder, agent) != 0) {
+        return wtHttpSendText(clientFd, 200, "OK", "application/json; charset=utf-8",
+                              "{\"ok\":true,\"claimed\":false,\"reason\":\"foreign_lease\"}\n");
+    }
+    if (hasActiveLease && previousLeaseExpiresAt <= nowMs) {
+        char reclaimMessage[256];
+        snprintf(reclaimMessage, sizeof(reclaimMessage),
+                 "Remote auto-reclaim by wt-agent@%s on %s after lease expired.", agent, host);
+        if (wtTaskAppendReclaimEvent(config->taskLedgerPath, task.taskId, leaseHolder, agent,
+                                     "lease_expired", reclaimMessage, config->fsyncEachMessage) != 0) {
+            return wtHttpSendText(clientFd, 500, "Internal Server Error", "application/json",
+                                  "{\"ok\":false,\"error\":\"reclaim_failed\"}\n");
+        }
+    }
+    int attempt = previousAttempt + 1;
+    int leaseDuration = config->leaseDurationSeconds > 0 ? config->leaseDurationSeconds : 900;
+    long long leaseExpiresAt = nowMs + (long long)leaseDuration * 1000LL;
+    if (wtTaskAppendLeaseEvent(config->taskLedgerPath, task.taskId, agent, attempt,
+                               leaseExpiresAt, config->fsyncEachMessage) != 0) {
+        return wtHttpSendText(clientFd, 500, "Internal Server Error", "application/json",
+                              "{\"ok\":false,\"error\":\"lease_failed\"}\n");
+    }
+    char response[4096];
+    char escapedTitle[WT_TASK_TITLE_SIZE * 2], escapedBody[WT_TASK_BODY_SIZE * 2], escapedProfile[WT_TASK_POLICY_SIZE * 2];
+    wtJsonEscape(task.title, escapedTitle, sizeof(escapedTitle));
+    wtJsonEscape(task.body, escapedBody, sizeof(escapedBody));
+    wtJsonEscape(task.toolProfile, escapedProfile, sizeof(escapedProfile));
+    snprintf(response, sizeof(response),
+             "{\"ok\":true,\"claimed\":true,\"taskId\":\"%s\",\"assignedAgent\":\"%s\","
+             "\"executionHost\":\"%s\",\"title\":\"%s\",\"body\":\"%s\",\"profile\":\"%s\","
+             "\"attempt\":%d,\"leaseExpiresAtUnixMs\":%lld}\n",
+             task.taskId, agent, host, escapedTitle, escapedBody, escapedProfile,
+             attempt, leaseExpiresAt);
+    return wtHttpSendText(clientFd, 200, "OK", "application/json; charset=utf-8", response);
+}
+
+static int handlePostRemoteTaskEvent(int clientFd, const WtConfig *config, const char *request,
+                                     const WtAuthContext *auth) {
+    const char *body = strstr(request, "\r\n\r\n");
+    body = body ? body + 4 : "";
+    char taskId[WT_TASK_ID_SIZE];
+    char status[WT_TASK_STATUS_SIZE];
+    char message[WT_TASK_TITLE_SIZE];
+    char agent[WT_TASK_AGENT_SIZE];
+    if (wtJsonReadString(body, "taskId", taskId, sizeof(taskId)) != 0 ||
+        wtJsonReadString(body, "status", status, sizeof(status)) != 0) {
+        return wtHttpSendText(clientFd, 400, "Bad Request", "application/json",
+                              "{\"ok\":false,\"error\":\"task_status_required\"}\n");
+    }
+    if (strcmp(status, "running") != 0 && strcmp(status, "complete") != 0 &&
+        strcmp(status, "failed") != 0 && strcmp(status, "cancelled") != 0) {
+        return wtHttpSendText(clientFd, 400, "Bad Request", "application/json",
+                              "{\"ok\":false,\"error\":\"unsupported_status\"}\n");
+    }
+    if (wtJsonReadString(body, "agent", agent, sizeof(agent)) != 0) {
+        snprintf(agent, sizeof(agent), "%s", auth && auth->subject[0] ? auth->subject : "remote");
+    }
+    if (auth && strcmp(auth->role, "agent") == 0 && auth->subject[0] &&
+        strcmp(auth->subject, agent) != 0) {
+        return wtHttpSendText(clientFd, 403, "Forbidden", "application/json",
+                              "{\"ok\":false,\"error\":\"subject_mismatch\"}\n");
+    }
+    if (wtJsonReadString(body, "message", message, sizeof(message)) != 0) {
+        snprintf(message, sizeof(message), "Remote agent reported %s.", status);
+    }
+    char actor[WT_TASK_AGENT_SIZE + 16];
+    snprintf(actor, sizeof(actor), "wt-agent@%s", agent);
+    if (wtTaskAppendStatusEvent(config->taskLedgerPath, taskId, status, actor, message,
+                                config->fsyncEachMessage) != 0) {
+        return wtHttpSendText(clientFd, 500, "Internal Server Error", "application/json",
+                              "{\"ok\":false,\"error\":\"append_failed\"}\n");
+    }
+    appendTaskRoomEvent(config, taskId, "all",
+                        strcmp(status, "complete") == 0 ? "task.result" : "task.status",
+                        status, message);
+    char response[512];
+    snprintf(response, sizeof(response), "{\"ok\":true,\"taskId\":\"%s\",\"status\":\"%s\"}\n",
+             taskId, status);
+    return wtHttpSendText(clientFd, 200, "OK", "application/json; charset=utf-8", response);
+}
+
+static int handlePostTaskPriority(int clientFd, const WtConfig *config, const char *request) {
+    const char *body = strstr(request, "\r\n\r\n");
+    body = body ? body + 4 : "";
+    char taskId[WT_TASK_ID_SIZE], priority[32], createdBy[WT_TASK_AGENT_SIZE];
+    if (wtJsonReadString(body, "taskId", taskId, sizeof(taskId)) != 0 ||
+        wtJsonReadString(body, "priority", priority, sizeof(priority)) != 0) {
+        return wtHttpSendText(clientFd, 400, "Bad Request", "application/json",
+                              "{\"ok\":false,\"error\":\"task_priority_required\"}\n");
+    }
+    if (wtJsonReadString(body, "createdBy", createdBy, sizeof(createdBy)) != 0) snprintf(createdBy, sizeof(createdBy), "%s", "ceo");
+    char escapedTaskId[WT_TASK_ID_SIZE * 2], escapedPriority[64], escapedBy[WT_TASK_AGENT_SIZE * 2];
+    wtJsonEscape(taskId, escapedTaskId, sizeof(escapedTaskId));
+    wtJsonEscape(priority, escapedPriority, sizeof(escapedPriority));
+    wtJsonEscape(createdBy, escapedBy, sizeof(escapedBy));
+    char record[1024];
+    snprintf(record, sizeof(record),
+             "{\"schema\":\"woventeam.task_event.v0.1\",\"taskId\":\"%s\","
+             "\"eventType\":\"priority\",\"priority\":\"%s\",\"message\":\"Priority set to %s.\","
+             "\"createdBy\":\"%s\",\"createdAtUnixMs\":%lld}",
+             escapedTaskId, escapedPriority, escapedPriority, escapedBy, wtNowUnixMilliseconds());
+    if (wtTaskAppendRecord(config->taskLedgerPath, record, config->fsyncEachMessage) != 0) {
+        return wtHttpSendText(clientFd, 500, "Internal Server Error", "application/json", "{\"ok\":false,\"error\":\"append_failed\"}\n");
+    }
+    return wtHttpSendText(clientFd, 200, "OK", "application/json; charset=utf-8", "{\"ok\":true}\n");
+}
+
+static int handlePostTaskReroute(int clientFd, const WtConfig *config, const char *request) {
+    const char *body = strstr(request, "\r\n\r\n");
+    body = body ? body + 4 : "";
+    char taskId[WT_TASK_ID_SIZE], assignedAgent[WT_TASK_AGENT_SIZE], executionHost[WT_TASK_AGENT_SIZE], createdBy[WT_TASK_AGENT_SIZE];
+    if (wtJsonReadString(body, "taskId", taskId, sizeof(taskId)) != 0 ||
+        wtJsonReadString(body, "assignedAgent", assignedAgent, sizeof(assignedAgent)) != 0) {
+        return wtHttpSendText(clientFd, 400, "Bad Request", "application/json",
+                              "{\"ok\":false,\"error\":\"task_agent_required\"}\n");
+    }
+    if (wtJsonReadString(body, "executionHost", executionHost, sizeof(executionHost)) != 0) executionHost[0] = '\0';
+    if (wtJsonReadString(body, "createdBy", createdBy, sizeof(createdBy)) != 0) snprintf(createdBy, sizeof(createdBy), "%s", "ceo");
+    char escapedTaskId[WT_TASK_ID_SIZE * 2], escapedAgent[WT_TASK_AGENT_SIZE * 2], escapedHost[WT_TASK_AGENT_SIZE * 2], escapedBy[WT_TASK_AGENT_SIZE * 2];
+    wtJsonEscape(taskId, escapedTaskId, sizeof(escapedTaskId));
+    wtJsonEscape(assignedAgent, escapedAgent, sizeof(escapedAgent));
+    wtJsonEscape(executionHost, escapedHost, sizeof(escapedHost));
+    wtJsonEscape(createdBy, escapedBy, sizeof(escapedBy));
+    char record[1280];
+    snprintf(record, sizeof(record),
+             "{\"schema\":\"woventeam.task_event.v0.1\",\"taskId\":\"%s\","
+             "\"eventType\":\"routing\",\"status\":\"queued\",\"assignedAgent\":\"%s\","
+             "\"executionHost\":\"%s\",\"message\":\"Task rerouted by operator.\","
+             "\"createdBy\":\"%s\",\"createdAtUnixMs\":%lld}",
+             escapedTaskId, escapedAgent, escapedHost, escapedBy, wtNowUnixMilliseconds());
+    if (wtTaskAppendRecord(config->taskLedgerPath, record, config->fsyncEachMessage) != 0) {
+        return wtHttpSendText(clientFd, 500, "Internal Server Error", "application/json", "{\"ok\":false,\"error\":\"append_failed\"}\n");
+    }
+    return wtHttpSendText(clientFd, 200, "OK", "application/json; charset=utf-8", "{\"ok\":true}\n");
 }
 
 /*
@@ -2328,7 +2894,7 @@ static int handleEvents(int clientFd, const WtConfig *config) {
     return 0;
 }
 
-static void handleClient(int clientFd, WtConfig *config) {
+static void handleClient(int clientFd, WtConfig *config, const char *peerIp) {
     char request[16384];
     size_t requestLength = 0;
     if (wtHttpReadRequest(clientFd, request, sizeof(request), &requestLength) != 0) {
@@ -2393,6 +2959,8 @@ static void handleClient(int clientFd, WtConfig *config) {
         sendCapacityJson(clientFd, config);
     } else if (strcmp(method, "GET") == 0 && strcmp(path, "/api/agents") == 0) {
         sendAgentsJson(clientFd, config);
+    } else if (strcmp(method, "GET") == 0 && strcmp(path, "/api/hosts") == 0) {
+        sendHostsJson(clientFd, config);
     } else if (strcmp(method, "GET") == 0 && strcmp(path, "/api/status") == 0) {
         sendStatusJson(clientFd, config);
     } else if (strcmp(method, "GET") == 0 && strcmp(path, "/api/tokens") == 0) {
@@ -2418,13 +2986,54 @@ static void handleClient(int clientFd, WtConfig *config) {
     } else if (strcmp(method, "POST") == 0 && strcmp(path, "/api/task-reclaim") == 0) {
         handlePostTaskReclaim(clientFd, config, request);
     } else if (strcmp(method, "POST") == 0 && strcmp(path, "/api/task-cancel") == 0) {
-        handlePostTaskCancel(clientFd, config, request);
+        if (requireOperatorAuth(clientFd, config, request, peerIp)) handlePostTaskCancel(clientFd, config, request);
     } else if (strcmp(method, "POST") == 0 && strcmp(path, "/api/autonomy-revoke") == 0) {
-        handlePostAutonomyRevoke(clientFd, config, request);
+        if (requireOperatorAuth(clientFd, config, request, peerIp)) handlePostAutonomyRevoke(clientFd, config, request);
     } else if (strcmp(method, "POST") == 0 && strcmp(path, "/api/task-artifact") == 0) {
         handlePostTaskArtifact(clientFd, config, request);
     } else if (strcmp(method, "POST") == 0 && strcmp(path, "/api/task-deliverable") == 0) {
-        handlePostTaskDeliverable(clientFd, config, request);
+        if (requireOperatorAuth(clientFd, config, request, peerIp)) handlePostTaskDeliverable(clientFd, config, request);
+    } else if (strcmp(method, "POST") == 0 && strcmp(path, "/api/task-priority") == 0) {
+        if (requireOperatorAuth(clientFd, config, request, peerIp)) handlePostTaskPriority(clientFd, config, request);
+    } else if (strcmp(method, "POST") == 0 && strcmp(path, "/api/task-reroute") == 0) {
+        if (requireOperatorAuth(clientFd, config, request, peerIp)) handlePostTaskReroute(clientFd, config, request);
+    } else if (strcmp(method, "POST") == 0 && strcmp(path, "/api/auth-token") == 0) {
+        if (requireOperatorAuth(clientFd, config, request, peerIp)) handlePostAuthToken(clientFd, config, request);
+    } else if (strcmp(method, "POST") == 0 && strcmp(path, "/api/auth-token/revoke") == 0) {
+        if (requireOperatorAuth(clientFd, config, request, peerIp)) handlePostAuthTokenRevoke(clientFd, config, request);
+    } else if (strcmp(method, "POST") == 0 && strcmp(path, "/api/host-capabilities") == 0) {
+        WtAuthContext auth;
+        if (validateBearerToken(config, request, peerIp, "agent", &auth)) {
+            handlePostHostCapabilities(clientFd, config, request, &auth);
+        } else {
+            char response[256];
+            snprintf(response, sizeof(response), "{\"ok\":false,\"error\":\"%s\",\"reason\":\"%s\"}\n",
+                     auth.reason[0] ? auth.reason : "bearer_required",
+                     auth.reason[0] ? auth.reason : "bearer_required");
+            wtHttpSendText(clientFd, 401, "Unauthorized", "application/json; charset=utf-8", response);
+        }
+    } else if (strcmp(method, "POST") == 0 && strcmp(path, "/api/remote-claim") == 0) {
+        WtAuthContext auth;
+        if (validateBearerToken(config, request, peerIp, "agent", &auth)) {
+            handlePostRemoteClaim(clientFd, config, request, &auth);
+        } else {
+            char response[256];
+            snprintf(response, sizeof(response), "{\"ok\":false,\"error\":\"%s\",\"reason\":\"%s\"}\n",
+                     auth.reason[0] ? auth.reason : "bearer_required",
+                     auth.reason[0] ? auth.reason : "bearer_required");
+            wtHttpSendText(clientFd, 401, "Unauthorized", "application/json; charset=utf-8", response);
+        }
+    } else if (strcmp(method, "POST") == 0 && strcmp(path, "/api/remote-task-event") == 0) {
+        WtAuthContext auth;
+        if (validateBearerToken(config, request, peerIp, "agent", &auth)) {
+            handlePostRemoteTaskEvent(clientFd, config, request, &auth);
+        } else {
+            char response[256];
+            snprintf(response, sizeof(response), "{\"ok\":false,\"error\":\"%s\",\"reason\":\"%s\"}\n",
+                     auth.reason[0] ? auth.reason : "bearer_required",
+                     auth.reason[0] ? auth.reason : "bearer_required");
+            wtHttpSendText(clientFd, 401, "Unauthorized", "application/json; charset=utf-8", response);
+        }
     } else if (strcmp(method, "GET") == 0 && strncmp(path, "/api/initiative-artifacts", 25) == 0) {
         char initiativeId[WT_TASK_ID_SIZE] = "";
         char *idText = strstr(path, "initiativeId=");
@@ -2533,7 +3142,9 @@ int main(int argc, char **argv) {
            config.httpBindAddress, config.httpPort, config.roomLogPath);
     fflush(stdout);
     while (1) {
-        int clientFd = accept(serverFd, NULL, NULL);
+        struct sockaddr_in peer;
+        socklen_t peerLength = sizeof(peer);
+        int clientFd = accept(serverFd, (struct sockaddr *)&peer, &peerLength);
         if (clientFd < 0) {
             if (errno == EINTR) continue;
             perror("accept");
@@ -2542,7 +3153,9 @@ int main(int argc, char **argv) {
         pid_t child = fork();
         if (child == 0) {
             close(serverFd);
-            handleClient(clientFd, &config);
+            char peerIp[INET_ADDRSTRLEN] = "";
+            inet_ntop(AF_INET, &peer.sin_addr, peerIp, sizeof(peerIp));
+            handleClient(clientFd, &config, peerIp);
             _exit(0);
         }
         close(clientFd);

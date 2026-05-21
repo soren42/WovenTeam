@@ -97,6 +97,8 @@ void wtConfigInitDefaults(WtConfig *config) {
     copyString(config->deliverableBranchPrefix, sizeof(config->deliverableBranchPrefix), "deliverables");
     copyString(config->secretScanPatternsFile, sizeof(config->secretScanPatternsFile),
                "config/secret-scan-patterns.txt");
+    copyString(config->remoteAllowedIps, sizeof(config->remoteAllowedIps), "127.0.0.1,::1");
+    config->authTokenDefaultTtlSeconds = 3600;
 }
 
 int wtConfigSetValue(WtConfig *config, const char *key, const char *value) {
@@ -196,6 +198,10 @@ int wtConfigSetValue(WtConfig *config, const char *key, const char *value) {
         copyString(config->deliverableBranchPrefix, sizeof(config->deliverableBranchPrefix), value);
     } else if (strcmp(key, "secretScanPatternsFile") == 0) {
         copyString(config->secretScanPatternsFile, sizeof(config->secretScanPatternsFile), value);
+    } else if (strcmp(key, "remoteAllowedIps") == 0) {
+        copyString(config->remoteAllowedIps, sizeof(config->remoteAllowedIps), value);
+    } else if (strcmp(key, "authTokenDefaultTtlSeconds") == 0) {
+        config->authTokenDefaultTtlSeconds = atoi(value);
     } else {
         return -1;
     }
@@ -282,7 +288,9 @@ int wtConfigWriteFile(const WtConfig *config, const char *path) {
         "deliverableRoot=%s\n"
         "deliverableDefaultMode=%s\n"
         "deliverableBranchPrefix=%s\n"
-        "secretScanPatternsFile=%s\n",
+        "secretScanPatternsFile=%s\n"
+        "remoteAllowedIps=%s\n"
+        "authTokenDefaultTtlSeconds=%d\n",
         config->roomName,
         config->roomLogPath,
         config->taskLedgerPath,
@@ -330,7 +338,9 @@ int wtConfigWriteFile(const WtConfig *config, const char *path) {
         config->deliverableRoot,
         config->deliverableDefaultMode,
         config->deliverableBranchPrefix,
-        config->secretScanPatternsFile) > 0;
+        config->secretScanPatternsFile,
+        config->remoteAllowedIps,
+        config->authTokenDefaultTtlSeconds) > 0;
     return fclose(file) == 0 && ok ? 0 : -1;
 }
 
@@ -386,4 +396,6 @@ void wtConfigApplyEnvironment(WtConfig *config) {
     if ((value = getenv("WT_DELIVERABLE_DEFAULT_MODE"))) wtConfigSetValue(config, "deliverableDefaultMode", value);
     if ((value = getenv("WT_DELIVERABLE_BRANCH_PREFIX"))) wtConfigSetValue(config, "deliverableBranchPrefix", value);
     if ((value = getenv("WT_SECRET_SCAN_PATTERNS_FILE"))) wtConfigSetValue(config, "secretScanPatternsFile", value);
+    if ((value = getenv("WT_REMOTE_ALLOWED_IPS"))) wtConfigSetValue(config, "remoteAllowedIps", value);
+    if ((value = getenv("WT_AUTH_TOKEN_DEFAULT_TTL_SECONDS"))) wtConfigSetValue(config, "authTokenDefaultTtlSeconds", value);
 }

@@ -60,6 +60,7 @@ let state = {
   selectedInitiativeId: "",
   roleFilter: "all",
   agents: [],
+  hosts: [],
   capacity: {agents: [], initiatives: [], parents: [], caps: {}},
   tokens: {},
   config: {
@@ -450,6 +451,41 @@ async function loadAgents() {
   if (!payload.ok || !Array.isArray(payload.agents)) return;
   state.agents = payload.agents;
   renderAgentControls();
+}
+
+async function loadHosts() {
+  const response = await fetch("/api/hosts");
+  if (!response.ok) return;
+  const payload = await response.json();
+  if (!payload.ok || !Array.isArray(payload.hosts)) return;
+  state.hosts = payload.hosts;
+  renderHosts();
+}
+
+function renderHosts() {
+  const list = document.querySelector("#hostList");
+  const meta = document.querySelector("#hostMeta");
+  if (!list || !meta) return;
+  const hosts = state.hosts || [];
+  const uniqueHosts = new Set(hosts.map(item => item.host).filter(Boolean));
+  meta.textContent = `${uniqueHosts.size} HOST${uniqueHosts.size === 1 ? "" : "S"}`;
+  list.innerHTML = "";
+  if (!hosts.length) {
+    const empty = document.createElement("div");
+    empty.className = "host-row empty";
+    empty.innerHTML = "<strong>No remote hosts</strong><small></small>";
+    list.appendChild(empty);
+    return;
+  }
+  hosts.slice(-8).reverse().forEach(item => {
+    const row = document.createElement("div");
+    row.className = "host-row";
+    row.innerHTML = "<strong></strong><span></span><small></small>";
+    row.querySelector("strong").textContent = item.host || "unknown";
+    row.querySelector("span").textContent = item.agent || "--";
+    row.querySelector("small").textContent = item.profiles || "no profiles";
+    list.appendChild(row);
+  });
 }
 
 /*
@@ -1734,6 +1770,7 @@ async function init() {
     await loadTokens();
     await loadAdapters();
     await loadAgents();
+    await loadHosts();
     await loadCapacity();
     await loadStatusBoard();
     connectEvents();
@@ -1742,6 +1779,7 @@ async function init() {
     setInterval(loadTokens, 5000);
     setInterval(loadAdapters, 15000);
     setInterval(loadAgents, 5000);
+    setInterval(loadHosts, 7000);
     setInterval(loadCapacity, 5000);
     /* Phase 3 Sprint 1: status board polls /api/status which folds heartbeats,
      * milestones, and policy snapshot into one payload. The 7-second cadence

@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>WovenTeam Phase 3 Sprint 4 Remote Execution Closeout</title>
+  <style>
+    body{font-family:system-ui,-apple-system,Segoe UI,sans-serif;margin:0;background:#f7fafc;color:#172033;line-height:1.5}
+    main{max-width:980px;margin:0 auto;padding:36px 24px}
+    h1,h2{line-height:1.15} h1{font-size:34px;margin:0 0 6px} h2{margin-top:28px}
+    .meta,.card{border:1px solid #cbd5e1;background:#fff;border-radius:8px;padding:16px;margin:14px 0}
+    code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;background:#eef2f7;padding:1px 4px;border-radius:4px}
+    li{margin:6px 0}.pass{color:#047857;font-weight:700}.warn{color:#b45309;font-weight:700}
+  </style>
+</head>
+<body>
+<main>
+  <h1>Phase 3 Sprint 4: Remote Execution Substrate</h1>
+  <div class="meta">Closeout date: 2026-05-21 · Branch: <code>codex/phase3-sprint4-remote-execution</code></div>
+
+  <section class="card">
+    <h2>Delivered</h2>
+    <ul>
+      <li><code>wt-agent --remote URL --bearer TOKEN --host HOST</code> registers host capabilities, claims a daemon lease, and reports running/complete over authenticated HTTP.</li>
+      <li><code>wt-agent --ssh HOST</code> exposes the operator-launched transport entrypoint.</li>
+      <li><code>POST /api/auth-token</code> issues role-scoped bearer tokens with issued-at and TTL; <code>POST /api/auth-token/revoke</code> invalidates them with <code>token_revoked</code>.</li>
+      <li><code>POST /api/host-capabilities</code> records <code>woventeam.host_event.v0.1</code>; <code>GET /api/hosts</code> returns the roster for operators and the web console.</li>
+      <li><code>executionHost</code> pins task routing to a host, and advertised profile mismatches reject with <code>capability_unmet</code>.</li>
+      <li>Operator-auth gates now wrap <code>task-priority</code>, <code>task-reroute</code>, <code>task-cancel</code>, <code>autonomy-revoke</code>, <code>auth-token</code>, and <code>task-deliverable</code>.</li>
+      <li><code>docs/security/threat-model.md</code> records the current intranet trust boundary and hardening requirements.</li>
+    </ul>
+  </section>
+
+  <section class="card">
+    <h2>Validation</h2>
+    <ul>
+      <li class="pass">New integration: <code>make test-remote-execution</code> passes.</li>
+      <li>The test runs two remote agents against one daemon, completes host-pinned tasks, simulates lease expiry/reclaim, revokes a token, checks <code>token_revoked</code>, checks <code>capability_unmet</code>, and verifies anonymous remote mutation gets <code>bearer_required</code>.</li>
+      <li class="pass">Full regression: <code>make test</code> passes, including the new remote execution test.</li>
+    </ul>
+  </section>
+
+  <section class="card">
+    <h2>Follow-ups</h2>
+    <ul>
+      <li>Replace loopback TCP operator bypass with a Unix-domain socket or explicit operator session.</li>
+      <li>Move token material out of JSONL and store hashes only.</li>
+      <li>Add native mTLS before supporting remote agents beyond a trusted intranet.</li>
+      <li>Expand the remote integration from loopback-simulated hosts to actual container network namespaces where the host supports that setup.</li>
+    </ul>
+  </section>
+</main>
+</body>
+</html>

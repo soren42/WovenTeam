@@ -25,6 +25,7 @@ typedef struct {
     char body[WT_TASK_BODY_SIZE];
     char modelId[WT_TASK_MODEL_SIZE];
     char toolProfile[WT_TASK_POLICY_SIZE];
+    char executionHost[WT_TASK_AGENT_SIZE];
     char autonomyLevel[WT_TASK_POLICY_SIZE];
     char autonomyScope[WT_TASK_BODY_SIZE];
     char autonomyNetwork[WT_TASK_POLICY_SIZE];
@@ -69,6 +70,9 @@ int wtTaskFindQueuedForAgent(const char *ledgerPath, const char *agentName, WtTa
  */
 int wtTaskFindClaimableForAgent(const char *ledgerPath, const char *agentName,
                                 long long nowUnixMs, WtTaskSummary *task);
+int wtTaskFindClaimableForAgentOnHost(const char *ledgerPath, const char *agentName,
+                                      const char *executionHost, long long nowUnixMs,
+                                      WtTaskSummary *task, int *capabilityBlocked);
 int wtTaskAgentPaused(const char *ledgerPath, const char *agentName);
 int wtTaskAppendLeaseEvent(const char *ledgerPath, const char *taskId, const char *agentName,
                            int attempt, long long leaseExpiresAtUnixMs, bool fsyncRecord);
