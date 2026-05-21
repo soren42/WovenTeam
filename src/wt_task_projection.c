@@ -180,6 +180,10 @@ static int insertEvent(sqlite3 *db, const char *line, const char *schema) {
     readStringOrDefault(line, "reviewer", artifactReviewer, sizeof(artifactReviewer), "");
     readStringOrDefault(line, "reviewNotes", artifactNotes, sizeof(artifactNotes), "");
     readStringOrDefault(line, "artifactPath", artifactPath, sizeof(artifactPath), "");
+    /* Sprint 5: operator priority change carries a "priority" field on a
+     * task_event with eventType "priority". */
+    char eventPriority[32];
+    readStringOrDefault(line, "priority", eventPriority, sizeof(eventPriority), "");
     wtJsonReadLongLong(line, "createdAtUnixMs", &createdAtMs);
     wtJsonReadLongLong(line, "leaseExpiresAtUnixMs", &leaseExpiresAtMs);
     wtJsonReadLong(line, "attempt", &attempt);
@@ -198,7 +202,8 @@ static int insertEvent(sqlite3 *db, const char *line, const char *schema) {
         return -1;
     }
     if (status[0] != '\0' || assignedAgent[0] != '\0' ||
-        strcmp(eventType, "reclaim") == 0 || strcmp(eventType, "artifact") == 0) {
+        strcmp(eventType, "reclaim") == 0 || strcmp(eventType, "artifact") == 0 ||
+        strcmp(eventType, "priority") == 0) {
         /*
          * Apply the event to the tasks projection row. The CASE expressions are
          * narrow: each column only updates when the event_type or status warrants
@@ -242,6 +247,7 @@ static int insertEvent(sqlite3 *db, const char *line, const char *schema) {
             "last_review_notes=CASE WHEN ? = 'artifact' THEN ? ELSE last_review_notes END,"
             "accepted_at_ms=CASE WHEN ? = 'artifact' AND ? = 'accepted' THEN ? ELSE accepted_at_ms END,"
             "accepted_artifact_path=CASE WHEN ? = 'artifact' AND ? = 'accepted' AND ? != '' THEN ? ELSE accepted_artifact_path END,"
+            "priority=CASE WHEN ? = 'priority' AND ? != '' THEN ? ELSE priority END,"
             "updated_at_ms=max(updated_at_ms,?),"
             "event_count=event_count+1 "
             "WHERE task_id=?";
@@ -305,6 +311,10 @@ static int insertEvent(sqlite3 *db, const char *line, const char *schema) {
         bindText(update, parameterIndex++, artifactState);
         bindText(update, parameterIndex++, artifactPath);
         bindText(update, parameterIndex++, artifactPath);
+        /* priority: operator priority change updates the column */
+        bindText(update, parameterIndex++, eventType);
+        bindText(update, parameterIndex++, eventPriority);
+        bindText(update, parameterIndex++, eventPriority);
         /* updated_at_ms + WHERE task_id */
         sqlite3_bind_int64(update, parameterIndex++, createdAtMs);
         bindText(update, parameterIndex++, taskId);

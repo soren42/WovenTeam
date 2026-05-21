@@ -280,7 +280,7 @@ static int validateBearerToken(const WtConfig *config, const char *request, cons
         snprintf(auth->reason, sizeof(auth->reason), "%s", "ip_not_allowed");
         return 0;
     }
-    char token[256];
+    char token[512];
     if (extractBearerToken(request, token, sizeof(token)) != 0) {
         snprintf(auth->reason, sizeof(auth->reason), "%s", "bearer_required");
         return 0;
@@ -2033,7 +2033,7 @@ static int handlePostAuthToken(int clientFd, const WtConfig *config, const char 
     if (wtJsonReadString(body, "subject", subject, sizeof(subject)) != 0) snprintf(subject, sizeof(subject), "%s", role);
     wtJsonReadLong(body, "ttlSeconds", &ttlSeconds);
     if (ttlSeconds < 1) ttlSeconds = 1;
-    char token[256];
+    char token[512];
     char tokenId[64];
     makeToken(token, sizeof(token), tokenId, sizeof(tokenId));
     char escapedToken[512], escapedTokenId[128], escapedRole[64], escapedSubject[WT_TASK_AGENT_SIZE * 2];
@@ -2267,7 +2267,10 @@ static int handlePostRemoteClaim(int clientFd, const WtConfig *config, const cha
         return wtHttpSendText(clientFd, 500, "Internal Server Error", "application/json",
                               "{\"ok\":false,\"error\":\"lease_failed\"}\n");
     }
-    char response[4096];
+    /* Must hold the full escaped task body (WT_TASK_BODY_SIZE*2) plus title,
+     * profile, ids, and the JSON envelope. The prior 4096 could truncate a
+     * max-size body into malformed JSON on the remote-claim response. */
+    char response[WT_TASK_BODY_SIZE * 2 + WT_TASK_TITLE_SIZE * 2 + 1024];
     char escapedTitle[WT_TASK_TITLE_SIZE * 2], escapedBody[WT_TASK_BODY_SIZE * 2], escapedProfile[WT_TASK_POLICY_SIZE * 2];
     wtJsonEscape(task.title, escapedTitle, sizeof(escapedTitle));
     wtJsonEscape(task.body, escapedBody, sizeof(escapedBody));
@@ -2349,6 +2352,38 @@ static int handlePostTaskPriority(int clientFd, const WtConfig *config, const ch
     if (wtTaskAppendRecord(config->taskLedgerPath, record, config->fsyncEachMessage) != 0) {
         return wtHttpSendText(clientFd, 500, "Internal Server Error", "application/json", "{\"ok\":false,\"error\":\"append_failed\"}\n");
     }
+    return wtHttpSendText(clientFd, 200, "OK", "application/json; charset=utf-8", "{\"ok\":true}\n");
+}
+
+/*
+ * Phase 3 Sprint 5: POST /api/task-note. Appends an operator annotation as a
+ * task_event (eventType "note") so the audit trail captures operator context
+ * inline with the task's lifecycle. Does not change task status.
+ */
+static int handlePostTaskNote(int clientFd, const WtConfig *config, const char *request) {
+    const char *body = strstr(request, "\r\n\r\n");
+    body = body ? body + 4 : "";
+    char taskId[WT_TASK_ID_SIZE], note[WT_TASK_BODY_SIZE], createdBy[WT_TASK_AGENT_SIZE];
+    if (wtJsonReadString(body, "taskId", taskId, sizeof(taskId)) != 0 ||
+        wtJsonReadString(body, "note", note, sizeof(note)) != 0 || note[0] == '\0') {
+        return wtHttpSendText(clientFd, 400, "Bad Request", "application/json",
+                              "{\"ok\":false,\"error\":\"task_note_required\"}\n");
+    }
+    if (wtJsonReadString(body, "createdBy", createdBy, sizeof(createdBy)) != 0) snprintf(createdBy, sizeof(createdBy), "%s", "ceo");
+    char escapedTaskId[WT_TASK_ID_SIZE * 2], escapedNote[WT_TASK_BODY_SIZE * 2], escapedBy[WT_TASK_AGENT_SIZE * 2];
+    wtJsonEscape(taskId, escapedTaskId, sizeof(escapedTaskId));
+    wtJsonEscape(note, escapedNote, sizeof(escapedNote));
+    wtJsonEscape(createdBy, escapedBy, sizeof(escapedBy));
+    char record[WT_TASK_BODY_SIZE * 2 + 512];
+    snprintf(record, sizeof(record),
+             "{\"schema\":\"woventeam.task_event.v0.1\",\"taskId\":\"%s\","
+             "\"eventType\":\"note\",\"message\":\"%s\","
+             "\"createdBy\":\"%s\",\"createdAtUnixMs\":%lld}",
+             escapedTaskId, escapedNote, escapedBy, wtNowUnixMilliseconds());
+    if (wtTaskAppendRecord(config->taskLedgerPath, record, config->fsyncEachMessage) != 0) {
+        return wtHttpSendText(clientFd, 500, "Internal Server Error", "application/json", "{\"ok\":false,\"error\":\"append_failed\"}\n");
+    }
+    appendTaskRoomEvent(config, taskId, "all", "task.note", "note", note);
     return wtHttpSendText(clientFd, 200, "OK", "application/json; charset=utf-8", "{\"ok\":true}\n");
 }
 
@@ -2915,6 +2950,55 @@ static void sendSseEvent(int clientFd, const WtMessage *message) {
     }
 }
 
+/*
+ * Phase 3 Sprint 5: stream new task-ledger records as typed `ledger` SSE
+ * frames so the dashboard can refresh event-driven instead of polling.
+ *
+ * Tails the JSONL by byte offset. *offset is the byte position we have
+ * already streamed up to; the caller seeds it with the file's current size
+ * at connect time (0 if the ledger does not exist yet) so only records
+ * appended after the client connected stream - no history replay. We only
+ * forward complete lines (terminated by '\n'); a partially-written trailing
+ * line is left for the next tick. The full JSONL record is forwarded as the
+ * SSE data so the client can read whatever fields it needs (schema, taskId,
+ * eventType, etc.). Returns the number of records sent.
+ */
+static int streamLedgerDelta(int clientFd, const char *ledgerPath, long *offset) {
+    FILE *file = fopen(ledgerPath, "r");
+    if (!file) return 0;
+    if (fseek(file, 0, SEEK_END) != 0) { fclose(file); return 0; }
+    long end = ftell(file);
+    if (end < 0) { fclose(file); return 0; }
+    if (*offset > end) {
+        /* Ledger was truncated or rotated - resync to EOF to avoid replaying
+         * a fresh file from the start. */
+        *offset = end;
+        fclose(file);
+        return 0;
+    }
+    if (*offset == end) { fclose(file); return 0; }
+    if (fseek(file, *offset, SEEK_SET) != 0) { fclose(file); return 0; }
+    int sent = 0;
+    char line[WT_TASK_LEDGER_LINE_SIZE];
+    while (ftell(file) < end && fgets(line, sizeof(line), file)) {
+        size_t len = strlen(line);
+        /* Only forward a complete line; stop if we read a partial tail. */
+        if (len == 0 || line[len - 1] != '\n') break;
+        line[--len] = '\0';
+        if (line[len > 0 ? len - 1 : 0] == '\r') line[len - 1] = '\0';
+        *offset = ftell(file);
+        if (len == 0) continue;
+        char frame[WT_TASK_LEDGER_LINE_SIZE + 64];
+        int frameLen = snprintf(frame, sizeof(frame), "event: ledger\ndata: %s\n\n", line);
+        if (frameLen > 0) {
+            if (send(clientFd, frame, (size_t)frameLen, 0) < 0) { fclose(file); return sent; }
+            sent++;
+        }
+    }
+    fclose(file);
+    return sent;
+}
+
 static int handleEvents(int clientFd, const WtConfig *config) {
     const char *header =
         "HTTP/1.1 200 OK\r\n"
@@ -2926,6 +3010,20 @@ static int handleEvents(int clientFd, const WtConfig *config) {
         return -1;
     }
     long lastSentId = 0;
+    /* Seed the ledger tail to the file's current size so only records appended
+     * after this client connected are streamed. 0 when the ledger does not
+     * exist yet (so its first records stream once it appears). */
+    long ledgerOffset = 0;
+    {
+        FILE *seed = fopen(config->taskLedgerPath, "r");
+        if (seed) {
+            if (fseek(seed, 0, SEEK_END) == 0) {
+                long sz = ftell(seed);
+                if (sz > 0) ledgerOffset = sz;
+            }
+            fclose(seed);
+        }
+    }
     for (int tick = 0; tick < 7200; tick++) {
         WtMessage messages[64];
         int count = wtRoomReadMessagesAfter(config->roomLogPath, lastSentId, messages, 64);
@@ -2933,7 +3031,8 @@ static int handleEvents(int clientFd, const WtConfig *config) {
             sendSseEvent(clientFd, &messages[index]);
             lastSentId = messages[index].messageId;
         }
-        if (count == 0) {
+        int ledgerSent = streamLedgerDelta(clientFd, config->taskLedgerPath, &ledgerOffset);
+        if (count == 0 && ledgerSent == 0) {
             send(clientFd, ": heartbeat\n\n", 13, 0);
         }
         sleepMilliseconds(500);
@@ -3044,6 +3143,8 @@ static void handleClient(int clientFd, WtConfig *config, const char *peerIp) {
         if (requireOperatorAuth(clientFd, config, request, peerIp)) handlePostTaskPriority(clientFd, config, request);
     } else if (strcmp(method, "POST") == 0 && strcmp(path, "/api/task-reroute") == 0) {
         if (requireOperatorAuth(clientFd, config, request, peerIp)) handlePostTaskReroute(clientFd, config, request);
+    } else if (strcmp(method, "POST") == 0 && strcmp(path, "/api/task-note") == 0) {
+        if (requireOperatorAuth(clientFd, config, request, peerIp)) handlePostTaskNote(clientFd, config, request);
     } else if (strcmp(method, "POST") == 0 && strcmp(path, "/api/auth-token") == 0) {
         if (requireOperatorAuth(clientFd, config, request, peerIp)) handlePostAuthToken(clientFd, config, request);
     } else if (strcmp(method, "POST") == 0 && strcmp(path, "/api/auth-token/revoke") == 0) {
