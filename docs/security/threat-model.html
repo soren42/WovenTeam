@@ -1,0 +1,296 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>WovenTeam Threat Model</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --ink: #17202a;
+      --muted: #5c6875;
+      --line: #d7dee6;
+      --paper: #f7f9fb;
+      --panel: #ffffff;
+      --blue: #2563a8;
+      --green: #1f7a5a;
+      --amber: #a16207;
+      --red: #b42318;
+      --soft-blue: #e7f0fa;
+      --soft-green: #e7f5ee;
+      --soft-amber: #fff4db;
+      --soft-red: #fdeceb;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      color: var(--ink);
+      background: var(--paper);
+      line-height: 1.48;
+    }
+    header.hero {
+      background: #11253a;
+      color: #fff;
+      padding: 38px clamp(18px, 5vw, 64px) 30px;
+    }
+    header.hero h1 {
+      margin: 0 0 10px;
+      max-width: 980px;
+      font-size: clamp(30px, 5vw, 54px);
+      line-height: 1.02;
+    }
+    header.hero p {
+      max-width: 900px;
+      margin: 0;
+      color: #dbe7f4;
+      font-size: 18px;
+    }
+    header.hero .meta {
+      margin-top: 14px;
+      color: #aac4dd;
+      font-size: 14px;
+    }
+    nav {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+      padding: 14px clamp(18px, 5vw, 64px);
+      background: #fff;
+      border-bottom: 1px solid var(--line);
+      position: sticky;
+      top: 0;
+      z-index: 2;
+    }
+    nav a {
+      border: 1px solid var(--line);
+      background: #fff;
+      color: var(--ink);
+      border-radius: 6px;
+      padding: 8px 10px;
+      font: inherit;
+      text-decoration: none;
+    }
+    nav a:hover { border-color: var(--blue); color: var(--blue); background: var(--soft-blue); }
+    main {
+      max-width: 1180px;
+      margin: 0 auto;
+      padding: 24px clamp(16px, 4vw, 28px) 48px;
+    }
+    section {
+      margin: 0 0 28px;
+      padding: 24px;
+      background: var(--panel);
+      border: 1px solid var(--line);
+      border-radius: 8px;
+    }
+    h2 { margin: 0 0 14px; font-size: 24px; }
+    h3 { margin: 0 0 8px; font-size: 18px; }
+    p { margin: 0 0 12px; }
+    ul { margin: 0; padding-left: 22px; }
+    li + li { margin-top: 7px; }
+    code {
+      background: #eef2f6;
+      border: 1px solid #dfe6ee;
+      border-radius: 4px;
+      padding: 1px 4px;
+      font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      font-size: 0.95em;
+    }
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(12, 1fr);
+      gap: 14px;
+    }
+    .card {
+      grid-column: span 6;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 16px;
+      background: #fbfcfe;
+    }
+    .full { grid-column: 1 / -1; }
+    .status {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      margin-bottom: 10px;
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .04em;
+    }
+    .dot {
+      width: 9px;
+      height: 9px;
+      border-radius: 999px;
+      background: var(--blue);
+    }
+    .done .dot { background: var(--green); }
+    .risk .dot { background: var(--amber); }
+    .problem .dot { background: var(--red); }
+    .muted { color: var(--muted); }
+    .callout {
+      border-left: 4px solid var(--green);
+      padding: 12px 14px;
+      background: var(--soft-green);
+      border-radius: 6px;
+      margin: 12px 0 0;
+    }
+    .callout.warn {
+      border-left-color: var(--amber);
+      background: var(--soft-amber);
+    }
+    .pill {
+      display: inline-block;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: 3px 8px;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      background: #f6f8fa;
+      color: var(--muted);
+    }
+    .pill.pass { color: var(--green); background: var(--soft-green); border-color: #b7dfcd; }
+    .pill.warn { color: var(--amber); background: var(--soft-amber); border-color: #efd08e; }
+    @media (max-width: 820px) {
+      nav { position: static; }
+      section { padding: 18px; }
+      .card { grid-column: 1 / -1; }
+    }
+  </style>
+</head>
+<body>
+  <header class="hero">
+    <h1>WovenTeam Threat Model</h1>
+    <p>Security boundary for the Phase 3 Sprint 4 remote execution substrate: single-tenant intranet, daemon-owned policy, authenticated remote agents, append-only audit, and explicit hardening gates before cross-network operation.</p>
+    <div class="meta">Updated 2026-05-21 · Scope: <code>wt-roomd</code>, remote agent bearer auth, host capabilities, task leases, reclaim, and operator mutation gates</div>
+  </header>
+
+  <nav>
+    <a href="#scope">Scope</a>
+    <a href="#boundaries">Boundaries</a>
+    <a href="#controls">Controls</a>
+    <a href="#out-of-scope">Out of Scope</a>
+    <a href="#hardening">Hardening</a>
+  </nav>
+
+  <main>
+    <section id="scope">
+      <h2>Scope</h2>
+      <div class="grid">
+        <article class="card done">
+          <span class="status"><span class="dot"></span>In Scope</span>
+          <h3>Daemon Policy Authority</h3>
+          <p>WovenTeam is currently modeled as a single-tenant operator workbench on a trusted intranet. <code>wt-roomd</code> remains the policy and audit origin.</p>
+        </article>
+        <article class="card done">
+          <span class="status"><span class="dot"></span>In Scope</span>
+          <h3>Remote Agent Substrate</h3>
+          <p>Remote agents authenticate, advertise capabilities, claim leased tasks, and append task lifecycle events through the daemon; they do not become policy authorities.</p>
+        </article>
+      </div>
+      <div class="callout">
+        <strong>Sprint 4 update:</strong> bearer token and token-id generation now uses <code>/dev/urandom</code> entropy. Token material is still present in the JSONL ledger, so hash-only storage remains a hardening follow-up.
+      </div>
+    </section>
+
+    <section id="boundaries">
+      <h2>Trust Boundaries</h2>
+      <div class="grid">
+        <article class="card">
+          <h3>Local Operator Origin</h3>
+          <p>Loopback requests are treated as operator-origin for the current TCP daemon. A future Unix-domain socket should replace this compatibility shortcut.</p>
+        </article>
+        <article class="card">
+          <h3>Remote Agent Origin</h3>
+          <p>Bearer token plus IP allow-list is required for <code>/api/host-capabilities</code>, <code>/api/remote-claim</code>, and <code>/api/remote-task-event</code>.</p>
+        </article>
+        <article class="card">
+          <h3>Operator Bearer Origin</h3>
+          <p>Mutating operator endpoints require either local origin or a bearer token with role <code>operator</code>.</p>
+        </article>
+        <article class="card">
+          <h3>Audit Origin</h3>
+          <p>Token, host capability, lease, reclaim, cancel, autonomy, artifact, and deliverable actions are append-only JSONL records.</p>
+        </article>
+      </div>
+    </section>
+
+    <section id="controls">
+      <h2>Current Controls</h2>
+      <div class="grid">
+        <article class="card">
+          <span class="pill pass">Active</span>
+          <h3>Bearer Tokens</h3>
+          <p>Tokens carry <code>tokenId</code>, <code>role</code>, <code>subject</code>, <code>issuedAtUnixMs</code>, and <code>ttlSeconds</code>. The token body contains 128 bits of OS CSPRNG entropy.</p>
+        </article>
+        <article class="card">
+          <span class="pill pass">Active</span>
+          <h3>Revocation</h3>
+          <p><code>/api/auth-token/revoke</code> appends a revoke event; validation rejects the next use with <code>token_revoked</code>.</p>
+        </article>
+        <article class="card">
+          <span class="pill pass">Active</span>
+          <h3>IP Allow-list</h3>
+          <p><code>remoteAllowedIps</code> constrains bearer-authenticated remote calls before token validation.</p>
+        </article>
+        <article class="card">
+          <span class="pill pass">Active</span>
+          <h3>Host Capabilities</h3>
+          <p>Capabilities are recorded as <code>woventeam.host_event.v0.1</code> records and exposed through <code>/api/hosts</code>.</p>
+        </article>
+        <article class="card">
+          <span class="pill pass">Active</span>
+          <h3>Host Pinning</h3>
+          <p><code>executionHost</code> pins a task to one advertised host. Capability mismatches reject with <code>capability_unmet</code>.</p>
+        </article>
+        <article class="card">
+          <span class="pill pass">Active</span>
+          <h3>Lease Reclaim</h3>
+          <p>Lease expiry and reclaim use the existing append-only reclaim path, so network partitions surface as stuck leases and recover without a separate remote state machine.</p>
+        </article>
+      </div>
+    </section>
+
+    <section id="out-of-scope">
+      <h2>Out Of Scope</h2>
+      <div class="grid">
+        <article class="card risk">
+          <span class="status"><span class="dot"></span>Deferred</span>
+          <h3>Tenant Isolation</h3>
+          <p>Multi-tenant isolation is not part of the current single-tenant workbench boundary.</p>
+        </article>
+        <article class="card risk">
+          <span class="status"><span class="dot"></span>Deferred</span>
+          <h3>Internet Exposure</h3>
+          <p>Internet-exposed daemon operation remains out of scope without mTLS or a reverse proxy.</p>
+        </article>
+        <article class="card risk">
+          <span class="status"><span class="dot"></span>Deferred</span>
+          <h3>Secret Storage Hardening</h3>
+          <p>Token material is still stored in the JSONL ledger. The follow-up is to store token hashes only.</p>
+        </article>
+        <article class="card risk">
+          <span class="status"><span class="dot"></span>Deferred</span>
+          <h3>Remote Filesystem Sandbox</h3>
+          <p>Filesystem sandboxing beyond the adapter/tool policy already recorded on tasks is not yet implemented.</p>
+        </article>
+      </div>
+    </section>
+
+    <section id="hardening">
+      <h2>Required Hardening Before Cross-Network Use</h2>
+      <ul>
+        <li>Put <code>wt-roomd</code> behind mTLS or add native TLS client certificate validation.</li>
+        <li>Move token secrets out of the audit ledger, storing only hashed token material.</li>
+        <li>Replace loopback TCP operator bypass with a Unix-domain socket or explicit local operator session.</li>
+        <li>Add per-role token issuance policy so remote agents cannot request operator-class tokens through local bootstrap paths.</li>
+      </ul>
+      <p class="muted">The current acceptance test remains loopback-based on hosts that reject unprivileged network namespaces; a privileged run should repeat the same assertions across container or netns boundaries.</p>
+    </section>
+  </main>
+</body>
+</html>

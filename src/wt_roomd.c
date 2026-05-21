@@ -22,6 +22,7 @@
 #include <ctype.h>
 #include <dirent.h>
 #include <errno.h>
+#include <fcntl.h>
 #include <netinet/in.h>
 #include <signal.h>
 #include <stdio.h>
@@ -343,11 +344,57 @@ static int requireOperatorAuth(int clientFd, const WtConfig *config, const char 
     return 0;
 }
 
+static int readUrandomBytes(unsigned char *buf, size_t len) {
+    int fd = open("/dev/urandom", O_RDONLY);
+    if (fd < 0) return -1;
+    size_t off = 0;
+    while (off < len) {
+        ssize_t n = read(fd, buf + off, len - off);
+        if (n < 0) {
+            if (errno == EINTR) continue;
+            close(fd);
+            return -1;
+        }
+        if (n == 0) {
+            close(fd);
+            return -1;
+        }
+        off += (size_t)n;
+    }
+    close(fd);
+    return 0;
+}
+
+static void bytesToHex(const unsigned char *bytes, size_t len, char *out, size_t outSize) {
+    static const char hex[] = "0123456789abcdef";
+    size_t need = len * 2 + 1;
+    if (outSize < need) {
+        if (outSize > 0) out[0] = '\0';
+        return;
+    }
+    for (size_t i = 0; i < len; i++) {
+        out[i * 2] = hex[(bytes[i] >> 4) & 0x0f];
+        out[i * 2 + 1] = hex[bytes[i] & 0x0f];
+    }
+    out[len * 2] = '\0';
+}
+
 static void makeToken(char *token, size_t tokenSize, char *tokenId, size_t tokenIdSize) {
-    unsigned int seed = (unsigned int)time(NULL) ^ (unsigned int)getpid() ^ (unsigned int)rand();
-    snprintf(tokenId, tokenIdSize, "tok_%lld_%u", wtNowUnixMilliseconds(), seed);
-    snprintf(token, tokenSize, "wt_%lld_%08x%08x%08x", wtNowUnixMilliseconds(),
-             seed, (unsigned int)rand(), (unsigned int)rand());
+    unsigned char tokenEntropy[16];
+    unsigned char idEntropy[8];
+    long long now = wtNowUnixMilliseconds();
+    if (readUrandomBytes(tokenEntropy, sizeof(tokenEntropy)) == 0 &&
+        readUrandomBytes(idEntropy, sizeof(idEntropy)) == 0) {
+        char tokenHex[sizeof(tokenEntropy) * 2 + 1];
+        char idHex[sizeof(idEntropy) * 2 + 1];
+        bytesToHex(tokenEntropy, sizeof(tokenEntropy), tokenHex, sizeof(tokenHex));
+        bytesToHex(idEntropy, sizeof(idEntropy), idHex, sizeof(idHex));
+        snprintf(tokenId, tokenIdSize, "tok_%lld_%s", now, idHex);
+        snprintf(token, tokenSize, "wt_%lld_%s", now, tokenHex);
+        return;
+    }
+    snprintf(tokenId, tokenIdSize, "tok_%lld_%ld_%d", now, (long)time(NULL), (int)getpid());
+    snprintf(token, tokenSize, "wt_%lld_unavailable_%ld_%d", now, (long)time(NULL), (int)getpid());
 }
 
 static const char *profileDefaultAutonomy(const char *profile) {

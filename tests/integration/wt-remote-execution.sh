@@ -1,6 +1,13 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# This integration runs two remote agents over loopback because the common CI
+# and Codex execution hosts do not permit unprivileged network namespaces
+# (`unshare --net` and `ip netns add` fail with EPERM). A privileged acceptance
+# run should place at least one agent in a separate netns/container and assert
+# the same host-capability, lease-expiry, reclaim, revocation, and bearer-deny
+# paths across a routed veth/container boundary instead of 127.0.0.1.
+
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 TMPDIR="$(mktemp -d)"
 trap 'kill "$ROOMD_PID" 2>/dev/null || true; rm -rf "$TMPDIR"' EXIT
