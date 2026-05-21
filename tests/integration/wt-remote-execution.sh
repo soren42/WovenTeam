@@ -145,6 +145,6 @@ if grep -q "$claude_token" "$LEDGER"; then
   echo "raw bearer token leaked to ledger" >&2
   exit 1
 fi
-grep -q '"tokenHash":"fnv1a64:' "$LEDGER"
+grep -q '"tokenHash":"sha256:' "$LEDGER"
 
 echo "wt-remote-execution integration test passed"

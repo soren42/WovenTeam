@@ -271,7 +271,8 @@
         <article class="card risk">
           <span class="status"><span class="dot"></span>Active</span>
           <h3>Secret Storage Hardening</h3>
-          <p>Sprint 6 stopped writing raw bearer tokens to the JSONL ledger. Token issuance records now store hashed token material plus a redacted preview; the plaintext token is returned only in the issuance response.</p>
+          <p>Sprint 6 stopped writing raw bearer tokens to the JSONL ledger. Token issuance records now store SHA-256 hashed token material plus a redacted preview; the plaintext token is returned only in the issuance response.</p>
+          <p>Operator sessions still intentionally treat the local host as operator under the single-tenant intranet model: the session token is a single shared secret in a 0600 file handed out to loopback callers, so any local process that can read that file or reach loopback <code>/api/operator-session</code> gains operator authority. If multi-user local hosts come into scope, the next step is Unix-domain-socket transport or per-operator session isolation.</p>
         </article>
         <article class="card risk">
           <span class="status"><span class="dot"></span>Deferred</span>
