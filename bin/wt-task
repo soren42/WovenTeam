@@ -13,6 +13,7 @@ Usage:
   wt-task initiative list
   wt-task initiative show INIT
   wt-task initiative export INIT
+  wt-task initiative report INIT [--out FILE]
   wt-task initiative close INIT [--message TEXT]
   wt-task agent list
   wt-task agent pause AGENT [--message TEXT]
@@ -81,6 +82,116 @@ new_id() {
     else
         printf '%s_%s_%s\n' "$prefix" "$(date +%s)" "$RANDOM"
     fi
+}
+
+# Phase 3 Sprint 7: render an initiative audit JSON payload as a self-contained
+# HTML report. $1 = audit JSON, $2 = generated-at ISO timestamp. All data is
+# @html-escaped by jq so a task title containing markup cannot break the
+# document or inject script. Emits the full document to stdout.
+render_initiative_report() {
+    local audit="$1" generated="$2"
+    # Static head + inline CSS (no escaping concerns - no interpolated data).
+    cat <<HTMLHEAD
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WovenTeam initiative report</title>
+<style>
+  :root { --ink:#17202a; --muted:#5c6875; --line:#d7dee6; --paper:#f7f9fb; --panel:#fff; --blue:#2563a8; --green:#1f7a5a; --amber:#a16207; --red:#b42318; }
+  * { box-sizing:border-box; }
+  body { margin:0; font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif; color:var(--ink); background:var(--paper); line-height:1.48; }
+  header.hero { background:#11253a; color:#fff; padding:32px clamp(18px,5vw,56px) 26px; }
+  header.hero h1 { margin:0 0 8px; font-size:clamp(26px,4vw,40px); }
+  header.hero .meta { color:#aac4dd; font-size:13px; }
+  main { max-width:1100px; margin:0 auto; padding:24px clamp(16px,4vw,28px) 48px; }
+  section { margin:0 0 24px; padding:20px; background:var(--panel); border:1px solid var(--line); border-radius:8px; }
+  h2 { margin:0 0 12px; font-size:20px; }
+  table { width:100%; border-collapse:collapse; font-size:13px; }
+  th,td { text-align:left; vertical-align:top; padding:8px 9px; border-bottom:1px solid var(--line); }
+  th { background:#f0f4f8; }
+  code { font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; font-size:0.92em; background:#eef2f6; padding:1px 4px; border-radius:4px; }
+  .cards { display:flex; flex-wrap:wrap; gap:10px; }
+  .card { flex:1 1 120px; border:1px solid var(--line); border-radius:6px; padding:10px 12px; background:#fbfcfe; }
+  .card b { display:block; font-size:22px; }
+  .card span { font-size:11px; text-transform:uppercase; letter-spacing:0.04em; color:var(--muted); }
+  .pill { display:inline-block; border:1px solid var(--line); border-radius:999px; padding:1px 7px; font-size:11px; font-weight:700; background:#f6f8fa; color:var(--muted); }
+  .pill.hit { color:var(--red); border-color:#f0c2bd; background:#fdeceb; }
+  .pill.clean { color:var(--green); border-color:#b7dfcd; background:#e7f5ee; }
+  .empty { color:var(--muted); font-style:italic; }
+  .muted { color:var(--muted); font-size:12px; }
+</style>
+</head>
+<body>
+HTMLHEAD
+
+    # Dynamic body: one jq program emits the whole <body> inner content,
+    # @html-escaping every interpolated value.
+    jq -r --arg generated "$generated" '
+      def esc: (. // "") | tostring | @html;
+      def ms2iso: if (. // 0) > 0 then (. / 1000 | floor | todate) else "—" end;
+      def emptyrow($cols; $msg): "<tr><td colspan=\"" + ($cols|tostring) + "\" class=\"empty\">" + $msg + "</td></tr>";
+
+      "<header class=\"hero\"><h1>" + (.summary.title // .initiativeId | esc) + "</h1>"
+      + "<div class=\"meta\">Initiative <code>" + (.initiativeId | esc) + "</code> · generated " + ($generated | esc)
+      + " · created " + (.summary.createdAtUnixMs | ms2iso) + " · updated " + (.summary.updatedAtUnixMs | ms2iso) + "</div></header>"
+      + "<main>"
+
+      # Summary cards
+      + "<section><h2>Summary</h2><div class=\"cards\">"
+      + "<div class=\"card\"><b>" + (.summary.taskCount // 0 | tostring) + "</b><span>tasks</span></div>"
+      + "<div class=\"card\"><b>" + (.summary.activeTasks // 0 | tostring) + "</b><span>active</span></div>"
+      + "<div class=\"card\"><b>" + (.summary.completeTasks // 0 | tostring) + "</b><span>complete</span></div>"
+      + "<div class=\"card\"><b>" + (.summary.failedTasks // 0 | tostring) + "</b><span>failed</span></div>"
+      + "<div class=\"card\"><b>" + (.summary.acceptedArtifacts // 0 | tostring) + "</b><span>accepted</span></div>"
+      + "<div class=\"card\"><b>" + ((.deliverables // []) | length | tostring) + "</b><span>deliverables</span></div>"
+      + "<div class=\"card\"><b>" + (.summary.maxTokens // 0 | tostring) + "</b><span>max tokens</span></div>"
+      + "</div></section>"
+
+      # Tasks
+      + "<section><h2>Tasks</h2><table><thead><tr><th>Task</th><th>Status</th><th>Role</th><th>Agent</th><th>Priority</th><th>Title</th></tr></thead><tbody>"
+      + ( (.tasks // []) | if length == 0 then emptyrow(6; "No tasks.")
+          else (map("<tr><td><code>" + (.taskId|esc) + "</code></td><td>" + (.status|esc)
+            + "</td><td>" + (.assignedRole|esc) + "</td><td>" + ((.assignedAgent // "all")|esc)
+            + "</td><td>" + ((.priority // "normal")|esc) + "</td><td>" + (.title|esc) + "</td></tr>") | join("")) end )
+      + "</tbody></table></section>"
+
+      # Deliverables
+      + "<section><h2>Deliverables</h2><table><thead><tr><th>Path</th><th>Mode</th><th>SHA-256</th><th>Size</th><th>Reviewer</th><th>When</th></tr></thead><tbody>"
+      + ( (.deliverables // []) | if length == 0 then emptyrow(6; "No deliverables shipped.")
+          else (map("<tr><td><code>" + (.deliverablePath|esc) + "</code></td><td>" + (.packagingMode|esc)
+            + "</td><td><code>" + ((.sha256 // "")[0:16]|esc) + "</code></td><td>" + (.sizeBytes // 0 | tostring)
+            + "</td><td>" + (.reviewer|esc) + "</td><td>" + (.createdAtUnixMs|ms2iso) + "</td></tr>") | join("")) end )
+      + "</tbody></table></section>"
+
+      # Secret scans
+      + "<section><h2>Secret scans</h2><table><thead><tr><th>Scanned path</th><th>Result</th><th>Hits</th><th>Mode</th><th>When</th></tr></thead><tbody>"
+      + ( (.secretScans // []) | if length == 0 then emptyrow(5; "No secret scans recorded.")
+          else (map("<tr><td><code>" + (.scannedPath|esc) + "</code></td><td>"
+            + (if .matched then "<span class=\"pill hit\">match</span>" else "<span class=\"pill clean\">clean</span>" end)
+            + "</td><td>" + (.hitCount // 0 | tostring) + "</td><td>" + (.packagingMode|esc)
+            + "</td><td>" + (.createdAtUnixMs|ms2iso) + "</td></tr>") | join("")) end )
+      + "</tbody></table></section>"
+
+      # Policy denials
+      + "<section><h2>Policy denials</h2><table><thead><tr><th>Task</th><th>Reason</th><th>Detail</th></tr></thead><tbody>"
+      + ( (.policyDecisions // []) | if length == 0 then emptyrow(3; "No policy denials.")
+          else (map("<tr><td><code>" + ((.taskId // "—")|esc) + "</code></td><td>" + ((.reason // "")|esc)
+            + "</td><td>" + ((.detail // .message // "")|esc) + "</td></tr>") | join("")) end )
+      + "</tbody></table></section>"
+
+      # Autonomy + key events (from the events stream)
+      + "<section><h2>Event timeline</h2><table><thead><tr><th>When</th><th>Type</th><th>Status</th><th>Agent</th><th>Message</th></tr></thead><tbody>"
+      + ( (.events // []) | if length == 0 then emptyrow(5; "No events.")
+          else (map("<tr><td>" + (.createdAtUnixMs|ms2iso) + "</td><td>" + ((.eventType // "")|esc)
+            + "</td><td>" + ((.status // "")|esc) + "</td><td>" + ((.assignedAgent // "")|esc)
+            + "</td><td>" + ((.message // "")|esc) + "</td></tr>") | join("")) end )
+      + "</tbody></table></section>"
+
+      + "<p class=\"muted\">Generated by <code>wt-task initiative report</code> from <code>/api/initiative-audit</code>. All values are HTML-escaped at render time.</p>"
+      + "</main></body></html>"
+    ' <<<"$audit"
 }
 
 cmd_create() {
@@ -330,6 +441,37 @@ cmd_initiative() {
                 exit 2
             fi
             http_get "/api/initiative-detail?initiativeId=$initiative" | jq .
+            ;;
+        report)
+            # Phase 3 Sprint 7: render the initiative audit as a self-contained
+            # HTML report (the v1.0 self-improvement demo feature). Reads the
+            # same /api/initiative-audit JSON the CLI `audit` verb streams and
+            # transforms it with jq (@html-escaped) into a single file with
+            # inline CSS - no external assets, no new dependency.
+            local initiative="${1:-}" out=""
+            shift || true
+            while [[ $# -gt 0 ]]; do
+                case "$1" in
+                    --out) out="${2:-}"; shift 2 ;;
+                    *) echo "wt-task initiative report: unknown argument: $1" >&2; usage >&2; exit 2 ;;
+                esac
+            done
+            if [[ -z "$initiative" ]]; then
+                echo "wt-task initiative report: INIT is required" >&2
+                exit 2
+            fi
+            local audit
+            audit="$(http_get "/api/initiative-audit?initiativeId=$initiative")"
+            if [[ "$(jq -r '.ok // false' <<<"$audit")" != "true" ]]; then
+                echo "wt-task initiative report: initiative not found or audit failed" >&2
+                exit 1
+            fi
+            local generated
+            generated="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            render_initiative_report "$audit" "$generated" > "${out:-/dev/stdout}"
+            if [[ -n "$out" ]]; then
+                echo "wrote $initiative report -> $out" >&2
+            fi
             ;;
         close)
             local initiative="${1:-}" message="Initiative closed by wt-task."
