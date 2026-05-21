@@ -1,0 +1,237 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>WovenTeam Phase 3 Sprint 5 Closeout</title>
+  <!--
+    Phase 3 Sprint 5 closeout report. Self-contained: every byte of CSS/SVG
+    is inline so the file archives cleanly under docs/launch/. Matches the
+    Sprint 1-4 closeout style.
+  -->
+  <style>
+    :root {
+      color-scheme: light;
+      --ink: #17202a; --muted: #5c6875; --line: #d7dee6; --paper: #f7f9fb;
+      --panel: #ffffff; --blue: #2563a8; --green: #1f7a5a; --amber: #a16207;
+      --red: #b42318; --violet: #6d4aff; --teal: #0f766e;
+      --soft-blue: #e7f0fa; --soft-green: #e7f5ee; --soft-amber: #fff4db;
+      --soft-red: #fdeceb; --soft-violet: #eeeafe;
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; color: var(--ink); background: var(--paper); line-height: 1.48; }
+    header.hero { background: #11253a; color: #fff; padding: 38px clamp(18px, 5vw, 64px) 30px; }
+    header.hero h1 { margin: 0 0 10px; max-width: 980px; font-size: clamp(30px, 5vw, 54px); line-height: 1.02; }
+    header.hero p { max-width: 900px; margin: 0; color: #dbe7f4; font-size: 18px; }
+    header.hero .meta { margin-top: 14px; color: #aac4dd; font-size: 14px; }
+    nav { display: flex; gap: 8px; flex-wrap: wrap; padding: 14px clamp(18px, 5vw, 64px); background: #fff; border-bottom: 1px solid var(--line); position: sticky; top: 0; z-index: 2; }
+    nav a { border: 1px solid var(--line); background: #fff; color: var(--ink); border-radius: 6px; padding: 8px 10px; font: inherit; text-decoration: none; cursor: pointer; }
+    nav a:hover { border-color: var(--blue); color: var(--blue); background: var(--soft-blue); }
+    main { max-width: 1180px; margin: 0 auto; padding: 24px clamp(16px, 4vw, 28px) 48px; }
+    section { margin: 0 0 28px; padding: 24px; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; }
+    h2 { margin: 0 0 14px; font-size: 24px; }
+    h3 { margin: 0 0 8px; font-size: 18px; }
+    p { margin: 0 0 12px; }
+    ul, ol { margin: 0; padding-left: 22px; }
+    li + li { margin-top: 7px; }
+    code { background: #eef2f6; border: 1px solid #dfe6ee; border-radius: 4px; padding: 1px 4px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.95em; }
+    pre { margin: 12px 0; padding: 12px 14px; border: 1px solid var(--line); border-radius: 6px; background: #fbfcfe; overflow-x: auto; font-size: 13px; line-height: 1.45; }
+    pre code { background: transparent; border: 0; padding: 0; }
+    .grid { display: grid; grid-template-columns: repeat(12, 1fr); gap: 14px; }
+    .card { grid-column: span 4; border: 1px solid var(--line); border-radius: 8px; padding: 16px; background: #fbfcfe; }
+    .wide { grid-column: span 6; }
+    .status { display: inline-flex; align-items: center; gap: 6px; margin-bottom: 10px; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .04em; }
+    .dot { width: 9px; height: 9px; border-radius: 999px; background: var(--blue); }
+    .done .dot { background: var(--green); }
+    .muted { color: var(--muted); }
+    .callout { border-left: 4px solid var(--green); padding: 12px 14px; background: var(--soft-green); border-radius: 6px; margin: 12px 0 0; }
+    .callout.warn { border-left-color: var(--amber); background: var(--soft-amber); }
+    table { width: 100%; border-collapse: collapse; font-size: 14px; }
+    th, td { text-align: left; vertical-align: top; padding: 10px; border-bottom: 1px solid var(--line); }
+    th { background: #f0f4f8; }
+    .pill { display: inline-block; border: 1px solid var(--line); border-radius: 999px; padding: 3px 8px; font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; background: #f6f8fa; color: var(--muted); }
+    .pill.pass { color: var(--green); background: var(--soft-green); border-color: #b7dfcd; }
+    .diagram { width: 100%; height: auto; border: 1px solid var(--line); border-radius: 8px; background: #fff; }
+    kbd { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; background: #11253a; color: #fff; border-radius: 4px; padding: 1px 7px; font-size: 0.85em; }
+    @media (max-width: 820px) { nav { position: static; } section { padding: 18px; } .card, .wide { grid-column: 1 / -1; } }
+  </style>
+</head>
+<body>
+  <header class="hero">
+    <h1>Phase 3 Sprint 5 Closeout</h1>
+    <p>Real-time dashboard: the console now refreshes event-driven off an SSE ledger-delta stream instead of polling, with a glanceable status bar, in-flight steering controls, triage hotkeys, and a drag-priority queue.</p>
+    <div class="meta">Generated 2026-05-21 · closes Sprint 5 of <code>docs/plans/phase3-self-improvement-plan.html</code> · Claude, following Codex's Sprint 4 under the alternating-models cadence</div>
+  </header>
+
+  <nav>
+    <a href="#status">Status</a>
+    <a href="#technical">Technical</a>
+    <a href="#flow">Flow</a>
+    <a href="#validation">Validation</a>
+    <a href="#integration">Sprint 4 Integration</a>
+    <a href="#followups">Follow-ups</a>
+  </nav>
+
+  <main>
+    <section id="status">
+      <h2>Executive Status</h2>
+      <div class="grid">
+        <article class="card done">
+          <span class="status"><span class="dot"></span>Delivered</span>
+          <h3>SSE Event-Driven Refresh</h3>
+          <p>The existing <code>/events</code> stream now also emits typed <code>event: ledger</code> frames for every new task-ledger record. The client maps each schema to a debounced refresh of just the affected view, replacing the 5-15s busy-poll with a 30s fallback safety net.</p>
+        </article>
+        <article class="card done">
+          <span class="status"><span class="dot"></span>Delivered</span>
+          <h3>Glanceable Bar + Steering</h3>
+          <p>A one-line summary bar (initiatives, in-flight tasks, alerts, budget pressure, oldest stuck task, autonomy grants). In-flight controls for priority, reroute, and operator note — all operator-gated POSTs landing as ledger events.</p>
+        </article>
+        <article class="card done">
+          <span class="status"><span class="dot"></span>Delivered</span>
+          <h3>Hotkeys + Drag Priority</h3>
+          <p>Triage hotkeys <kbd>A</kbd> <kbd>P</kbd> <kbd>R</kbd> <kbd>X</kbd> <kbd>!</kbd> with a help overlay mapping each to its CLI equivalent, and a four-lane drag-priority queue with optimistic UI + server reconciliation.</p>
+        </article>
+      </div>
+      <div class="callout">
+        <strong>Definition of Done for Sprint 5:</strong> SSE channels replace polling, glanceable summary, in-flight controls, hotkey triage with CLI parity, drag-priority queue, and a focused <code>make test-realtime-dashboard</code>. All 23 integration tests + smoke pass; the SSE delta propagates a ledger append to the stream in under 2 s.
+      </div>
+    </section>
+
+    <section id="technical">
+      <h2>Detailed Technical Status</h2>
+      <div class="grid">
+        <article class="card wide">
+          <h3>Server: SSE Ledger Delta</h3>
+          <ul>
+            <li><code>streamLedgerDelta()</code> tails <code>task-packages.jsonl</code> by byte offset and emits one <code>event: ledger</code> frame per new complete line, forwarding the full JSONL record as the SSE data.</li>
+            <li>Seeded to the file's current size at connect time (0 if absent) so only post-connect records stream — no history replay. Truncation/rotation resyncs to EOF.</li>
+            <li>Runs inside the existing 500 ms <code>handleEvents</code> tick alongside the chat <code>message</code> stream; heartbeats only fire when neither stream had output.</li>
+          </ul>
+        </article>
+        <article class="card wide">
+          <h3>Client: Event-Driven Refresh</h3>
+          <ul>
+            <li><code>connectEvents()</code> adds a <code>ledger</code> listener; <code>dispatchLedgerEvent()</code> maps schema → debounced loader (task_event → tasks + header + initiatives; heartbeat → status board; host_event → hosts; deliverable → deliverables; task_usage → tokens; policy_decision → header).</li>
+            <li><code>scheduleRefresh()</code> collapses event bursts into one refresh per loader.</li>
+            <li>Polling intervals dropped from 5-15 s to a 30 s fallback (adapters 60 s).</li>
+          </ul>
+        </article>
+        <article class="card wide">
+          <h3>In-Flight Controls</h3>
+          <ul>
+            <li><code>POST /api/task-priority</code> + <code>/api/task-reroute</code> (landed in Sprint 4 for the auth gate) now have UI; <code>POST /api/task-note</code> is new this sprint.</li>
+            <li>Projection gap fixed: the <code>priority</code> event type now updates the task's <code>priority</code> column (Sprint 4 appended the record but the projection ignored it).</li>
+            <li>All three are gated by <code>requireOperatorAuth</code>; the loopback console passes via the <code>peerIsLocal</code> bypass.</li>
+          </ul>
+        </article>
+        <article class="card wide">
+          <h3>Hotkeys + Help</h3>
+          <ul>
+            <li><kbd>A</kbd> acknowledge oldest alert (operator-local), <kbd>P</kbd> promote selected artifact, <kbd>R</kbd> reclaim, <kbd>X</kbd> kill-tree cancel (<code>/api/task-cancel</code>), <kbd>!</kbd> revoke autonomy.</li>
+            <li>Suppressed while typing in an input/select/textarea.</li>
+            <li>Help overlay extended with the new keys + a UI↔CLI parity row for each.</li>
+          </ul>
+        </article>
+        <article class="card wide">
+          <h3>Drag-Priority Queue</h3>
+          <ul>
+            <li>Four lanes (urgent/high/normal/low) of draggable task chips; dropping a chip in a lane POSTs <code>/api/task-priority</code> with that tier.</li>
+            <li>Optimistic: the chip moves immediately; a failed POST triggers <code>loadTasks()</code> to reconcile from the server.</li>
+            <li>Native HTML5 drag events, no library (per the no-Node directive).</li>
+          </ul>
+        </article>
+        <article class="card wide">
+          <h3>Sprint 4 Truncation Fixes</h3>
+          <ul>
+            <li>Cleared two latent <code>-Wformat-truncation</code> warnings in Sprint 4 code that surfaced on a clean build: the remote-claim response buffer (4096 → body-sized; could emit malformed JSON on a max-size task body) and the bearer-token extraction buffers (256 → 512 to match the auth header).</li>
+          </ul>
+        </article>
+      </div>
+    </section>
+
+    <section id="flow">
+      <h2>Event-Driven Refresh Flow</h2>
+      <svg class="diagram" viewBox="0 0 1040 300" role="img" aria-label="SSE event-driven refresh flow">
+        <defs>
+          <marker id="arr5" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+            <path d="M 0 0 L 10 5 L 0 10 z" fill="#2563a8"></path>
+          </marker>
+          <style>
+            .node { fill: #fff; stroke: #b9c3cc; stroke-width: 1.5; }
+            .blue { fill: #e7f0fa; stroke: #2563a8; }
+            .green { fill: #e7f5ee; stroke: #1f7a5a; }
+            .violet { fill: #eeeafe; stroke: #6d4aff; }
+            .label { fill: #1f2933; font: 700 14px system-ui, sans-serif; }
+            .small { fill: #5c6875; font: 12px system-ui, sans-serif; }
+            .line { stroke: #2563a8; stroke-width: 2; fill: none; marker-end: url(#arr5); }
+          </style>
+        </defs>
+        <rect class="node blue" x="20" y="40" width="180" height="60" rx="8"></rect>
+        <text class="label" x="110" y="66" text-anchor="middle">ledger append</text>
+        <text class="small" x="110" y="86" text-anchor="middle">task_event, heartbeat…</text>
+        <rect class="node violet" x="240" y="40" width="200" height="60" rx="8"></rect>
+        <text class="label" x="340" y="66" text-anchor="middle">streamLedgerDelta</text>
+        <text class="small" x="340" y="86" text-anchor="middle">tail by byte offset · 500ms</text>
+        <rect class="node green" x="480" y="40" width="200" height="60" rx="8"></rect>
+        <text class="label" x="580" y="66" text-anchor="middle">event: ledger</text>
+        <text class="small" x="580" y="86" text-anchor="middle">SSE frame to browser</text>
+        <rect class="node blue" x="720" y="40" width="200" height="60" rx="8"></rect>
+        <text class="label" x="820" y="66" text-anchor="middle">dispatchLedgerEvent</text>
+        <text class="small" x="820" y="86" text-anchor="middle">schema → loader</text>
+        <rect class="node green" x="600" y="180" width="240" height="60" rx="8"></rect>
+        <text class="label" x="720" y="206" text-anchor="middle">debounced refresh</text>
+        <text class="small" x="720" y="226" text-anchor="middle">tasks · status · header · …</text>
+        <rect class="node blue" x="320" y="180" width="240" height="60" rx="8"></rect>
+        <text class="label" x="440" y="206" text-anchor="middle">summary bar + board</text>
+        <text class="small" x="440" y="226" text-anchor="middle">repaint &lt; 2s after append</text>
+        <path class="line" d="M200 70 H236"></path>
+        <path class="line" d="M440 70 H476"></path>
+        <path class="line" d="M680 70 H716"></path>
+        <path class="line" d="M820 100 V176 H842"></path>
+        <path class="line" d="M600 210 H564"></path>
+      </svg>
+    </section>
+
+    <section id="validation">
+      <h2>Validation</h2>
+      <pre><code>make test-realtime-dashboard   # new in Sprint 5
+make test                      # 23 integration tests + smoke; all green</code></pre>
+      <table>
+        <thead><tr><th>Coverage</th><th>Mechanism</th><th>Result</th></tr></thead>
+        <tbody>
+          <tr><td>Priority change projects on the task row</td><td>POST /api/task-priority then assert <code>.task.priority == "urgent"</code> on /api/task-detail.</td><td><span class="pill pass">Pass</span></td></tr>
+          <tr><td>Reroute projects agent + queued status</td><td>POST /api/task-reroute then assert <code>assignedAgent</code> + <code>status == "queued"</code>.</td><td><span class="pill pass">Pass</span></td></tr>
+          <tr><td>Operator note appends a note event</td><td>POST /api/task-note then grep the ledger for <code>"eventType":"note"</code> + the note text.</td><td><span class="pill pass">Pass</span></td></tr>
+          <tr><td>SSE ledger delta streams within ~2 s</td><td>Connect to /events, trigger a priority change, assert an <code>event: ledger</code> frame carrying the task id + <code>"priority":"high"</code> arrives.</td><td><span class="pill pass">Pass</span></td></tr>
+          <tr><td>Dashboard assets serve + parse</td><td>Manual server-side check: index has the new element ids, app.js passes <code>node --check</code>, /api/status carries the summary fields.</td><td><span class="pill pass">Pass</span></td></tr>
+          <tr><td>Full regression sweep</td><td><code>make test</code> — 23 integration tests + smoke including Phase 1/2 E2E and all Phase 3 sprints.</td><td><span class="pill pass">Pass</span></td></tr>
+        </tbody>
+      </table>
+      <div class="callout warn">
+        <strong>Browser caveat:</strong> the SSE stream, endpoints, and projection are integration-tested, and the served HTML/CSS/JS were verified to parse and contain the new surfaces. A live click-through in a real browser (drag-drop ergonomics, hotkey focus edge cases) was not performed in this environment — recommended as a manual smoke before the Sprint 7 demo.
+      </div>
+    </section>
+
+    <section id="integration">
+      <h2>Sprint 4 Integration Notes</h2>
+      <p>Per the alternating-models cadence, Sprint 5 was built on Codex's Sprint 4 substrate. The read-pass surfaced three things worth recording:</p>
+      <ul>
+        <li><strong>Endpoints already existed.</strong> <code>/api/task-priority</code> and <code>/api/task-reroute</code> were added in Sprint 4 to satisfy the operator-auth gate list. Sprint 5 found the priority endpoint appended a record the projection never applied, and fixed the projection — a latent no-op the auth-gate work didn't exercise.</li>
+        <li><strong>Operator-auth respected.</strong> The new <code>/api/task-note</code> joins the operator-gated set. The browser console reaches all of them via the <code>peerIsLocal</code> loopback bypass, so no token plumbing was needed in the dashboard.</li>
+        <li><strong>Clean-build hygiene.</strong> A clean build surfaced two <code>-Wformat-truncation</code> warnings from Sprint 4 (remote-claim response, token extraction) that incremental builds had hidden. Both fixed; the remote-claim one could have produced malformed JSON on a maximum-size task body.</li>
+      </ul>
+    </section>
+
+    <section id="followups">
+      <h2>Follow-ups</h2>
+      <ul>
+        <li><strong>Per-client SSE cost.</strong> Each <code>/events</code> connection re-opens and tails the ledger every 500 ms. For a handful of operators this is fine; if the dashboard fans out to many viewers, a shared in-process tail with a broadcast buffer would cut redundant file reads.</li>
+        <li><strong>Loopback operator bypass.</strong> Inherited from Sprint 4's threat model: the dashboard relies on <code>peerIsLocal</code> for operator authority. Sprint 6's hardening pass should replace the loopback-TCP bypass with a Unix-domain socket or explicit operator session.</li>
+        <li><strong>Drag-priority within a lane.</strong> The board sets the priority tier; it does not order tasks within a tier. If operators want a strict FIFO-within-tier order, that needs a secondary ordering field the projection does not track yet.</li>
+        <li><strong>Alert acknowledgement is client-local.</strong> <kbd>A</kbd> acks in the browser session only; a refresh clears it. A durable ack would need an <code>ack</code> task_event — deferred until operators ask for cross-session persistence.</li>
+      </ul>
+      <p class="muted">SSE additions are backward-compatible: a client that ignores <code>event: ledger</code> frames still gets the chat <code>message</code> stream. The 30 s fallback polls keep the dashboard correct even if the stream drops.</p>
+    </section>
+  </main>
+</body>
+</html>

@@ -61,6 +61,8 @@ let state = {
   roleFilter: "all",
   agents: [],
   hosts: [],
+  ackedAlerts: new Set(),
+  lastAlerts: [],
   capacity: {agents: [], initiatives: [], parents: [], caps: {}},
   tokens: {},
   config: {
@@ -502,6 +504,85 @@ async function loadStatusBoard() {
   renderStatusBoard(payload);
 }
 
+/*
+ * Phase 3 Sprint 5: glanceable header summary. Computes six at-a-glance
+ * numbers from a single /api/status payload and writes them into the summary
+ * bar. Called on init, on the 30s fallback, and (debounced) on every relevant
+ * SSE ledger event.
+ */
+const TERMINAL_STATUSES = new Set(["complete", "failed", "cancelled", "closed", "rejected", "done"]);
+function fmtAge(ms) {
+  if (ms <= 0) return "—";
+  const s = Math.floor(ms / 1000);
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `${m}m`;
+  const h = Math.floor(m / 60);
+  return `${h}h${m % 60}m`;
+}
+async function updateHeaderSummary() {
+  let payload;
+  try {
+    const response = await fetch("/api/status");
+    if (!response.ok) return;
+    payload = await response.json();
+  } catch (e) { return; }
+  if (!payload || !payload.ok) return;
+  const now = payload.nowUnixMs || Date.now();
+  const initiatives = Array.isArray(payload.initiatives) ? payload.initiatives
+    : (payload.initiatives && payload.initiatives.initiatives) || [];
+  const tasks = Array.isArray(payload.taskSummaries) ? payload.taskSummaries
+    : (payload.taskSummaries && payload.taskSummaries.tasks) || [];
+  const milestones = Array.isArray(payload.recentMilestones) ? payload.recentMilestones : [];
+
+  const inFlightInitiatives = initiatives.filter(i => (i.activeTasks || 0) > 0).length || initiatives.length;
+  const activeTasks = tasks.filter(t => !TERMINAL_STATUSES.has(t.status)).length;
+  const autonomyGrants = tasks.filter(t => t.autonomyLevel === "autonomous" && !TERMINAL_STATUSES.has(t.status)).length;
+
+  /* Alerts: blocked tasks + recent escalate milestones. */
+  const blocked = tasks.filter(t => t.status === "blocked").length;
+  const escalations = milestones.filter(m => m.milestone === "escalate").length;
+  const alerts = blocked + escalations;
+
+  /* Budget pressure: the higher of day/month allocated-vs-budget ratios. */
+  const tk = payload.tokens || {};
+  const dayRatio = tk.tokenDailyBudget ? (tk.dayWindowAllocatedTokens || 0) / tk.tokenDailyBudget : 0;
+  const monthRatio = tk.tokenMonthlyBudget ? (tk.monthWindowAllocatedTokens || 0) / tk.tokenMonthlyBudget : 0;
+  const budgetPct = Math.round(Math.max(dayRatio, monthRatio) * 100);
+
+  /* Oldest stuck task: running/leased with an expired lease. */
+  let oldestStuckMs = 0;
+  tasks.forEach(t => {
+    const expiry = t.leaseExpiresAtUnixMs || 0;
+    const running = t.status === "running" || t.status === "leased";
+    if (running && expiry > 0 && expiry < now) {
+      const age = now - expiry;
+      if (age > oldestStuckMs) oldestStuckMs = age;
+    }
+  });
+
+  const set = (id, val) => { const el = document.querySelector(id); if (el) el.textContent = val; };
+  set("#sumInitiatives", inFlightInitiatives);
+  set("#sumActiveTasks", activeTasks);
+  set("#sumAlerts", alerts);
+  set("#sumBudget", `${budgetPct}%`);
+  set("#sumStuck", fmtAge(oldestStuckMs));
+  set("#sumAutonomy", autonomyGrants);
+
+  const alertItem = document.querySelector("#sumAlerts");
+  if (alertItem && alertItem.parentElement) {
+    alertItem.parentElement.classList.toggle("active", alerts > 0);
+  }
+  const budgetItem = document.querySelector("#sumBudget");
+  if (budgetItem && budgetItem.parentElement) {
+    budgetItem.parentElement.classList.toggle("pressure", budgetPct >= 80);
+  }
+  const stuckItem = document.querySelector("#sumStuck");
+  if (stuckItem && stuckItem.parentElement) {
+    stuckItem.parentElement.classList.toggle("active", oldestStuckMs > 0);
+  }
+}
+
 function renderStatusBoard(payload) {
   const heartbeatsEl = document.querySelector("#statusBoardHeartbeats");
   const milestonesEl = document.querySelector("#statusBoardMilestones");
@@ -596,6 +677,7 @@ function summarizeTasks(rows) {
 function renderTasks(tasks) {
   /* Render alerts off the same data; cheap and keeps the two views consistent. */
   renderAlerts(tasks);
+  renderPriorityBoard(tasks);
   const filtered = applyTaskFilters(tasks);
   document.querySelector("#requestCount").textContent = String(state.taskStats.requestCount);
   document.querySelector("#blockedCount").textContent = String(state.taskStats.blockedCount);
@@ -677,7 +759,14 @@ function renderAlerts(tasks) {
       alerts.push({task, kind: "stuck", label: `stuck >15m (${task.assignedAgent || "?"})`});
     }
   });
-  metaEl.textContent = `${alerts.length} OPEN`;
+  /* Sprint 5: acknowledged alerts (operator-local) drop out of the OPEN count
+   * and render dimmed. Prune the acked set to taskIds still alerting so a task
+   * that recovers then re-alerts is not silently suppressed. */
+  const alertingIds = new Set(alerts.map(a => a.task.taskId));
+  state.ackedAlerts.forEach(id => { if (!alertingIds.has(id)) state.ackedAlerts.delete(id); });
+  const openAlerts = alerts.filter(a => !state.ackedAlerts.has(a.task.taskId));
+  state.lastAlerts = openAlerts;
+  metaEl.textContent = `${openAlerts.length} OPEN`;
   listEl.innerHTML = "";
   if (!alerts.length) {
     const empty = document.createElement("div");
@@ -688,16 +777,103 @@ function renderAlerts(tasks) {
   }
   /* Limit to top 8 so the alert panel never crowds the status grid. */
   alerts.slice(0, 8).forEach(({task, kind, label}) => {
+    const acked = state.ackedAlerts.has(task.taskId);
     const row = document.createElement("button");
     row.type = "button";
-    row.className = `alert-row alert-${kind}`;
+    row.className = `alert-row alert-${kind}${acked ? " acked" : ""}`;
     row.innerHTML = "<span class=\"alert-kind\"></span><strong></strong><small></small>";
-    row.querySelector(".alert-kind").textContent = label;
+    row.querySelector(".alert-kind").textContent = acked ? `${label} (acked)` : label;
     row.querySelector("strong").textContent = task.title || task.taskId;
     row.querySelector("small").textContent = `${task.taskId} · ${task.assignedAgent || "all"}`;
     row.addEventListener("click", () => loadTaskDetail(task.taskId));
     listEl.appendChild(row);
   });
+}
+
+/*
+ * Phase 3 Sprint 5: drag-priority queue. Renders non-terminal tasks as
+ * draggable chips grouped into four priority lanes. Dropping a chip in a lane
+ * POSTs /api/task-priority with that lane's tier; the chip moves immediately
+ * (optimistic) and the next SSE ledger refresh reconciles against the server.
+ */
+const PRIORITY_LANES = ["urgent", "high", "normal", "low"];
+function renderPriorityBoard(tasks) {
+  const board = document.querySelector("#priorityBoardPanel");
+  if (!board) return;
+  const active = (tasks || []).filter(t => !TERMINAL_STATUSES.has(t.status));
+  const meta = document.querySelector("#priorityBoardMeta");
+  if (meta) meta.textContent = `${active.length} in flight`;
+  PRIORITY_LANES.forEach(lane => {
+    const zone = board.querySelector(`.prio-dropzone[data-priority="${lane}"]`);
+    if (zone) zone.innerHTML = "";
+  });
+  active.forEach(task => {
+    const lane = PRIORITY_LANES.includes(task.priority) ? task.priority : "normal";
+    const zone = board.querySelector(`.prio-dropzone[data-priority="${lane}"]`);
+    if (!zone) return;
+    const chip = document.createElement("div");
+    chip.className = "prio-chip";
+    chip.draggable = true;
+    chip.dataset.taskId = task.taskId;
+    chip.dataset.priority = lane;
+    chip.innerHTML = "<strong></strong><small></small>";
+    chip.querySelector("strong").textContent = task.title || task.taskId;
+    chip.querySelector("small").textContent = `${task.assignedAgent || "all"} · ${task.status}`;
+    chip.addEventListener("dragstart", e => {
+      e.dataTransfer.setData("text/plain", task.taskId);
+      e.dataTransfer.effectAllowed = "move";
+      chip.classList.add("dragging");
+    });
+    chip.addEventListener("dragend", () => chip.classList.remove("dragging"));
+    chip.addEventListener("click", () => loadTaskDetail(task.taskId));
+    zone.appendChild(chip);
+  });
+}
+
+function wirePriorityBoard() {
+  const board = document.querySelector("#priorityBoardPanel");
+  if (!board) return;
+  board.querySelectorAll(".prio-dropzone").forEach(zone => {
+    const lane = zone.dataset.priority;
+    zone.addEventListener("dragover", e => { e.preventDefault(); zone.classList.add("drag-over"); });
+    zone.addEventListener("dragleave", () => zone.classList.remove("drag-over"));
+    zone.addEventListener("drop", async e => {
+      e.preventDefault();
+      zone.classList.remove("drag-over");
+      const taskId = e.dataTransfer.getData("text/plain");
+      if (!taskId) return;
+      const chip = board.querySelector(`.prio-chip[data-taskId="${CSS.escape(taskId)}"]`);
+      if (chip && chip.dataset.priority === lane) return; /* no-op: same lane */
+      if (chip) { zone.appendChild(chip); chip.dataset.priority = lane; } /* optimistic move */
+      try {
+        const response = await fetch("/api/task-priority", {
+          method: "POST",
+          headers: {"Content-Type": "application/json"},
+          body: JSON.stringify({taskId, priority: lane, createdBy: "ceo"})
+        });
+        if (!response.ok) throw new Error("priority post failed");
+        addAudit("ui", `priority → ${lane} for ${taskId}`);
+      } catch (err) {
+        addAudit("ui", `priority change failed for ${taskId}; reverting`);
+        loadTasks(); /* reconcile from server on failure */
+      }
+    });
+  });
+}
+
+/* Sprint 5: acknowledge the oldest open alert (hotkey A). Operator-local. */
+function acknowledgeOldestAlert() {
+  const open = state.lastAlerts || [];
+  if (!open.length) { addAudit("ui", "no open alerts to acknowledge"); return; }
+  const target = open[0];
+  state.ackedAlerts.add(target.task.taskId);
+  addAudit("ui", `acknowledged alert for ${target.task.taskId}`);
+  updateHeaderSummary();
+  /* Re-render from the cached task set is not available here; the next ledger
+   * refresh or fallback poll re-renders. Toggle the row's class immediately
+   * for instant feedback. */
+  const rows = document.querySelectorAll("#alertsList .alert-row");
+  if (rows[0]) rows[0].classList.add("acked");
 }
 
 function renderInitiatives(initiatives) {
@@ -1082,6 +1258,54 @@ async function postAutonomyRevoke() {
   await loadTaskDetail(state.selectedTaskId);
 }
 
+/*
+ * Phase 3 Sprint 5: in-flight steering. Three operator-gated POSTs that land
+ * as task_event records. The SSE ledger stream picks the new record up and
+ * refreshes the task views, so we don't manually reload here beyond a status
+ * line for immediate operator feedback.
+ */
+function steerStatus(text, kind) {
+  const el = document.querySelector("#steerStatus");
+  if (!el) return;
+  el.textContent = text;
+  el.className = "steer-status" + (kind ? ` ${kind}` : "");
+}
+async function postTaskSteer(path, body, label) {
+  if (!state.selectedTaskId) { addAudit("ui", "select a task first"); return; }
+  steerStatus(`${label}…`, "");
+  let ok = false;
+  try {
+    const response = await fetch(path, {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({...body, taskId: state.selectedTaskId, createdBy: "ceo"})
+    });
+    ok = response.ok;
+  } catch (e) { ok = false; }
+  if (ok) {
+    steerStatus(`${label} ✓`, "ok");
+    addAudit("ui", `${label} for ${state.selectedTaskId}`);
+  } else {
+    steerStatus(`${label} failed`, "error");
+    addAudit("ui", `${label} failed for ${state.selectedTaskId}`);
+  }
+}
+function steerSetPriority() {
+  const priority = (document.querySelector("#steerPriority") || {}).value || "normal";
+  postTaskSteer("/api/task-priority", {priority}, `priority → ${priority}`);
+}
+function steerReroute() {
+  const assignedAgent = (document.querySelector("#steerAgent") || {}).value || "claude";
+  const executionHost = ((document.querySelector("#steerHost") || {}).value || "").trim();
+  postTaskSteer("/api/task-reroute", {assignedAgent, executionHost}, `reroute → ${assignedAgent}`);
+}
+function steerAddNote() {
+  const noteEl = document.querySelector("#steerNote");
+  const note = (noteEl ? noteEl.value : "").trim();
+  if (!note) { steerStatus("note is empty", "error"); return; }
+  postTaskSteer("/api/task-note", {note}, "note added").then(() => { if (noteEl) noteEl.value = ""; });
+}
+
 async function postTaskGate(action) {
   if (!state.selectedTaskId) {
     addAudit("ui", "select a task before using review gates");
@@ -1114,6 +1338,55 @@ function progressForStatus(status) {
   return "12%";
 }
 
+/*
+ * Phase 3 Sprint 5: debounced refresh scheduler. A burst of ledger events
+ * (e.g. a task package + lease + status in quick succession) collapses into
+ * a single refresh per loader. Each key holds at most one pending timer.
+ */
+const refreshTimers = {};
+function scheduleRefresh(key, fn, delay = 300) {
+  if (refreshTimers[key]) return;
+  refreshTimers[key] = setTimeout(() => {
+    refreshTimers[key] = null;
+    try { fn(); } catch (e) { /* a failed refresh should not kill the stream */ }
+  }, delay);
+}
+
+/*
+ * Map a ledger record's schema to the views it should refresh. This is the
+ * heart of the Sprint 5 event-driven dashboard: instead of polling every few
+ * seconds, we react to the SSE `ledger` frames the daemon emits on every
+ * ledger append and refresh only the affected surfaces.
+ */
+function dispatchLedgerEvent(rec) {
+  const schema = (rec && rec.schema) || "";
+  const touchesTasks = schema.includes("task_event") || schema.includes("task_package") ||
+                       schema.includes("task_request") || schema.includes("kill_event") ||
+                       schema.includes("autonomy_event");
+  if (touchesTasks) {
+    scheduleRefresh("tasks", loadTasks);
+    scheduleRefresh("header", updateHeaderSummary, 400);
+    scheduleRefresh("initiatives", loadInitiatives, 500);
+  }
+  if (schema.includes("heartbeat") || schema.includes("milestone")) {
+    scheduleRefresh("status", loadStatusBoard);
+  }
+  if (schema.includes("host_event")) {
+    scheduleRefresh("hosts", loadHosts);
+  }
+  if (schema.includes("deliverable") || schema.includes("secret_scan")) {
+    if (state.selectedInitiativeId) {
+      scheduleRefresh("deliverables", () => loadInitiativeDeliverables(state.selectedInitiativeId));
+    }
+  }
+  if (schema.includes("task_usage")) {
+    scheduleRefresh("tokens", loadTokens);
+  }
+  if (schema.includes("policy_decision")) {
+    scheduleRefresh("header", updateHeaderSummary, 400);
+  }
+}
+
 function connectEvents() {
   const events = new EventSource("/events");
   events.addEventListener("open", () => setUplink(true));
@@ -1121,6 +1394,13 @@ function connectEvents() {
   events.addEventListener("message", event => {
     setUplink(true);
     renderMessage(JSON.parse(event.data));
+  });
+  /* Phase 3 Sprint 5: typed ledger frames drive event-driven refresh. */
+  events.addEventListener("ledger", event => {
+    setUplink(true);
+    let rec;
+    try { rec = JSON.parse(event.data); } catch (e) { return; }
+    dispatchLedgerEvent(rec);
   });
 }
 
@@ -1209,6 +1489,27 @@ async function postTaskReclaim(taskId, reason) {
   await loadTasks();
   await loadTaskDetail(taskId);
   await loadAgents();
+}
+
+/*
+ * Sprint 5: kill-tree cancel (hotkey X). Hits /api/task-cancel (Sprint 1),
+ * which appends a kill_event the running agent picks up to tear down the
+ * adapter process group. Distinct from the lifecycle "cancel" status set.
+ */
+async function postTaskCancelKill(taskId) {
+  if (!taskId) { addAudit("ui", "cancel ignored: no task selected"); return; }
+  const response = await fetch("/api/task-cancel", {
+    method: "POST",
+    headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({
+      taskId,
+      reason: "operator",
+      message: "Kill-tree cancel from web console.",
+      createdBy: "ceo",
+    }),
+  });
+  if (!response.ok) { addAudit("ui", `cancel failed for ${taskId}`); return; }
+  addAudit("ui", `kill-tree cancel posted for ${taskId}`);
 }
 
 function renderAgentControls() {
@@ -1653,6 +1954,13 @@ function wireControls() {
   });
   const exportButton = document.querySelector("#artifactExportButton");
   if (exportButton) exportButton.addEventListener("click", exportSelectedArtifact);
+  /* Sprint 5 in-flight steering wiring. */
+  const steerPriorityButton = document.querySelector("#steerPriorityButton");
+  if (steerPriorityButton) steerPriorityButton.addEventListener("click", steerSetPriority);
+  const steerRerouteButton = document.querySelector("#steerRerouteButton");
+  if (steerRerouteButton) steerRerouteButton.addEventListener("click", steerReroute);
+  const steerNoteButton = document.querySelector("#steerNoteButton");
+  if (steerNoteButton) steerNoteButton.addEventListener("click", steerAddNote);
   /* Sprint 3 deliverable ship wiring. */
   const shipModeSelect = document.querySelector("#deliverableShipMode");
   if (shipModeSelect) shipModeSelect.addEventListener("change", updateDeliverableShipStripVisibility);
@@ -1718,6 +2026,7 @@ function wireControls() {
     });
   }
 
+  wirePriorityBoard();
   armButton.addEventListener("click", armComposer);
   form.addEventListener("submit", submitDirective);
   ["tokenBudget", "maxAgents", "timeframeHours", "priority"].forEach(id => {
@@ -1748,6 +2057,25 @@ function wireControls() {
         document.querySelector("#settingsButton").classList.remove("active");
       }
     }
+    /*
+     * Phase 3 Sprint 5: triage hotkeys. All operate on the selected task
+     * (except A, which acts on the alert feed). Suppressed while typing. The
+     * help overlay (?) documents each one + its CLI equivalent.
+     */
+    if (isTyping) return;
+    const key = event.key;
+    if (key === "A" || key === "a") {
+      event.preventDefault();
+      acknowledgeOldestAlert();
+    } else if (key === "P" || key === "p") {
+      if (state.selectedTaskId) { event.preventDefault(); postTaskArtifact("accepted"); }
+    } else if (key === "R" || key === "r") {
+      if (state.selectedTaskId) { event.preventDefault(); postTaskReclaim(state.selectedTaskId, "operator"); }
+    } else if (key === "X" || key === "x") {
+      if (state.selectedTaskId) { event.preventDefault(); postTaskCancelKill(state.selectedTaskId); }
+    } else if (key === "!") {
+      if (state.selectedTaskId) { event.preventDefault(); postAutonomyRevoke(); }
+    }
   });
 }
 
@@ -1774,18 +2102,23 @@ async function init() {
     await loadCapacity();
     await loadStatusBoard();
     connectEvents();
-    setInterval(loadInitiatives, 5000);
-    setInterval(loadTasks, 5000);
-    setInterval(loadTokens, 5000);
-    setInterval(loadAdapters, 15000);
-    setInterval(loadAgents, 5000);
-    setInterval(loadHosts, 7000);
-    setInterval(loadCapacity, 5000);
-    /* Phase 3 Sprint 1: status board polls /api/status which folds heartbeats,
-     * milestones, and policy snapshot into one payload. The 7-second cadence
-     * is a deliberate offset from the 5-second poll set so the dashboard
-     * doesn't burst-load when all timers align. */
-    setInterval(loadStatusBoard, 7000);
+    updateHeaderSummary();
+    /*
+     * Phase 3 Sprint 5: the SSE `ledger` stream now drives refresh
+     * event-driven (see dispatchLedgerEvent), so these intervals drop from a
+     * 5-15s busy-poll to a 30s fallback safety net that recovers state if an
+     * SSE frame is missed or the stream briefly drops. Adapters change rarely,
+     * so they keep a slower 60s cadence. */
+    const FALLBACK_MS = 30000;
+    setInterval(loadInitiatives, FALLBACK_MS);
+    setInterval(loadTasks, FALLBACK_MS);
+    setInterval(loadTokens, FALLBACK_MS);
+    setInterval(loadAdapters, 60000);
+    setInterval(loadAgents, FALLBACK_MS);
+    setInterval(loadHosts, FALLBACK_MS);
+    setInterval(loadCapacity, FALLBACK_MS);
+    setInterval(loadStatusBoard, FALLBACK_MS);
+    setInterval(updateHeaderSummary, FALLBACK_MS);
   } catch (error) {
     setUplink(false);
     addAudit("system", "room API unavailable");

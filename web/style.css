@@ -102,9 +102,10 @@ pre {
   min-height: 760px;
   display: grid;
   grid-template-columns: 56px 1fr;
-  grid-template-rows: 56px 1fr 36px;
+  grid-template-rows: 56px 30px 1fr 36px;
   grid-template-areas:
     "top top"
+    "summary summary"
     "rail main"
     "rail audit";
   background: var(--bg);
@@ -1070,6 +1071,7 @@ kbd {
   cursor: pointer;
 }
 .alert-row:hover { border-color: var(--accent, #06b6d4); }
+.alert-row.acked { opacity: 0.45; }
 .alert-row .alert-kind {
   grid-row: 1 / span 2;
   align-self: center;
@@ -1112,6 +1114,144 @@ kbd {
  * /api/status. Sits alongside alerts in the status grid. Browser JS only per
  * project directive; no external framework.
  */
+/*
+ * Phase 3 Sprint 5: glanceable summary bar. A single dense row of stats under
+ * the topbar, refreshed event-driven. Uses the existing palette tokens.
+ */
+.summary-bar {
+  grid-area: summary;
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 6px 18px;
+  align-items: center;
+  padding: 4px 16px;
+  background: var(--panel-alt);
+  border-bottom: 1px solid var(--edge);
+  font-size: 11px;
+  color: var(--text-dim);
+  overflow: hidden;
+}
+.summary-item {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.summary-item b {
+  font-family: var(--mono);
+  font-size: 13px;
+  color: var(--text);
+  font-weight: 700;
+}
+.summary-item.active b { color: var(--alert, #ef4444); }
+.summary-item.pressure b { color: var(--warn, #f59e0b); }
+
+/* Phase 3 Sprint 5: drag-priority queue board. */
+.priority-board-panel { margin-top: 12px; }
+.priority-lanes {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 6px;
+  padding: 8px 12px 12px;
+}
+.prio-lane {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.prio-lane h5 {
+  margin: 0;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-dim);
+}
+.prio-dropzone {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-height: 60px;
+  padding: 4px;
+  border: 1px dashed var(--edge);
+  border-radius: 4px;
+  background: var(--panel);
+}
+.prio-dropzone.drag-over { border-color: var(--accent, #06b6d4); background: var(--panel-alt); }
+.prio-chip {
+  border: 1px solid var(--edge);
+  border-left: 3px solid var(--accent, #06b6d4);
+  background: var(--panel-alt);
+  padding: 5px 6px;
+  cursor: grab;
+}
+.prio-chip.dragging { opacity: 0.5; }
+.prio-chip strong {
+  display: block;
+  font-size: 10.5px;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.prio-chip small { font-size: 9.5px; color: var(--text-dim); }
+.prio-lane[data-priority="urgent"] .prio-chip { border-left-color: var(--alert, #ef4444); }
+.prio-lane[data-priority="high"] .prio-chip { border-left-color: var(--warn, #f59e0b); }
+.prio-lane[data-priority="low"] .prio-chip { border-left-color: var(--text-dim); }
+
+/* Phase 3 Sprint 5: in-flight steering controls on the task detail panel. */
+.task-steer {
+  display: grid;
+  gap: 6px;
+  padding: 8px 10px;
+  margin: 8px 0;
+  border: 1px solid var(--edge);
+  background: var(--panel-alt);
+}
+.steer-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.steer-row label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--text-dim);
+}
+.steer-row.steer-note,
+.steer-row label.steer-note { flex: 1; }
+.steer-row label.steer-note input { flex: 1; min-width: 180px; }
+.steer-row select,
+.steer-row input[type="text"] {
+  font-family: var(--mono);
+  font-size: 11px;
+  padding: 2px 4px;
+  background: var(--panel);
+  color: var(--text);
+  border: 1px solid var(--edge);
+}
+.steer-row button {
+  font-size: 11px;
+  padding: 3px 8px;
+  border: 1px solid var(--edge);
+  background: var(--panel);
+  color: var(--text);
+  cursor: pointer;
+}
+.steer-row button:hover { border-color: var(--accent, #06b6d4); color: var(--accent, #06b6d4); }
+.steer-status {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text-dim);
+  min-height: 14px;
+}
+.steer-status.ok { color: var(--ok, #10b981); }
+.steer-status.error { color: var(--alert, #ef4444); }
+
 .status-board-panel {
   display: flex;
   flex-direction: column;

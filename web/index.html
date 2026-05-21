@@ -49,6 +49,19 @@
       </div>
     </header>
 
+    <!--
+      Phase 3 Sprint 5: glanceable status bar. One line, always visible,
+      refreshed on every relevant SSE ledger event (see updateHeaderSummary).
+    -->
+    <div id="summaryBar" class="summary-bar" aria-label="At-a-glance status">
+      <span class="summary-item"><b id="sumInitiatives">0</b> initiatives</span>
+      <span class="summary-item"><b id="sumActiveTasks">0</b> in flight</span>
+      <span class="summary-item alert"><b id="sumAlerts">0</b> alerts</span>
+      <span class="summary-item"><b id="sumBudget">0%</b> budget</span>
+      <span class="summary-item"><b id="sumStuck">—</b> oldest stuck</span>
+      <span class="summary-item"><b id="sumAutonomy">0</b> autonomy grants</span>
+    </div>
+
     <aside class="rail" aria-label="Console navigation">
       <button type="button" class="rail-button active" data-view="initiatives" title="Initiatives"><span>◰</span><b id="initiativeBadge">0</b></button>
       <button type="button" class="rail-button" data-view="agents" title="Agents"><span>◫</span><b id="agentBadge">3</b></button>
@@ -312,6 +325,40 @@
                 <button type="button" data-gate-action="revision">Revision</button>
               </div>
             </div>
+            <!--
+              Phase 3 Sprint 5: in-flight steering controls. Priority + reroute
+              + operator note all hit operator-gated POST endpoints and land as
+              task_event records, so the ledger stays the source of truth.
+            -->
+            <div id="taskSteer" class="task-steer">
+              <div class="steer-row">
+                <label><span>Priority</span>
+                  <select id="steerPriority">
+                    <option value="low">low</option>
+                    <option value="normal">normal</option>
+                    <option value="high">high</option>
+                    <option value="urgent">urgent</option>
+                  </select>
+                </label>
+                <button type="button" id="steerPriorityButton">Set priority</button>
+              </div>
+              <div class="steer-row">
+                <label><span>Reroute to</span>
+                  <select id="steerAgent">
+                    <option value="claude">claude</option>
+                    <option value="chatgpt">chatgpt</option>
+                    <option value="gemini">gemini</option>
+                  </select>
+                </label>
+                <label><span>Host</span><input id="steerHost" type="text" placeholder="(any)"></label>
+                <button type="button" id="steerRerouteButton">Reroute</button>
+              </div>
+              <div class="steer-row">
+                <label class="steer-note"><span>Note</span><input id="steerNote" type="text" maxlength="500" placeholder="Operator note — lands as a task event"></label>
+                <button type="button" id="steerNoteButton">Add note</button>
+              </div>
+              <div id="steerStatus" class="steer-status"></div>
+            </div>
             <p id="detailBody"></p>
             <div id="detailArtifacts" class="detail-artifacts">
               <div class="artifact-head"><strong>Artifacts</strong><span>No workspace selected</span></div>
@@ -389,6 +436,25 @@
         focused. Reads /api/initiative-artifacts so promoted outputs are visible
         without scrolling through task events.
       -->
+      <!--
+        Phase 3 Sprint 5: drag-priority queue. Four lanes (urgent/high/normal/
+        low); drag a task chip into a lane to set its priority via
+        POST /api/task-priority. Optimistic move + server reconciliation on the
+        next SSE ledger refresh.
+      -->
+      <section id="priorityBoardPanel" class="panel priority-board-panel">
+        <header>
+          <span>Priority queue · drag to re-tier</span>
+          <small id="priorityBoardMeta">0 in flight</small>
+        </header>
+        <div class="priority-lanes">
+          <div class="prio-lane" data-priority="urgent"><h5>urgent</h5><div class="prio-dropzone" data-priority="urgent"></div></div>
+          <div class="prio-lane" data-priority="high"><h5>high</h5><div class="prio-dropzone" data-priority="high"></div></div>
+          <div class="prio-lane" data-priority="normal"><h5>normal</h5><div class="prio-dropzone" data-priority="normal"></div></div>
+          <div class="prio-lane" data-priority="low"><h5>low</h5><div class="prio-dropzone" data-priority="low"></div></div>
+        </div>
+      </section>
+
       <section id="initiativeAssetsPanel" class="panel initiative-assets-panel" hidden>
         <header>
           <span>Promoted assets · <b id="initiativeAssetsCount">0</b> accepted</span>
@@ -528,6 +594,11 @@
                 <tr><th>?</th><td>Show / hide this help overlay.</td></tr>
                 <tr><th>Esc</th><td>Close overlays and dismiss focus.</td></tr>
                 <tr><th>Ctrl K</th><td>Command palette (planned).</td></tr>
+                <tr><th>A</th><td>Acknowledge the oldest alert.</td></tr>
+                <tr><th>P</th><td>Promote (accept) the selected task's artifact.</td></tr>
+                <tr><th>R</th><td>Reclaim the selected task's lease.</td></tr>
+                <tr><th>X</th><td>Cancel the selected task (kill-tree).</td></tr>
+                <tr><th>!</th><td>Revoke autonomy on the selected task.</td></tr>
               </tbody>
             </table>
           </section>
@@ -546,6 +617,13 @@
                 <tr><td>Artifact decision Promote / Reject / Reviewed</td><td><code>wt-task artifact promote|reject|review</code></td></tr>
                 <tr><td>Artifact decision Export</td><td><code>wt-task artifact export</code></td></tr>
                 <tr><td>Promoted assets panel</td><td><code>wt-task artifact list INIT</code></td></tr>
+                <tr><td>Send to deliverable</td><td><code>wt-task artifact ship</code></td></tr>
+                <tr><td>Task detail Set priority (P-tier)</td><td><code>POST /api/task-priority</code></td></tr>
+                <tr><td>Task detail Reroute</td><td><code>POST /api/task-reroute</code></td></tr>
+                <tr><td>Task detail Add note</td><td><code>POST /api/task-note</code></td></tr>
+                <tr><td>Hotkey R (reclaim)</td><td><code>wt-task reclaim</code></td></tr>
+                <tr><td>Hotkey X (cancel)</td><td><code>wt-task cancel-task</code></td></tr>
+                <tr><td>Hotkey ! (revoke autonomy)</td><td><code>wt-task autonomy revoke</code></td></tr>
                 <tr><td>Alert feed row → task</td><td>same task surfaces in <code>wt-task list</code></td></tr>
               </tbody>
             </table>
