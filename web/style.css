@@ -42,6 +42,19 @@
   box-sizing: border-box;
 }
 
+/*
+ * The HTML `hidden` attribute must always win. Component rules like
+ * `.help-overlay { display: flex }` otherwise override the UA
+ * `[hidden] { display: none }` (equal specificity, author beats UA), which
+ * left the help overlay visible on every load and made its close button
+ * appear non-functional (issue #45: the click set hidden=true but the
+ * element stayed displayed). This global guard enforces the attribute's
+ * intent for every element that toggles via `hidden`.
+ */
+[hidden] {
+  display: none !important;
+}
+
 html,
 body {
   min-width: 1180px;
