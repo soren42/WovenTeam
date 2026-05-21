@@ -1,0 +1,224 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WovenTeam User Manual — v1.0.2</title>
+<link rel="stylesheet" href="manual.css">
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" aria-label="Table of contents">
+  <div class="brand">WovenTeam<small>User Manual · v1.0.2</small></div>
+  <ol>
+    <li><a href="#introduction">1. Introduction</a></li>
+    <li><a href="#install">2. Installation</a></li>
+    <li><a href="#quickstart">3. Quick start</a></li>
+    <li><a href="#concepts">4. Concepts</a></li>
+    <li class="lvl2"><a href="#concepts-initiatives">4.1 Initiatives &amp; tasks</a></li>
+    <li class="lvl2"><a href="#concepts-roles">4.2 Roles &amp; hierarchy</a></li>
+    <li class="lvl2"><a href="#concepts-lifecycle">4.3 Task lifecycle</a></li>
+    <li><a href="#cli">5. Operating with the CLI</a></li>
+    <li><a href="#dashboard">6. Operating with the dashboard</a></li>
+    <li><a href="#deliverables">7. Reviewing &amp; shipping</a></li>
+    <li><a href="#autonomy">8. Autonomy &amp; real adapters</a></li>
+    <li><a href="#audit">9. Audit &amp; reporting</a></li>
+    <li><a href="#troubleshooting">10. Troubleshooting</a></li>
+  </ol>
+</nav>
+<main>
+
+<header class="cover">
+  <div class="logo">WOVENTEAM</div>
+  <h1>User Manual</h1>
+  <div class="sub">Operating a multi-agent orchestration workbench</div>
+  <div class="meta">Release v1.0.2 · single-tenant intranet edition</div>
+</header>
+
+<section class="toc-page">
+  <h2>Contents</h2>
+  <ol>
+    <li>Introduction</li>
+    <li>Installation</li>
+    <li>Quick start</li>
+    <li>Concepts — initiatives, tasks, roles, lifecycle</li>
+    <li>Operating with the CLI</li>
+    <li>Operating with the dashboard</li>
+    <li>Reviewing &amp; shipping deliverables</li>
+    <li>Autonomy &amp; real adapters</li>
+    <li>Audit &amp; reporting</li>
+    <li>Troubleshooting</li>
+  </ol>
+</section>
+
+<section class="chapter" id="introduction">
+  <h1>1. Introduction</h1>
+  <p>WovenTeam is a multi-agent orchestration workbench. You — the operator — open <strong>initiatives</strong>, file <strong>tasks</strong>, and route them to <strong>agents</strong> (Claude, ChatGPT/Codex, Gemini). Agents claim leased tasks and either run as stubs or invoke a real model adapter to produce work product, which you review, promote, and ship as a <strong>deliverable</strong>. Every action is recorded in an append-only ledger you can audit.</p>
+  <p>The system is built in C and Bash around a small durable core: an append-only JSONL ledger as the source of truth and a rebuildable SQLite projection for fast reads. It is designed for a single operator on a trusted intranet.</p>
+  <div class="callout note"><strong>What v1.0.2 is.</strong> A working control plane and operator workbench: a daemon, a CLI, a real-time dashboard, a deliverables pipeline, remote execution, and release hardening. Real adapter-backed execution is implemented and proven, but disabled by default — see <a href="#autonomy">chapter 8</a>.</div>
+  <h3>The pieces</h3>
+  <table>
+    <tr><th>Component</th><th>Role</th></tr>
+    <tr><td><code>wt-roomd</code></td><td>The daemon — serves the console + JSON API, owns the projection, enforces policy, streams events, records audit.</td></tr>
+    <tr><td><code>wt-agent</code></td><td>A worker loop per agent — claims tasks and runs them (stub or real adapter).</td></tr>
+    <tr><td><code>wt-task</code></td><td>The operator CLI — everything you do from the terminal.</td></tr>
+    <tr><td>Console</td><td>The browser dashboard at <code>http://127.0.0.1:8787/</code>.</td></tr>
+  </table>
+</section>
+
+<section class="chapter" id="install">
+  <h1>2. Installation</h1>
+  <p>WovenTeam runs on a GNU/Linux host. Install the prerequisites from your package manager: <code>cc</code>, <code>make</code>, the <code>sqlite3</code> development headers, <code>curl</code>, <code>jq</code>, <code>tar</code>, <code>gzip</code>, and <code>git</code>. Real adapter-backed workers additionally need the relevant vendor CLI (<code>codex</code>, <code>claude</code>, and/or <code>gemini</code>) authenticated on the host.</p>
+  <h3>From the release tarball (recommended)</h3>
+  <p>The current release is <strong>v1.0.2</strong>.</p>
+  <pre><code>cd ~
+curl -fsSLO https://github.com/soren42/WovenTeam/releases/download/v1.0.2/woventeam-1.0.2.tar.gz
+curl -fsSLO https://github.com/soren42/WovenTeam/releases/download/v1.0.2/woventeam-1.0.2.tar.gz.sha256
+sha256sum -c woventeam-1.0.2.tar.gz.sha256
+tar -xzf woventeam-1.0.2.tar.gz
+cd WovenTeam-1.0.2
+make clean &amp;&amp; make &amp;&amp; make test</code></pre>
+  <p><code>make test</code> runs the full integration suite (24 tests + smoke); all should pass on a clean host. A cold install completes in well under 30 minutes when prerequisites are present.</p>
+  <h3>Configure</h3>
+  <pre><code>cp config/woventeam-phase0.conf.example config/woventeam-phase0.conf</code></pre>
+  <p>Key settings: <code>httpPort</code> (default 8787), <code>tokenDailyBudget</code>/<code>tokenMonthlyBudget</code>, <code>deliverableRoot</code>, the <code>enable*Adapter</code> / <code>*Mode</code> adapter switches, and <code>secretScanPatternsFile</code>.</p>
+  <h3>Run as a service (optional)</h3>
+  <p>For an unattended host, install the systemd units: <code>make install-roomd-service</code> and <code>make install-agent-services</code>. These run one daemon and one agent set; do not also launch agents by hand, or two sets will race on the same ledger.</p>
+</section>
+
+<section class="chapter" id="quickstart">
+  <h1>3. Quick start</h1>
+  <p>Start the daemon, then the agents in separate terminals:</p>
+  <pre><code>./build/wt-roomd --config config/woventeam-phase0.conf
+# in other terminals:
+./build/wt-agent --agent claude  --loop --config config/woventeam-phase0.conf
+./build/wt-agent --agent chatgpt --loop --config config/woventeam-phase0.conf
+./build/wt-agent --agent gemini  --loop --config config/woventeam-phase0.conf</code></pre>
+  <p>Open the console at <code>http://127.0.0.1:8787/</code>. File your first task from the CLI:</p>
+  <pre><code>export WT_ROOM_URL=http://127.0.0.1:8787
+./bin/wt-task create --title "Hello WovenTeam" --body "Confirm the assignment path." \
+  --role backend_dev --agent chatgpt --max-tokens 1000
+./bin/wt-task list</code></pre>
+  <p>Watch it move through the dashboard, then promote and ship its artifact (<a href="#deliverables">chapter 7</a>).</p>
+</section>
+
+<section class="chapter" id="concepts">
+  <h1>4. Concepts</h1>
+
+  <h2 id="concepts-initiatives">4.1 Initiatives &amp; tasks</h2>
+  <p>An <strong>initiative</strong> is a unit of work with a budget and a set of tasks. A <strong>task</strong> is a single assignment with a role, an assigned agent, a tool profile, and an optional autonomy grant. Tasks can request sub-tasks, forming a tree under the initiative.</p>
+
+  <h2 id="concepts-roles">4.2 Roles &amp; the spawn hierarchy</h2>
+  <p>Every task carries a role, and the daemon enforces who may spawn whom:</p>
+  <figure>
+    <svg viewBox="0 0 720 150" role="img" aria-label="Role hierarchy">
+      <style>.b{fill:#e7f0fa;stroke:#1f5fa8}.g{fill:#e9f6ef;stroke:#1f7a5a}.t{font:600 13px sans-serif;fill:#16202b}.s{font:11px sans-serif;fill:#5b6876}.l{stroke:#1f5fa8;stroke-width:1.5;fill:none;marker-end:url(#a)}</style>
+      <defs><marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0 10 5 0 10z" fill="#1f5fa8"/></marker></defs>
+      <rect class="b" x="10" y="55" width="120" height="42" rx="6"/><text class="t" x="70" y="75" text-anchor="middle">CEO</text><text class="s" x="70" y="90" text-anchor="middle">operator</text>
+      <rect class="b" x="180" y="55" width="150" height="42" rx="6"/><text class="t" x="255" y="75" text-anchor="middle">program_manager</text>
+      <rect class="b" x="380" y="55" width="150" height="42" rx="6"/><text class="t" x="455" y="75" text-anchor="middle">project_manager</text>
+      <rect class="g" x="580" y="30" width="130" height="36" rx="6"/><text class="t" x="645" y="52" text-anchor="middle">backend_dev</text>
+      <rect class="g" x="580" y="86" width="130" height="36" rx="6"/><text class="t" x="645" y="108" text-anchor="middle">tester, …</text>
+      <path class="l" d="M130 76 H176"/><path class="l" d="M330 76 H376"/><path class="l" d="M530 70 L576 50"/><path class="l" d="M530 82 L576 102"/>
+    </svg>
+    <figcaption>The CEO opens work and files a program_manager task; the PGM delegates to a project_manager; the PM spawns worker roles.</figcaption>
+  </figure>
+  <p>A <code>program_manager</code> may spawn <code>project_manager</code> and architect roles only; a <code>project_manager</code> spawns the worker roles (<code>backend_dev</code>, <code>tester</code>, <code>technical_writer</code>, etc.). Attempting to skip a layer is rejected with <code>role spawn policy denied</code>.</p>
+
+  <h2 id="concepts-lifecycle">4.3 Task lifecycle</h2>
+  <p>Tasks move through states recorded as ledger events: <code>queued</code> → <code>assigned</code> → <code>leased</code> → <code>running</code> → <code>complete</code> (or <code>failed</code>, <code>blocked</code>, <code>cancelled</code>, <code>closed</code>). An artifact a task produces has its own decision states: <code>draft</code> → <code>reviewed</code> → <code>accepted</code> (or <code>rejected</code>, <code>superseded</code>). A lease that expires while running surfaces as a stuck-task alert and can be reclaimed.</p>
+</section>
+
+<section class="chapter" id="cli">
+  <h1>5. Operating with the CLI</h1>
+  <p>The <code>wt-task</code> CLI talks to the daemon over HTTP. Point it at your daemon with <code>WT_ROOM_URL</code> (default <code>http://127.0.0.1:8787</code>). The complete command surface is in the wiki <em>CLI Reference</em>; the common flows:</p>
+  <h3>Open work</h3>
+  <pre><code>wt-task initiative create --id init_demo --title "Demo" --body "..." --role program_manager --agent claude
+wt-task request --parent &lt;PGM_TASK&gt; --by-role program_manager --role project_manager --title "Plan it" --body "..." --agent claude
+wt-task request --parent &lt;PM_TASK&gt;  --by-role project_manager --role backend_dev --title "Build it" --body "..." --agent chatgpt</code></pre>
+  <h3>Inspect</h3>
+  <pre><code>wt-task list
+wt-task show TASK_ID
+wt-task initiative show INIT</code></pre>
+  <h3>Steer</h3>
+  <pre><code>wt-task reclaim TASK_ID            # release a stuck lease back to the queue
+wt-task cancel-task TASK_ID        # kill-tree a running adapter
+wt-task autonomy revoke TASK_ID    # revoke an autonomy grant</code></pre>
+</section>
+
+<section class="chapter" id="dashboard">
+  <h1>6. Operating with the dashboard</h1>
+  <p>The console at <code>http://127.0.0.1:8787/</code> mirrors the CLI and updates in real time over a server-sent-events stream — task state changes appear within ~2 seconds of the ledger append. It shows a glanceable summary bar (initiatives, in-flight tasks, alerts, budget pressure, oldest stuck task, autonomy grants), the task table, a priority-lane board you can drag tasks between, per-agent heartbeats, recent milestones, and a deliverables panel.</p>
+  <h3>In-flight steering</h3>
+  <p>The task detail panel lets you change priority, reroute to another agent, add an operator note, cancel, and revoke autonomy — each lands as a ledger event.</p>
+  <h3>Hotkeys</h3>
+  <table>
+    <tr><th>Key</th><th>Action</th><th>CLI equivalent</th></tr>
+    <tr><td><kbd>A</kbd></td><td>Acknowledge the oldest alert</td><td>—</td></tr>
+    <tr><td><kbd>P</kbd></td><td>Promote selected artifact</td><td><code>wt-task artifact promote</code></td></tr>
+    <tr><td><kbd>R</kbd></td><td>Reclaim selected task</td><td><code>wt-task reclaim</code></td></tr>
+    <tr><td><kbd>X</kbd></td><td>Cancel selected task (kill-tree)</td><td><code>wt-task cancel-task</code></td></tr>
+    <tr><td><kbd>!</kbd></td><td>Revoke autonomy on selected task</td><td><code>wt-task autonomy revoke</code></td></tr>
+    <tr><td><kbd>?</kbd></td><td>Show/hide the shortcut + parity overlay</td><td>—</td></tr>
+  </table>
+</section>
+
+<section class="chapter" id="deliverables">
+  <h1>7. Reviewing &amp; shipping deliverables</h1>
+  <p>When an agent produces an artifact, you review and accept it, then ship it out of the per-task workspace into a stable destination.</p>
+  <pre><code>wt-task artifact promote TASK_ID --path result.md --reviewer ceo --notes "ship it"
+wt-task artifact ship TASK_ID --mode copy</code></pre>
+  <h3>Packaging modes</h3>
+  <table>
+    <tr><th>Mode</th><th>What it does</th></tr>
+    <tr><td><code>copy</code></td><td>Copies the file into <code>deliverableRoot/&lt;initiativeId&gt;/</code>. Default.</td></tr>
+    <tr><td><code>tarball</code></td><td>Gzipped tarball under the deliverable root.</td></tr>
+    <tr><td><code>branch</code></td><td>Commits + pushes to a deliverables branch in a project repo (<code>--repo PATH</code>).</td></tr>
+    <tr><td><code>pull-request</code></td><td>Branch + opens a PR via <code>gh</code>; requires explicit <code>--yes</code>.</td></tr>
+  </table>
+  <p>Every ship records a <code>deliverable</code> manifest with a SHA-256 checksum and a <code>secret_scan</code> result. <strong>Branch and pull-request modes refuse to ship</strong> if the pre-ship secret scan matches a configured pattern; copy and tarball record the scan but proceed.</p>
+</section>
+
+<section class="chapter" id="autonomy">
+  <h1>8. Autonomy &amp; real adapters</h1>
+  <div class="callout warn"><strong>Default is stub.</strong> Out of the box, agents run as stubs (<code>enableCodexAdapter=0</code>, <code>chatgptMode=stub</code>): they exercise the assignment path without invoking a model. To run live models you enable the adapter and supply credentials.</div>
+  <h3>Enabling a real adapter</h3>
+  <p>In your config, enable the adapter and point it at an authenticated vendor CLI, e.g. for ChatGPT/Codex:</p>
+  <pre><code>enableCodexAdapter=1
+chatgptMode=adapter
+gptCommand=codex</code></pre>
+  <p>The agent then invokes the real CLI in an isolated per-task workspace and captures the result as the artifact.</p>
+  <h3>Autonomy grants</h3>
+  <p>An <strong>autonomous</strong> task runs the adapter elevated (fully non-interactive). It requires a bounded grant — a scope, a time-to-live, and limits — supplied when you create the task:</p>
+  <pre><code>wt-task create --title "..." --body "..." --role backend_dev --agent chatgpt \
+  --tool-profile repo_branch --autonomy-level autonomous --autonomy-ttl 3600 --autonomy-scope adapter</code></pre>
+  <p>Grants are revocable at any time with <code>wt-task autonomy revoke TASK_ID</code>, which records the revocation and tears down a running adapter. The policy evaluator rejects autonomous tasks lacking a valid grant (<code>autonomy_required</code>), with expired grants (<code>autonomy_expired</code>), or after revocation (<code>autonomy_revoked</code>).</p>
+  <div class="callout"><strong>Trust boundary.</strong> Once an adapter is launched with elevated permissions, WovenTeam relinquishes per-action visibility into that adapter. Autonomy bounding is fork-time admission control, not a per-call sandbox.</div>
+</section>
+
+<section class="chapter" id="audit">
+  <h1>9. Audit &amp; reporting</h1>
+  <p>Everything is recorded in the ledger. Two operator views:</p>
+  <pre><code>wt-task audit INIT                      # full initiative audit as JSON
+wt-task initiative report INIT --out report.html   # standalone HTML report</code></pre>
+  <p>The HTML report renders the initiative's tasks, deliverables (with checksums), secret scans, policy denials, token spend, and a full event timeline as a single self-contained file you can archive or share. All values are HTML-escaped, so a report is safe to open even when the ledger contains hostile-looking data.</p>
+</section>
+
+<section class="chapter" id="troubleshooting">
+  <h1>10. Troubleshooting</h1>
+  <table>
+    <tr><th>Symptom</th><th>Cause / fix</th></tr>
+    <tr><td>Task created but rejected with <code>daily_budget</code></td><td>The initiative's tasks exceeded <code>tokenDailyBudget</code>. Raise the budget or lower <code>--max-tokens</code>.</td></tr>
+    <tr><td><code>role spawn policy denied</code></td><td>You tried to skip a layer (e.g. a program_manager spawning a worker). Go through a project_manager.</td></tr>
+    <tr><td>Agent idle, tasks not progressing</td><td>Check only one agent set is running (systemd <em>or</em> manual, not both). Two sets race on the same ledger.</td></tr>
+    <tr><td>Real adapter task fails immediately</td><td>Confirm the vendor CLI is on <code>PATH</code> and authenticated, and the adapter is enabled in config.</td></tr>
+    <tr><td>Operator endpoint returns <code>operator_auth_required</code></td><td>Mutating endpoints require a local-session or bearer token. The browser console and local CLI obtain a session automatically.</td></tr>
+  </table>
+  <p class="muted">For internals and extension points, see the Developer's Guide. For the full command surface, see the wiki CLI Reference.</p>
+</section>
+
+</main>
+</div>
+<script src="manual.js"></script>
+</body>
+</html>

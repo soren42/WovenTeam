@@ -1,0 +1,184 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>WovenTeam Developer's Guide — v1.0.2</title>
+<link rel="stylesheet" href="manual.css">
+</head>
+<body>
+<div class="layout">
+<nav class="sidebar" aria-label="Table of contents">
+  <div class="brand">WovenTeam<small>Developer's Guide · v1.0.2</small></div>
+  <ol>
+    <li><a href="#overview">1. Architecture overview</a></li>
+    <li><a href="#datamodel">2. Data model &amp; schemas</a></li>
+    <li><a href="#daemon">3. The daemon (wt-roomd)</a></li>
+    <li><a href="#agents">4. Agents &amp; adapters</a></li>
+    <li class="lvl2"><a href="#agents-contract">4.1 Adapter contract</a></li>
+    <li class="lvl2"><a href="#agents-add">4.2 Adding an adapter</a></li>
+    <li><a href="#roles">5. Roles</a></li>
+    <li><a href="#autonomy">6. Autonomy &amp; policy</a></li>
+    <li><a href="#deliverables">7. Deliverables pipeline</a></li>
+    <li><a href="#remote">8. Remote execution &amp; security</a></li>
+    <li><a href="#build">9. Build, test, release</a></li>
+    <li><a href="#contributing">10. Contributing</a></li>
+    <li><a href="#roadmap">11. Post-v1 roadmap</a></li>
+  </ol>
+</nav>
+<main>
+
+<header class="cover">
+  <div class="logo">WOVENTEAM</div>
+  <h1>Developer's Guide</h1>
+  <div class="sub">Internals, extension points, and contribution</div>
+  <div class="meta">Release v1.0.2 · tagged at d50b3d6 (v1.0), patched through 5f81402</div>
+</header>
+
+<section class="toc-page">
+  <h2>Contents</h2>
+  <ol>
+    <li>Architecture overview</li>
+    <li>Data model &amp; schemas</li>
+    <li>The daemon (wt-roomd)</li>
+    <li>Agents &amp; adapters</li>
+    <li>Roles</li>
+    <li>Autonomy &amp; policy</li>
+    <li>Deliverables pipeline</li>
+    <li>Remote execution &amp; security</li>
+    <li>Build, test, release</li>
+    <li>Contributing</li>
+    <li>Post-v1 roadmap</li>
+  </ol>
+</section>
+
+<section class="chapter" id="overview">
+  <h1>1. Architecture overview</h1>
+  <p>WovenTeam is C + Bash with a deliberately small, durable core. The <strong>source of truth</strong> is an append-only JSONL ledger; a <strong>rebuildable SQLite projection</strong> is derived from it for fast reads. The ledger is authoritative and the projection is disposable — it can be dropped and rebuilt from the ledger at any time. Preserving this property is the single most important architectural invariant.</p>
+  <figure>
+    <svg viewBox="0 0 720 200" role="img" aria-label="Core architecture">
+      <style>.b{fill:#e7f0fa;stroke:#1f5fa8}.g{fill:#e9f6ef;stroke:#1f7a5a}.k{fill:#f4f7fa;stroke:#5b6876}.t{font:600 12px sans-serif;fill:#16202b}.s{font:10px sans-serif;fill:#5b6876}.l{stroke:#1f5fa8;stroke-width:1.5;fill:none;marker-end:url(#a)}</style>
+      <defs><marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0 0 10 5 0 10z" fill="#1f5fa8"/></marker></defs>
+      <rect class="g" x="20" y="20" width="130" height="40" rx="6"/><text class="t" x="85" y="38" text-anchor="middle">wt-agent</text><text class="s" x="85" y="52" text-anchor="middle">workers</text>
+      <rect class="b" x="20" y="120" width="130" height="40" rx="6"/><text class="t" x="85" y="138" text-anchor="middle">wt-task / console</text><text class="s" x="85" y="152" text-anchor="middle">operator</text>
+      <rect class="b" x="290" y="70" width="140" height="46" rx="6"/><text class="t" x="360" y="90" text-anchor="middle">wt-roomd</text><text class="s" x="360" y="105" text-anchor="middle">daemon · API · policy</text>
+      <rect class="k" x="560" y="20" width="140" height="40" rx="6"/><text class="t" x="630" y="38" text-anchor="middle">JSONL ledger</text><text class="s" x="630" y="52" text-anchor="middle">source of truth</text>
+      <rect class="k" x="560" y="120" width="140" height="40" rx="6"/><text class="t" x="630" y="138" text-anchor="middle">SQLite projection</text><text class="s" x="630" y="152" text-anchor="middle">rebuildable</text>
+      <path class="l" d="M150 40 L286 80"/><path class="l" d="M150 140 L286 106"/>
+      <path class="l" d="M430 86 L556 45"/><path class="l" d="M430 100 L556 135"/>
+      <path class="l" d="M630 60 V116" stroke-dasharray="4 4"/><text class="s" x="700" y="92" text-anchor="middle">rebuild</text>
+    </svg>
+    <figcaption>Agents and operators act through the daemon; the daemon appends to the ledger and projects into SQLite.</figcaption>
+  </figure>
+</section>
+
+<section class="chapter" id="datamodel">
+  <h1>2. Data model &amp; schemas</h1>
+  <p>Records are newline-delimited JSON, one per line, each tagged with a <code>schema</code>. The authoritative definitions live in <code>docs/api/</code>. Principal schemas:</p>
+  <table>
+    <tr><th>Schema</th><th>Purpose</th></tr>
+    <tr><td><code>woventeam.task_package.v0.1</code></td><td>A task: role, agent, tool policy, budget, optional autonomy grant.</td></tr>
+    <tr><td><code>woventeam.task_event.v0.1</code></td><td>Lifecycle events: status, lease, reclaim, artifact, routing, priority, note.</td></tr>
+    <tr><td><code>woventeam.task_request.v0.1</code></td><td>A manager's request to spawn a sub-task.</td></tr>
+    <tr><td><code>woventeam.heartbeat.v0.1</code> / <code>milestone.v0.1</code></td><td>Agent liveness; progress markers.</td></tr>
+    <tr><td><code>woventeam.kill_event.v0.1</code></td><td>Operator cancel / autonomy revoke, polled by the agent wait loop.</td></tr>
+    <tr><td><code>woventeam.autonomy_event.v0.1</code></td><td>Grant observation, adapter invocation, elevation, exit, revoke.</td></tr>
+    <tr><td><code>woventeam.deliverable.v0.1</code> / <code>secret_scan.v0.1</code></td><td>Shipped artifact manifest (sha256, mode); pre-ship scan result.</td></tr>
+    <tr><td><code>woventeam.policy_decision.v0.1</code></td><td>Denials with stable reason codes.</td></tr>
+    <tr><td><code>woventeam.host_event.v0.1</code> / <code>auth_token.v0.1</code></td><td>Remote host capabilities; bearer token issuance (SHA-256 hashed).</td></tr>
+  </table>
+  <p>The projection (<code>src/wt_task_projection.c</code>) reads the ledger and materializes tables (tasks, task_events, heartbeats, milestones, kill_events, deliverables, secret_scans). Every projection rebuild drops and recreates these tables, so adding a schema means: (1) define it, (2) append it from a store helper, (3) project it (with a matching DROP in the rebuild).</p>
+</section>
+
+<section class="chapter" id="daemon">
+  <h1>3. The daemon (wt-roomd)</h1>
+  <p><code>src/wt_roomd.c</code> is the HTTP daemon. It serves the console (<code>web/</code>), exposes the JSON API, owns the projection, enforces policy, and streams events. It forks a handler per connection; long-lived SSE clients (the dashboard's <code>/events</code> stream) each hold a forked process for up to an hour.</p>
+  <h3>Endpoints</h3>
+  <p>Reads: <code>/api/status</code>, <code>/api/task-summaries</code>, <code>/api/task-detail</code>, <code>/api/initiatives</code>, <code>/api/initiative-audit</code>, <code>/api/hosts</code>. Mutations (operator-gated): <code>/api/task-package</code>, <code>/api/task-request</code>, <code>/api/task-artifact</code>, <code>/api/task-deliverable</code>, <code>/api/task-priority</code>, <code>/api/task-reroute</code>, <code>/api/task-note</code>, <code>/api/task-cancel</code>, <code>/api/autonomy-revoke</code>, <code>/api/auth-token</code>.</p>
+  <h3>SSE</h3>
+  <p>The <code>/events</code> stream emits chat <code>message</code> frames and typed <code>ledger</code> frames (one per new ledger record, tailed by byte offset). The console maps each <code>ledger</code> frame's schema to a debounced refresh of the affected view — event-driven instead of polling.</p>
+  <div class="callout warn"><strong>Shell-out gotcha.</strong> The daemon installs <code>SIGCHLD=SIG_IGN</code>, which makes bare <code>popen()</code>/<code>system()</code> return <code>-1</code> even on success. Use the <code>systemReliable()</code> wrapper (restores <code>SIG_DFL</code> around the call) for any shell-out from the daemon.</div>
+</section>
+
+<section class="chapter" id="agents">
+  <h1>4. Agents &amp; adapters</h1>
+  <p><code>src/wt_agent.c</code> is the worker loop. It claims a leased task from the ledger, emits a heartbeat, and dispatches to an adapter (or the stub path). The wait loop (<code>waitForAdapterChild</code>) owns lease renewal, cancel polling, and SIGTERM/SIGKILL of the adapter process group.</p>
+
+  <h2 id="agents-contract">4.1 Adapter contract</h2>
+  <p>An adapter maps an agent to a vendor-CLI invocation in an isolated per-task workspace (<code>runtimeRootPath/&lt;taskId&gt;/</code>), capturing the model's output as <code>result.md</code> and recording stdout/stderr. The full contract is in <code>docs/adapters/adapter-contract-v0.1.md</code>. The shipped adapters:</p>
+  <table>
+    <tr><th>Agent</th><th>CLI invocation (non-elevated → elevated)</th></tr>
+    <tr><td>chatgpt</td><td><code>codex exec … --sandbox workspace-write</code> → <code>… --dangerously-bypass-approvals-and-sandbox</code></td></tr>
+    <tr><td>claude</td><td><code>claude --bare --print</code> → <code>… --dangerously-skip-permissions</code></td></tr>
+    <tr><td>gemini</td><td><code>gemini --approval-mode plan -p</code> → <code>… --approval-mode yolo</code></td></tr>
+  </table>
+  <div class="callout note"><strong>Two lessons baked into v1.0.1.</strong> Adapter child processes must redirect <code>stdin</code> from <code>/dev/null</code> (else <code>codex exec</code> blocks reading stdin), and adapter flags must match the <em>installed</em> CLI surface (the codex adapter shipped an invalid <code>--ask-for-approval</code> flag in v1.0). Verify any new adapter against its real CLI.</div>
+
+  <h2 id="agents-add">4.2 Adding an adapter</h2>
+  <ol>
+    <li>Add an eligibility predicate (see <code>isCodexEligibleTask</code> / <code>isCliArtifactEligibleTask</code>) keyed on the agent + tool profile + config switch.</li>
+    <li>Add the fork/exec body: <code>setpgid(0,0)</code>, redirect stdin from <code>/dev/null</code>, redirect stdout/stderr to the workspace logs, build the argv against the real CLI, write the result to <code>result.md</code>.</li>
+    <li>Wire config switches (<code>enable*Adapter</code>, <code>*Mode</code>, <code>*Command</code>).</li>
+    <li>Add an integration test using a fake CLI binary (see <code>tests/integration/wt-codex-adapter.sh</code>) plus assertions on the emitted flags — include negative checks for the elevation gating.</li>
+  </ol>
+</section>
+
+<section class="chapter" id="roles">
+  <h1>5. Roles</h1>
+  <p>Roles are a three-layer construct: <strong>behavior</strong> (a <code>ROLE.md</code> persona), <strong>routing</strong> (role YAML mapping a role to a default agent), and <strong>capability</strong> (model YAML + a suitability map). The <code>role_id</code> must match the suitability key. The spawn hierarchy is enforced in <code>roleMaySpawn()</code> in the daemon: <code>program_manager</code> → architect/PM roles; <code>project_manager</code> → worker roles. To add a role, define its three layers and (if it should be spawnable) add it to the appropriate allow-list.</p>
+</section>
+
+<section class="chapter" id="autonomy">
+  <h1>6. Autonomy &amp; policy</h1>
+  <p>A task may carry an <code>autonomyGrant</code> (scope, ttlSeconds, maxWallClockSeconds, network, credentialClass, requiresCleanWorktree, revokedAtUnixMs). The agent resolves the effective level (per-task → per-initiative → per-agent config → tool-profile default). The policy evaluator (<code>src/wt_policy.c</code>) classifies failures with stable reason codes — <code>autonomy_required</code>, <code>autonomy_expired</code>, <code>autonomy_revoked</code>, plus budget/capacity/vendor codes — and records each denial as a <code>policy_decision</code>. Elevation is fork-time admission control: once the adapter runs elevated, the daemon has no per-call visibility into it.</p>
+</section>
+
+<section class="chapter" id="deliverables">
+  <h1>7. Deliverables pipeline</h1>
+  <p><code>src/wt_deliverable.c</code> ships an accepted artifact through copy / tarball / branch / pull-request modes. It computes a SHA-256 (via <code>sha256sum</code> through <code>systemReliable()</code>), runs the configured pre-ship secret scan (POSIX regex per pattern), and appends a <code>deliverable</code> manifest plus a <code>secret_scan</code> record. Branch and PR modes refuse on a scan match (<code>secret_scan_block</code>); copy and tarball record but proceed. Supersede chains preserve the predecessor's id + checksum.</p>
+</section>
+
+<section class="chapter" id="remote">
+  <h1>8. Remote execution &amp; security</h1>
+  <p>Agents can run on additional hosts: <code>wt-agent --remote URL --bearer TOKEN --host HOST</code> (HTTPS poll, bearer-authenticated) or operator-launched <code>--ssh HOST</code>. A host capability registry advertises which adapters/profiles each host supports; <code>executionHost</code>-pinned tasks route only to matching hosts, rejecting mismatches with <code>capability_unmet</code>.</p>
+  <p>Mutating endpoints require a local operator session (a urandom token in a <code>0600</code> file, handed to loopback callers) or a bearer token issued to the operator role. Bearer tokens are stored <strong>SHA-256-hashed</strong> in the ledger, never raw. The threat model (<code>docs/security/threat-model.html</code>) documents the single-tenant intranet assumptions and the "local host = operator" residual; cross-network use needs mTLS.</p>
+</section>
+
+<section class="chapter" id="build">
+  <h1>9. Build, test, release</h1>
+  <pre><code>make            # build wt-roomd, wt-agent, wt-task helpers
+make test       # full integration suite (24 tests + smoke)
+make dist-tarball   # release archive: dist/woventeam-&lt;commit&gt;.tar.gz</code></pre>
+  <div class="callout warn"><strong>Build hygiene.</strong> Verify with <code>make clean &amp;&amp; make</code>, not an incremental build — incremental builds skip unchanged translation units and have hidden real <code>-Wformat-truncation</code> warnings (one of which could emit malformed JSON). A non-clean compile is a review blocker.</div>
+  <p>Integration tests live in <code>tests/integration/</code> and are executable specifications: each spins up a daemon on a random port against a temp ledger and asserts behavior. Adapter tests use fake CLI binaries so they run offline and deterministically.</p>
+  <h3>Releasing</h3>
+  <p>Tag annotated from a green commit, build the tarball from the tag (<code>git archive --prefix=WovenTeam-X.Y.Z/</code>), publish a GitHub Release with the tarball + a <code>.sha256</code>, and mark it Latest.</p>
+</section>
+
+<section class="chapter" id="contributing">
+  <h1>10. Contributing</h1>
+  <ul>
+    <li><strong>Workflow:</strong> branch → PR → squash-merge → delete branch. Direct-to-main only for an immediate hotfix.</li>
+    <li><strong>No Node / server-side JS.</strong> Browser JS is fine; Python is acceptable. Documentation and reports are self-contained HTML; the GitHub wiki is the one Markdown exception.</li>
+    <li><strong>Tests:</strong> add or update an integration test for any behavior change; keep <code>make test</code> green on a clean build.</li>
+    <li><strong>Reviewing a peer's C:</strong> always do a clean build; assert the corrected behavior with negative checks where gating matters.</li>
+  </ul>
+</section>
+
+<section class="chapter" id="roadmap">
+  <h1>11. Post-v1 roadmap</h1>
+  <div class="callout"><strong>Not yet implemented.</strong> The items below are planned for after v1 and are <em>not</em> present in v1.0.x. They are recorded so contributors can see the intended direction.</div>
+  <ul>
+    <li>Credentialed autonomous demonstration (worker steps as live model inference end-to-end).</li>
+    <li>Local operator transport: replace the loopback-issued shared session secret with a Unix-domain socket or per-operator session.</li>
+    <li>Per-client SSE fan-out: a shared in-process tail + broadcast instead of a forked handler per client.</li>
+    <li>Cross-namespace remote execution test (the current acceptance test runs over loopback where unprivileged netns is unavailable).</li>
+    <li>Richer in-process job visualization; an open plugin architecture; web-based role and model editors; real-world (provider-polled) token/limit tracking; higher-performance infrastructure (MQ, MySQL) preserving the rebuildable-ledger invariant.</li>
+  </ul>
+</section>
+
+</main>
+</div>
+<script src="manual.js"></script>
+</body>
+</html>
