@@ -1,0 +1,125 @@
+/*
+ * WovenTeam manual stylesheet — screen + print.
+ * Self-contained (no external fonts/CDNs). Designed so the document reads and
+ * paginates correctly with CSS alone (no JS); manual.js only adds screen
+ * niceties. Verified to compile to PDF with WeasyPrint.
+ */
+:root {
+  --ink: #16202b;
+  --muted: #5b6876;
+  --line: #d6dee6;
+  --soft: #f4f7fa;
+  --accent: #1f5fa8;
+  --accent-soft: #e7f0fa;
+  --code-bg: #f2f5f8;
+  --ok: #1f7a5a;
+  --warn: #a4660a;
+  --maxw: 46rem;
+}
+* { box-sizing: border-box; }
+html { font-size: 16px; }
+body {
+  margin: 0;
+  color: var(--ink);
+  background: #fff;
+  font-family: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+  line-height: 1.55;
+}
+code, pre, kbd, .mono {
+  font-family: ui-monospace, "SFMono-Regular", Menlo, Consolas, "Liberation Mono", monospace;
+}
+
+/* ---- screen layout: sidebar TOC + reading column ---- */
+.layout { display: flex; gap: 0; align-items: flex-start; }
+nav.sidebar {
+  position: sticky;
+  top: 0;
+  align-self: flex-start;
+  width: 18rem;
+  max-height: 100vh;
+  overflow-y: auto;
+  padding: 1.4rem 1rem 2rem 1.4rem;
+  border-right: 1px solid var(--line);
+  background: var(--soft);
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  font-size: 0.86rem;
+}
+nav.sidebar .brand { font-weight: 700; font-size: 0.95rem; margin-bottom: 0.2rem; }
+nav.sidebar .brand small { display:block; font-weight: 400; color: var(--muted); }
+nav.sidebar ol { list-style: none; margin: 0.8rem 0 0; padding: 0; }
+nav.sidebar li { margin: 0.15rem 0; }
+nav.sidebar a { color: var(--ink); text-decoration: none; display: block; padding: 2px 6px; border-radius: 4px; }
+nav.sidebar a:hover { background: var(--accent-soft); color: var(--accent); }
+nav.sidebar a.active { background: var(--accent); color: #fff; }
+nav.sidebar .lvl2 { padding-left: 0.9rem; color: var(--muted); font-size: 0.82rem; }
+
+main {
+  flex: 1;
+  max-width: var(--maxw);
+  margin: 0 auto;
+  padding: 2.2rem 2rem 4rem;
+}
+
+/* ---- typography ---- */
+h1, h2, h3, h4 { font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif; line-height: 1.2; color: var(--ink); }
+h1 { font-size: 1.9rem; margin: 0 0 0.6rem; }
+h2 { font-size: 1.4rem; margin: 2.2rem 0 0.5rem; padding-top: 0.4rem; border-top: 2px solid var(--line); }
+h3 { font-size: 1.1rem; margin: 1.4rem 0 0.4rem; }
+p, ul, ol, table, pre, figure, .callout { margin: 0 0 0.9rem; }
+ul, ol { padding-left: 1.4rem; }
+li { margin: 0.2rem 0; }
+a { color: var(--accent); }
+small, .muted { color: var(--muted); }
+
+code { background: var(--code-bg); border: 1px solid var(--line); border-radius: 3px; padding: 0.05rem 0.3rem; font-size: 0.86em; }
+pre { background: var(--code-bg); border: 1px solid var(--line); border-radius: 6px; padding: 0.8rem 1rem; overflow-x: auto; font-size: 0.82rem; line-height: 1.45; }
+pre code { background: none; border: 0; padding: 0; font-size: inherit; }
+kbd { background: #1b2733; color: #fff; border-radius: 4px; padding: 1px 7px; font-size: 0.8em; }
+
+table { width: 100%; border-collapse: collapse; font-size: 0.9rem; font-family: ui-sans-serif, system-ui, sans-serif; }
+th, td { text-align: left; vertical-align: top; padding: 0.45rem 0.6rem; border-bottom: 1px solid var(--line); }
+th { background: var(--soft); }
+
+figure { text-align: center; }
+figure svg, figure img { max-width: 100%; height: auto; border: 1px solid var(--line); border-radius: 6px; background: #fff; }
+figcaption { color: var(--muted); font-size: 0.82rem; font-family: ui-sans-serif, system-ui, sans-serif; margin-top: 0.3rem; }
+
+.callout { border-left: 4px solid var(--accent); background: var(--accent-soft); padding: 0.7rem 0.9rem; border-radius: 0 6px 6px 0; }
+.callout.warn { border-left-color: var(--warn); background: #fdf4e3; }
+.callout.note { border-left-color: var(--ok); background: #e9f6ef; }
+.callout strong { font-family: ui-sans-serif, system-ui, sans-serif; }
+
+/* ---- cover + TOC ---- */
+.cover { text-align: center; padding: 4rem 1rem 2rem; }
+.cover .logo { font-family: ui-sans-serif, system-ui, sans-serif; letter-spacing: 0.18em; color: var(--accent); font-weight: 700; font-size: 0.95rem; }
+.cover h1 { font-size: 2.8rem; margin: 1rem 0 0.4rem; border: 0; }
+.cover .sub { color: var(--muted); font-size: 1.15rem; }
+.cover .meta { margin-top: 1.6rem; color: var(--muted); font-size: 0.9rem; font-family: ui-sans-serif, system-ui, sans-serif; }
+.toc-page h2 { border: 0; }
+.toc-page ol { font-family: ui-sans-serif, system-ui, sans-serif; }
+
+section.chapter { scroll-margin-top: 1rem; }
+
+/* ---- print / PDF ---- */
+@page {
+  size: A4;
+  margin: 20mm 18mm 22mm;
+  @top-right { content: string(doctitle); font-family: sans-serif; font-size: 8pt; color: #5b6876; }
+  @bottom-center { content: counter(page); font-family: sans-serif; font-size: 9pt; color: #5b6876; }
+}
+@page :first { @top-right { content: ""; } @bottom-center { content: ""; } }
+h1 { string-set: doctitle content(text); }
+
+@media print {
+  html { font-size: 11pt; }
+  nav.sidebar { display: none; }
+  .layout { display: block; }
+  main { max-width: none; margin: 0; padding: 0; }
+  a { color: var(--ink); text-decoration: none; }
+  .cover { padding-top: 8rem; break-after: page; }
+  .toc-page { break-after: page; }
+  section.chapter { break-before: page; }
+  h2, h3 { break-after: avoid; }
+  pre, table, figure, .callout { break-inside: avoid; }
+  pre { white-space: pre-wrap; word-wrap: break-word; }
+}
